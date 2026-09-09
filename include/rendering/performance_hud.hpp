@@ -65,6 +65,7 @@ public:
     void setShowTerrain(bool show) { showTerrain = show; }
     void setShowCamera(bool show) { showCamera = show; }
     void setShowControls(bool show) { showControls = show; }
+    void setCompact(bool value) { compact = value; }
 
 private:
     /**
@@ -81,6 +82,7 @@ private:
     bool showTerrain = true;
     bool showCamera = true;
     bool showControls = true;
+    bool compact = false;
 
     // FPS tracking
     std::deque<float> frameTimeHistory;

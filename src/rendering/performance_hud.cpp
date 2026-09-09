@@ -173,9 +173,34 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
                     renderer->getLastTerrainRenderMs(),
                     renderer->getLastWMORenderMs(),
                     renderer->getLastM2RenderMs());
+        if (auto* ctx = renderer->getVkContext(); ctx && ctx->gpuTimingSupported()) {
+            const auto& timings = ctx->gpuTimings();
+            double gpuTotalMs = 0.0;
+            for (const auto& [name, ms] : timings) {
+                (void)name;
+                gpuTotalMs += ms;
+            }
+            if (!timings.empty()) {
+                ImGui::Text("GPU: %.2f ms (%zu passes)", gpuTotalMs, timings.size());
+            }
+        }
         auto* wmoRenderer = renderer->getWMORenderer();
         auto* m2Renderer = renderer->getM2Renderer();
+        auto* terrainManager = renderer->getTerrainManager();
+        auto* terrainRenderer = renderer->getTerrainRenderer();
+        if (terrainManager || terrainRenderer) {
+            ImGui::Text("Scene: %d tiles, %d chunks drawn",
+                        terrainManager ? terrainManager->getLoadedTileCount() : 0,
+                        terrainRenderer ? terrainRenderer->getRenderedChunkCount() : 0);
+        }
         if (wmoRenderer || m2Renderer) {
+            ImGui::Text("Objects: WMO %u/%u, M2 %u/%u (instances/draws)",
+                        wmoRenderer ? wmoRenderer->getInstanceCount() : 0,
+                        wmoRenderer ? wmoRenderer->getDrawCallCount() : 0,
+                        m2Renderer ? m2Renderer->getInstanceCount() : 0,
+                        m2Renderer ? m2Renderer->getDrawCallCount() : 0);
+        }
+        if (!compact && (wmoRenderer || m2Renderer)) {
             ImGui::Text("Collision queries:");
             if (wmoRenderer) {
                 ImGui::Text("  WMO: %.2f ms (%u calls)",
@@ -188,7 +213,7 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
         }
 
         // Frame time graph
-        if (!frameTimeHistory.empty()) {
+        if (!compact && !frameTimeHistory.empty()) {
             std::vector<float> frameTimesMs;
             frameTimesMs.reserve(frameTimeHistory.size());
             for (float ft : frameTimeHistory) {

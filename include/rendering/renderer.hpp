@@ -342,7 +342,16 @@ public:
     void setSharpStars(bool enabled);
     bool areSharpStars() const { return sharpStars_; }
     int getTerrainLoadRadius() const;
-    int getTerrainUnloadRadius() const { return getTerrainLoadRadius() + 3; }
+    int getTerrainUnloadRadius() const {
+#ifdef __ANDROID__
+        // Keeping three extra rings resident is useful on a desktop with spare
+        // memory, but at the minimum mobile view distance it retains more than
+        // twice as many ADTs, WMO groups and M2 doodads as can be drawn.
+        return getTerrainLoadRadius() + 1;
+#else
+        return getTerrainLoadRadius() + 3;
+#endif
+    }
     void setMsaaSamples(VkSampleCountFlagBits samples);
 
     // Post-process pipeline API - delegates to PostProcessPipeline (§4.3)

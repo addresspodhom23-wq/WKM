@@ -4661,6 +4661,26 @@ void Application::reportStageTimes() {
                 if (frameProfileEnabled_) LOG_WARNING(line.str()); else LOG_INFO(line.str());
             }
         }
+
+        // Pair the timings with scene pressure.  "M2 took 20 ms" is not
+        // actionable without knowing whether the frame held 500 or 50,000
+        // instances, and this also verifies that a reduced mobile streaming
+        // radius actually evicted the old tiles.
+        auto* terrainManager = renderer->getTerrainManager();
+        auto* terrainRenderer = renderer->getTerrainRenderer();
+        auto* wmoRenderer = renderer->getWMORenderer();
+        auto* m2Renderer = renderer->getM2Renderer();
+        std::ostringstream scene;
+        scene << "  scene: tiles="
+              << (terrainManager ? terrainManager->getLoadedTileCount() : 0)
+              << " chunks="
+              << (terrainRenderer ? terrainRenderer->getRenderedChunkCount() : 0)
+              << " WMO=" << (wmoRenderer ? wmoRenderer->getInstanceCount() : 0)
+              << '/' << (wmoRenderer ? wmoRenderer->getDrawCallCount() : 0)
+              << " M2=" << (m2Renderer ? m2Renderer->getInstanceCount() : 0)
+              << '/' << (m2Renderer ? m2Renderer->getDrawCallCount() : 0)
+              << " (instances/draws)";
+        if (frameProfileEnabled_) LOG_WARNING(scene.str()); else LOG_INFO(scene.str());
     }
 
     stageStats_.clear();

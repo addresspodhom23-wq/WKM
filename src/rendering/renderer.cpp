@@ -571,6 +571,20 @@ bool Renderer::initialize(core::Window* win) {
     // Create performance HUD
     performanceHUD = std::make_unique<PerformanceHUD>();
     performanceHUD->setPosition(PerformanceHUD::Position::TOP_LEFT);
+#ifdef __ANDROID__
+    // A phone has no F1 key, so a diagnostic APK otherwise contains a useful
+    // HUD that its tester cannot open.  Keep the mobile overlay compact: the
+    // detailed renderer/terrain breakdown is written to wowee.log.
+    if (core::envFlagEnabled("WOWEE_MOBILE_HUD", false)) {
+        performanceHUD->setEnabled(true);
+        performanceHUD->setShowRenderer(false);
+        performanceHUD->setShowTerrain(false);
+        performanceHUD->setShowCamera(false);
+        performanceHUD->setShowControls(false);
+        performanceHUD->setCompact(true);
+        LOG_WARNING("Mobile performance HUD enabled (WOWEE_MOBILE_HUD=1)");
+    }
+#endif
 
     // What the player last chose for shadow quality, before the resources that
     // bake it in are built. Read from the CVar file rather than waited for:
@@ -3227,6 +3241,15 @@ bool Renderer::initializeRenderers(pipeline::AssetManager* assetManager, const s
             terrainManager.reset();
             return false;
         }
+        // setViewDistance() may have run before TerrainManager existed.  Its
+        // previous defaults were a 13x13 load grid, so the first world entry
+        // could queue tens of thousands of chunks before the saved mobile
+        // setting finally reached it.  Apply the renderer's current radii at
+        // construction time, before streaming receives its first update.
+        terrainManager->setLoadRadius(getTerrainLoadRadius());
+        terrainManager->setUnloadRadius(getTerrainUnloadRadius());
+        LOG_WARNING("Terrain streaming radii: load=", getTerrainLoadRadius(),
+                    " unload=", getTerrainUnloadRadius());
         // Set water renderer for terrain streaming
         if (waterRenderer) {
             terrainManager->setWaterRenderer(waterRenderer.get());

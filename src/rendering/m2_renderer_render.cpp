@@ -39,6 +39,19 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+#ifdef __ANDROID__
+// The old 0.5% per-frame reduction needs about a minute to converge on a
+// device already running at 15 FPS.  During that minute it keeps classifying
+// and drawing scenery far beyond the selected mobile distance, prolonging the
+// overload that prevents it from recovering.  Eight percent reaches the new
+// density budget in a few seconds while the existing fade hides the change.
+constexpr float kCullDistanceShrinkRate = 0.08f;
+#else
+constexpr float kCullDistanceShrinkRate = 0.005f;
+#endif
+} // namespace
+
 /// Starts a new instance's animation and gives it bones to draw with now.
 ///
 /// Both spawn paths need this: the one that takes a position and the one that
@@ -722,7 +735,7 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
         ((instances.size() > 2000) ? 300.0f
          : (instances.size() > 1000) ? 500.0f
                                      : 1000.0f);
-    const float shrinkRate = 0.005f;
+    const float shrinkRate = kCullDistanceShrinkRate;
     const float growRate   = 0.05f;
     float blendRate = (targetRenderDist < smoothedRenderDist_) ? shrinkRate : growRate;
     smoothedRenderDist_ = glm::mix(smoothedRenderDist_, targetRenderDist, blendRate);
@@ -995,7 +1008,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             ((instances.size() > 2000) ? 300.0f
              : (instances.size() > 1000) ? 500.0f
                                          : 1000.0f);
-        const float shrinkRate = 0.005f;
+        const float shrinkRate = kCullDistanceShrinkRate;
         const float growRate = 0.05f;
         float blendRate = (targetRenderDist < smoothedRenderDist_) ? shrinkRate : growRate;
         smoothedRenderDist_ = glm::mix(smoothedRenderDist_, targetRenderDist, blendRate);

@@ -36,11 +36,61 @@ def gitVersionCode = {
 }()
 def stagedAssets = layout.buildDirectory.dir("staged-assets")
 def stagedMusic = layout.buildDirectory.dir("staged-music")
+def shaderSources = fileTree("${repoRoot}/assets/shaders") {
+    include '*.vert.glsl', '*.frag.glsl', '*.comp.glsl', '*.geom.glsl'
+}
+
+// Android's native CMake build does not put the NDK shader-tools directory on
+// PATH.  When that made find_program(glslc) fail, CMake only warned and Gradle
+// packaged the tracked, older .spv files.  Any newly added GLSL shader then
+// vanished from the APK even though the build itself succeeded.  Compile the
+// APK payload explicitly with the glslc that ships in the selected NDK and
+// fail the build if it is unavailable.
+tasks.register('compilePackagedShaders') {
+    inputs.files(shaderSources)
+    outputs.files(provider {
+        shaderSources.files.collect { src ->
+            new File(src.parentFile, src.name.replaceFirst(/\.glsl$/, '.spv'))
+        }
+    })
+
+    doLast {
+        String osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+        String hostTag
+        String executable = 'glslc'
+        if (osName.contains('windows')) {
+            hostTag = 'windows-x86_64'
+            executable += '.exe'
+        } else if (osName.contains('mac')) {
+            hostTag = System.getProperty('os.arch').contains('aarch64')
+                    ? 'darwin-arm64' : 'darwin-x86_64'
+        } else {
+            hostTag = 'linux-x86_64'
+        }
+
+        File glslc = new File(android.ndkDirectory,
+                "shader-tools/${hostTag}/${executable}")
+        if (!glslc.isFile()) {
+            throw new GradleException(
+                    "NDK glslc not found at ${glslc}. Cannot package Android shaders safely.")
+        }
+
+        shaderSources.files.sort().each { File source ->
+            File output = new File(source.parentFile,
+                    source.name.replaceFirst(/\.glsl$/, '.spv'))
+            exec {
+                commandLine glslc.absolutePath, '-O', source.absolutePath,
+                            '-o', output.absolutePath
+            }
+        }
+    }
+}
 
 // The same payload the desktop and macOS releases ship: assets/ without the
 // original music, and the git-tracked Data JSONs. Game data is not here - the
 // player extracts that from their own install and copies it in.
 tasks.register('stageAssets', Copy) {
+    dependsOn 'compilePackagedShaders'
     into stagedAssets
     from("${repoRoot}/assets") {
         into 'assets'

@@ -76,6 +76,16 @@ public class WoweeActivity extends SDLActivity {
             setEnv("WOWEE_LOG_LEVEL", level);
         }
 
+        // Kraken Mobile diagnostic builds always leave enough evidence for a
+        // performance report made without adb.  Both defaults can still be
+        // overridden through Android system properties while developing.
+        String frameProfile = systemProperty("debug.wowee.frameprofile");
+        setEnv("WOWEE_FRAME_PROFILE",
+                frameProfile == null || frameProfile.isEmpty() ? "1" : frameProfile);
+        String mobileHud = systemProperty("debug.wowee.hud");
+        setEnv("WOWEE_MOBILE_HUD",
+                mobileHud == null || mobileHud.isEmpty() ? "1" : mobileHud);
+
         setEnv("WOWEE_RESOURCE_ROOT", root.getAbsolutePath());
         setEnv("WOW_DATA_PATH", data.getAbsolutePath());
         setEnv("WOWEE_CONFIG_ROOT", new File(root, "config").getAbsolutePath());

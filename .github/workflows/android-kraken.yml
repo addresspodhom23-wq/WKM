@@ -1,0 +1,93 @@
+name: Kraken Mobile Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ kraken-mobile ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kraken-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Diagnostic APK (arm64)
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        submodules: true
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: |
+          android/*.gradle
+          android/gradle/wrapper/gradle-wrapper.properties
+          android/app/*.gradle
+
+    - name: Install Android SDK and pinned NDK
+      run: |
+        yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+          --install "ndk;28.2.13676358" "platforms;android-34" \
+                    "build-tools;34.0.0" >/dev/null
+
+    - name: Cache OpenSSL for Android
+      id: cache-openssl
+      uses: actions/cache@v4
+      with:
+        path: build-android-deps
+        key: kraken-android-openssl-${{ hashFiles('tools/build-android-deps.sh') }}
+
+    - name: Build OpenSSL for arm64
+      if: steps.cache-openssl.outputs.cache-hit != 'true'
+      run: |
+        export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/28.2.13676358"
+        tools/build-android-deps.sh arm64-v8a 33
+
+    - name: Build diagnostic APK
+      working-directory: android
+      run: |
+        export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/28.2.13676358"
+        ./gradlew :app:assembleRelease --no-daemon
+
+    - name: Verify required mobile shaders
+      run: |
+        set -euo pipefail
+        APK=android/app/build/outputs/apk/release/app-release.apk
+        test -f "${APK}" || APK=android/app/build/outputs/apk/release/app-release-unsigned.apk
+        unzip -l "${APK}" > apk-files.txt
+        for shader in \
+          grass_cull.comp.spv \
+          m2_cull_hiz.comp.spv \
+          world_map_fog.frag.spv; do
+          grep -q "assets/assets/shaders/${shader}" apk-files.txt || {
+            echo "::error::APK is missing ${shader}"
+            exit 1
+          }
+        done
+
+    - name: Prepare APK artifact
+      run: |
+        APK=android/app/build/outputs/apk/release/app-release.apk
+        test -f "${APK}" || APK=android/app/build/outputs/apk/release/app-release-unsigned.apk
+        cp "${APK}" "Kraken-Mobile-diagnostic-${GITHUB_RUN_NUMBER}.apk"
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Kraken-Mobile-diagnostic-${{ github.run_number }}
+        path: Kraken-Mobile-diagnostic-*.apk
+        if-no-files-found: error
+        retention-days: 14
