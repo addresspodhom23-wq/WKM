@@ -81,8 +81,21 @@ tasks.register('compilePackagedShaders') {
         shaderSources.files.sort().each { File source ->
             File output = new File(source.parentFile,
                     source.name.replaceFirst(/\.glsl$/, '.spv'))
+            String stage
+            if (source.name.endsWith('.vert.glsl')) {
+                stage = 'vertex'
+            } else if (source.name.endsWith('.frag.glsl')) {
+                stage = 'fragment'
+            } else if (source.name.endsWith('.comp.glsl')) {
+                stage = 'compute'
+            } else if (source.name.endsWith('.geom.glsl')) {
+                stage = 'geometry'
+            } else {
+                throw new GradleException("Unknown shader stage for ${source.name}")
+            }
             exec {
-                commandLine glslc.absolutePath, '-O', source.absolutePath,
+                commandLine glslc.absolutePath, "-fshader-stage=${stage}",
+                            '-O', source.absolutePath,
                             '-o', output.absolutePath
             }
         }
