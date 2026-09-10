@@ -19,6 +19,32 @@ UnitPortrait::UnitPortrait() = default;
 
 UnitPortrait::~UnitPortrait() = default;
 
+void UnitPortrait::updatePreviewIfDue(bool force, float deltaTime) {
+    if (!preview_) return;
+
+    if (deltaTime > 0.0f) portraitFrameTime_ += deltaTime;
+    // Do not feed a long pause into the model animation in a single update.
+    if (portraitFrameTime_ > 0.25f) portraitFrameTime_ = 0.25f;
+
+#ifdef __ANDROID__
+    // Ten portrait frames per second are visually sufficient at the sizes used
+    // by unit frames.  The composited texture remains valid between updates.
+    constexpr float kPortraitFrameInterval = 0.10f;
+    const bool due = portraitFrameTime_ >= kPortraitFrameInterval;
+#else
+    const bool due = true;
+#endif
+
+    if (!force && !refreshRequested_ && hasRequestedComposite_ && !due) return;
+
+    preview_->update(portraitFrameTime_);
+    preview_->render();
+    preview_->requestComposite();
+    portraitFrameTime_ = 0.0f;
+    hasRequestedComposite_ = true;
+    refreshRequested_ = false;
+}
+
 void UnitPortrait::update(game::GameHandler& gameHandler,
                           pipeline::AssetManager* assets,
                           rendering::Renderer* renderer, float deltaTime) {
@@ -109,9 +135,7 @@ void UnitPortrait::update(game::GameHandler& gameHandler,
         loadedEquipHash_ = equipHash;
     }
 
-    preview_->update(deltaTime);
-    preview_->render();
-    preview_->requestComposite();
+    updatePreviewIfDue(changed, deltaTime);
 }
 
 bool UnitPortrait::updatePlayer(uint8_t race, uint8_t gender,
@@ -176,9 +200,7 @@ bool UnitPortrait::updatePlayer(uint8_t race, uint8_t gender,
         loadedBake_ = pendingBake_;
     }
 
-    preview_->update(deltaTime);
-    preview_->render();
-    preview_->requestComposite();
+    updatePreviewIfDue(changed, deltaTime);
     return preview_->isModelLoaded();
 }
 
@@ -201,7 +223,8 @@ bool UnitPortrait::updateCreature(const std::string& m2Path,
         registered_ = true;
     }
 
-    if (loadedCreaturePath_ != m2Path) {
+    const bool changed = loadedCreaturePath_ != m2Path;
+    if (changed) {
         // Declared before the model loads, so the racial backdrop is never
         // built in the first place - the same order loadCharacter needs.
         preview_->setTransparentBackground(true);
@@ -223,9 +246,7 @@ bool UnitPortrait::updateCreature(const std::string& m2Path,
         loadedEquipHash_ = 0;
     }
 
-    preview_->update(deltaTime);
-    preview_->render();
-    preview_->requestComposite();
+    updatePreviewIfDue(changed, deltaTime);
     return preview_->isModelLoaded();
 }
 
@@ -235,7 +256,10 @@ uint64_t UnitPortrait::textureId() const {
 }
 
 void UnitPortrait::rotate(float yawDelta) {
-    if (preview_ && yawDelta != 0.0f) preview_->rotate(yawDelta);
+    if (preview_ && yawDelta != 0.0f) {
+        preview_->rotate(yawDelta);
+        refreshRequested_ = true;
+    }
 }
 
 void UnitPortrait::shutdown(rendering::Renderer* renderer) {
@@ -243,6 +267,9 @@ void UnitPortrait::shutdown(rendering::Renderer* renderer) {
     registered_ = false;
     preview_.reset();
     initialized_ = false;
+    portraitFrameTime_ = 0.0f;
+    hasRequestedComposite_ = false;
+    refreshRequested_ = false;
 }
 
 } // namespace wowee::ui

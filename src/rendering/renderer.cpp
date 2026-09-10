@@ -2677,9 +2677,16 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                         terrainRenderer ? terrainRenderer->getChunkCount() : 0);
         }
 
-        // --- Execute all secondary buffers in correct draw order ---
-        VkCommandBuffer validCmds[6];
-        uint32_t numCmds = 0;
+        // --- Execute secondary buffers in correct draw order ---
+        // Execute them separately so timestamp marks describe the real GPU
+        // cost of each subsystem.  Recording remains parallel; only submission
+        // into the already-open primary render pass is split here.  This also
+        // avoids the old fixed six-entry array overflowing when all seven
+        // secondaries were present.
+        const auto executeSecondary = [&](VkCommandBuffer cmd, const char* label) {
+            vkCmdExecuteCommands(currentCmd, 1, &cmd);
+            if (vkCtx) vkCtx->gpuMark(currentCmd, label);
+        };
         // Terrain first, then the sky. Every sky layer sits on the far plane
         // and depth-tests against what is already there, so drawing it after
         // the ground skips the clouds' noise on every pixel a hill covers,
@@ -2689,17 +2696,15 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         // pixels leave no depth behind, so a sky drawn after them would paint
         // over whichever of them stood against it.
         if (terrainRenderer && camera && terrainEnabled && !skipTerrain)
-            validCmds[numCmds++] = secondaryCmds_[SEC_TERRAIN][frameIdx];
-        validCmds[numCmds++] = secondaryCmds_[SEC_SKY][frameIdx];
+            executeSecondary(secondaryCmds_[SEC_TERRAIN][frameIdx], "terrain+grass");
+        executeSecondary(secondaryCmds_[SEC_SKY][frameIdx], "sky");
         if (wmoRenderer && camera && !skipWMO)
-            validCmds[numCmds++] = secondaryCmds_[SEC_WMO][frameIdx];
-        validCmds[numCmds++] = secondaryCmds_[SEC_SELECTION][frameIdx];
-        validCmds[numCmds++] = secondaryCmds_[SEC_CHARS][frameIdx];
+            executeSecondary(secondaryCmds_[SEC_WMO][frameIdx], "wmo");
+        executeSecondary(secondaryCmds_[SEC_SELECTION][frameIdx], "selection");
+        executeSecondary(secondaryCmds_[SEC_CHARS][frameIdx], "characters");
         if (m2Renderer && camera && !skipM2)
-            validCmds[numCmds++] = secondaryCmds_[SEC_M2][frameIdx];
-        validCmds[numCmds++] = secondaryCmds_[SEC_POST][frameIdx];
-
-        vkCmdExecuteCommands(currentCmd, numCmds, validCmds);
+            executeSecondary(secondaryCmds_[SEC_M2][frameIdx], "m2");
+        executeSecondary(secondaryCmds_[SEC_POST][frameIdx], "effects");
 
     } else {
         // ── Fallback: single-threaded inline recording (original path) ──

@@ -113,6 +113,12 @@ public:
     void shutdown(rendering::Renderer* renderer);
 
 private:
+    /// Advance and composite the offscreen portrait only when its cached image
+    /// needs refreshing.  Android keeps the last portrait texture between
+    /// refreshes: animating several tiny 3D portraits at display refresh rate
+    /// costs far more than the UI pixels they occupy justify.
+    void updatePreviewIfDue(bool force, float deltaTime);
+
     std::unique_ptr<rendering::CharacterPreview> preview_;
     bool initialized_ = false;
     Framing framing_ = Framing::Face;
@@ -141,6 +147,10 @@ private:
     // pointer-sized field would truncate on a 32-bit build, where two outfits
     // sharing the low half would stop the portrait redrawing.
     uint64_t loadedEquipHash_ = 0;
+
+    float portraitFrameTime_ = 0.0f;
+    bool hasRequestedComposite_ = false;
+    bool refreshRequested_ = false;
 };
 
 } // namespace ui

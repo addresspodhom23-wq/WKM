@@ -711,10 +711,20 @@ bool PostProcessPipeline::initFSRResources() {
     plCI.pPushConstantRanges = &pc;
     vkCreatePipelineLayout(device, &plCI, nullptr, &fsr_.pipelineLayout);
 
-    // Load shaders
+    // Load shaders.  The 12-tap desktop EASU pass alone takes roughly a full
+    // 60 Hz frame on Adreno 618, even before any world geometry is drawn.  A
+    // single hardware-filtered sample is the appropriate mobile fast path;
+    // dynamic resolution still supplies the large performance saving.
     VkShaderModule vertMod, fragMod;
+#ifdef __ANDROID__
+    constexpr const char* upscaleFragmentShader =
+        "assets/shaders/mobile_upscale.frag.spv";
+#else
+    constexpr const char* upscaleFragmentShader =
+        "assets/shaders/fsr_easu.frag.spv";
+#endif
     if (!vertMod.loadFromFile(device, "assets/shaders/postprocess.vert.spv") ||
-        !fragMod.loadFromFile(device, "assets/shaders/fsr_easu.frag.spv")) {
+        !fragMod.loadFromFile(device, upscaleFragmentShader)) {
         LOG_ERROR("FSR: failed to load shaders");
         destroyFSRResources();
         return false;
@@ -745,7 +755,7 @@ bool PostProcessPipeline::initFSRResources() {
         return false;
     }
 
-    LOG_INFO("FSR: initialized successfully");
+    LOG_INFO("FSR: initialized successfully with ", upscaleFragmentShader);
     return true;
 }
 
