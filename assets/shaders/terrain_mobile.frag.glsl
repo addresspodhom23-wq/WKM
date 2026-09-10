@@ -1,8 +1,10 @@
 #version 450
 
-// Mobile terrain material for tile-based GPUs. It preserves WoW's four-layer
-// colour blend, daylight and fog, but avoids the desktop shader's alpha seam
-// filter, derivative normal mapping, 64-light loop and 9-tap PCF shadow lookup.
+// Mobile terrain baseline for tile-based GPUs. This diagnostic version samples
+// only the base layer. The previous mobile pass proved that the desktop ALU
+// work was expensive, but its remaining seven texture reads still cost roughly
+// 50-63 ms on Adreno 618. If this one-read baseline removes that cost, the
+// production path will pre-bake the four WoW layers into one mobile texture.
 
 layout(set = 0, binding = 0) uniform PerFrame {
     mat4 view;
@@ -50,19 +52,6 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec4 colour = texture(uBaseTexture, TexCoord);
-
-    if (hasLayer1 != 0) {
-        float alpha = texture(uLayer1Alpha, LayerUV).r;
-        colour = mix(colour, texture(uLayer1Texture, TexCoord), alpha);
-    }
-    if (hasLayer2 != 0) {
-        float alpha = texture(uLayer2Alpha, LayerUV).r;
-        colour = mix(colour, texture(uLayer2Texture, TexCoord), alpha);
-    }
-    if (hasLayer3 != 0) {
-        float alpha = texture(uLayer3Alpha, LayerUV).r;
-        colour = mix(colour, texture(uLayer3Texture, TexCoord), alpha);
-    }
 
     vec3 normal = normalize(Normal);
     vec3 toLight = normalize(-lightDir.xyz);
