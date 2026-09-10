@@ -37,6 +37,30 @@ jobs:
           android/gradle/wrapper/gradle-wrapper.properties
           android/app/*.gradle
 
+    - name: Prepare permanent release signing
+      env:
+        KRAKEN_KEYSTORE_BASE64: ${{ secrets.KRAKEN_KEYSTORE_BASE64 }}
+        KRAKEN_KEYSTORE_PASSWORD: ${{ secrets.KRAKEN_KEYSTORE_PASSWORD }}
+        KRAKEN_KEY_ALIAS: ${{ secrets.KRAKEN_KEY_ALIAS }}
+        KRAKEN_KEY_PASSWORD: ${{ secrets.KRAKEN_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+        missing=0
+        for variable in \
+          KRAKEN_KEYSTORE_BASE64 \
+          KRAKEN_KEYSTORE_PASSWORD \
+          KRAKEN_KEY_ALIAS \
+          KRAKEN_KEY_PASSWORD; do
+          if [ -z "${!variable:-}" ]; then
+            echo "::error::Missing required Actions secret: ${variable}"
+            missing=1
+          fi
+        done
+        test "${missing}" -eq 0
+        printf '%s' "${KRAKEN_KEYSTORE_BASE64}" | \
+          base64 --decode > "${RUNNER_TEMP}/kraken-release.jks"
+        test -s "${RUNNER_TEMP}/kraken-release.jks"
+
     - name: Install Android SDK and pinned NDK
       run: |
         yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
@@ -58,8 +82,14 @@ jobs:
 
     - name: Build diagnostic APK
       working-directory: android
+      env:
+        KRAKEN_KEYSTORE_FILE: ${{ runner.temp }}/kraken-release.jks
+        KRAKEN_KEYSTORE_PASSWORD: ${{ secrets.KRAKEN_KEYSTORE_PASSWORD }}
+        KRAKEN_KEY_ALIAS: ${{ secrets.KRAKEN_KEY_ALIAS }}
+        KRAKEN_KEY_PASSWORD: ${{ secrets.KRAKEN_KEY_PASSWORD }}
       run: |
         export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/28.2.13676358"
+        export KRAKEN_VERSION_CODE="$((100000 + GITHUB_RUN_NUMBER))"
         ./gradlew :app:assembleRelease --no-daemon
 
     - name: Verify required mobile shaders
@@ -79,16 +109,30 @@ jobs:
           }
         done
 
+    - name: Verify permanent APK signature
+      run: |
+        set -euo pipefail
+        APK=android/app/build/outputs/apk/release/app-release.apk
+        test -f "${APK}"
+        "${ANDROID_HOME}/build-tools/34.0.0/apksigner" \
+          verify --verbose --print-certs "${APK}" | tee signing-report.txt
+
     - name: Prepare APK artifact
       run: |
         APK=android/app/build/outputs/apk/release/app-release.apk
-        test -f "${APK}" || APK=android/app/build/outputs/apk/release/app-release-unsigned.apk
-        cp "${APK}" "Kraken-Mobile-diagnostic-${GITHUB_RUN_NUMBER}.apk"
+        test -f "${APK}"
+        cp "${APK}" "Kraken-Mobile-signed-diagnostic-${GITHUB_RUN_NUMBER}.apk"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Kraken-Mobile-diagnostic-${{ github.run_number }}
-        path: Kraken-Mobile-diagnostic-*.apk
+        name: Kraken-Mobile-signed-diagnostic-${{ github.run_number }}
+        path: |
+          Kraken-Mobile-signed-diagnostic-*.apk
+          signing-report.txt
         if-no-files-found: error
         retention-days: 14
+
+    - name: Remove temporary signing key
+      if: always()
+      run: rm -f "${RUNNER_TEMP}/kraken-release.jks"

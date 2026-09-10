@@ -37,6 +37,28 @@ def gitVersionCode = {
         return 1
     }
 }()
+
+// CI assigns every Kraken build a monotonically increasing package version.
+// Local builds keep the tag-derived value when the variable is absent.
+def androidVersionCode = gitVersionCode
+def ciVersionCode = System.getenv('KRAKEN_VERSION_CODE')
+if (ciVersionCode) {
+    try {
+        androidVersionCode = Math.max(1, ciVersionCode.toInteger())
+    } catch (Exception ignored) {
+        throw new GradleException('KRAKEN_VERSION_CODE must be a positive integer')
+    }
+}
+
+def releaseSigning = [
+    file:          System.getenv('KRAKEN_KEYSTORE_FILE'),
+    storePassword: System.getenv('KRAKEN_KEYSTORE_PASSWORD'),
+    keyAlias:      System.getenv('KRAKEN_KEY_ALIAS'),
+    keyPassword:   System.getenv('KRAKEN_KEY_PASSWORD'),
+]
+def releaseSigningConfigured = releaseSigning.values().every {
+    it != null && !it.isEmpty()
+}
 def stagedAssets = layout.buildDirectory.dir("staged-assets")
 def stagedMusic = layout.buildDirectory.dir("staged-music")
 def shaderSources = fileTree("${repoRoot}/assets/shaders") {
@@ -146,7 +168,7 @@ android {
         // from 33. See docs/plan-android.md.
         minSdk 33
         targetSdk 34
-        versionCode gitVersionCode
+        versionCode androidVersionCode
         versionName gitVersion
 
         externalNativeBuild {
@@ -174,10 +196,28 @@ android {
     // a desktop build directory is: everything, music included.
     sourceSets.debug.assets.srcDirs = [stagedMusic]
 
+    signingConfigs {
+        krakenRelease {
+            // An unsigned release remains possible for local compilation, but
+            // CI refuses to build unless every signing secret is present.
+            if (releaseSigningConfigured) {
+                storeFile file(releaseSigning.file)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+                storeType 'JKS'
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.krakenRelease
+            }
         }
     }
     compileOptions {

@@ -97,6 +97,8 @@ config.json
 
 # Local signing and notarization handoff material
 .secrets/
+*.jks
+*.keystore
 
 # Runtime cache (floor heights, etc.)
 cache/
