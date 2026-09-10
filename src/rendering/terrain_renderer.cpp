@@ -22,6 +22,19 @@
 namespace wowee {
 namespace rendering {
 
+namespace {
+#ifdef __ANDROID__
+// Adreno 618 spends most of the frame in the desktop terrain fragment shader:
+// edge filtering, local lights and PCF shadows multiply the texture/ALU cost
+// over nearly every pixel.  Android has a deliberately lean material shader.
+constexpr const char* kTerrainFragmentShader =
+    "assets/shaders/terrain_mobile.frag.spv";
+#else
+constexpr const char* kTerrainFragmentShader =
+    "assets/shaders/terrain.frag.spv";
+#endif
+}  // namespace
+
 // Matches set 1 binding 7 in terrain.frag.glsl
 struct TerrainParamsUBO {
     int32_t layerCount;
@@ -181,7 +194,7 @@ bool TerrainRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameL
         LOG_ERROR("TerrainRenderer: failed to load vertex shader");
         return false;
     }
-    if (!fragShader.loadFromFile(device, "assets/shaders/terrain.frag.spv")) {
+    if (!fragShader.loadFromFile(device, kTerrainFragmentShader)) {
         LOG_ERROR("TerrainRenderer: failed to load fragment shader");
         return false;
     }
@@ -287,7 +300,7 @@ void TerrainRenderer::recreatePipelines() {
         LOG_ERROR("TerrainRenderer::recreatePipelines: failed to load vertex shader");
         return;
     }
-    if (!fragShader.loadFromFile(device, "assets/shaders/terrain.frag.spv")) {
+    if (!fragShader.loadFromFile(device, kTerrainFragmentShader)) {
         LOG_ERROR("TerrainRenderer::recreatePipelines: failed to load fragment shader");
         vertShader.destroy();
         return;

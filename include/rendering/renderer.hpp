@@ -311,7 +311,13 @@ private:
     glm::mat4 lightSpaceMatrix = glm::mat4(1.0f);
     glm::vec3 shadowCenter = glm::vec3(0.0f);
     bool shadowCenterInitialized = false;
+#ifdef __ANDROID__
+    // The mobile terrain path does not sample the shadow map. Keep the clear
+    // pass for a valid sampled-image layout, but do not draw any casters.
+    bool shadowsEnabled = false;
+#else
     bool shadowsEnabled = true;
+#endif
     float shadowDistance_ = 300.0f;  // Shadow frustum half-extent (default: 300 units)
     float viewDistance_ = 1200.0f;
     bool sharpStars_ = true;
@@ -324,10 +330,16 @@ public:
     void registerPreview(CharacterPreview* preview);
     void unregisterPreview(CharacterPreview* preview);
 
-    /// Held on. Turning shadows off loses the device within a second - see
-    /// the note in settings_schema.cpp - so a saved 0 from before that was
-    /// known, or any other caller, cannot switch them off.
-    void setShadowsEnabled(bool /*enabled*/) { shadowsEnabled = true; }
+    /// Desktop shadows are held on: the old live-disable path could lose the
+    /// device. Android uses a shader which never samples them, and safely keeps
+    /// the depth-map clear/transition pass while omitting all shadow casters.
+    void setShadowsEnabled(bool /*enabled*/) {
+#ifdef __ANDROID__
+        shadowsEnabled = false;
+#else
+        shadowsEnabled = true;
+#endif
+    }
     bool areShadowsEnabled() const { return shadowsEnabled; }
     void setShadowDistance(float dist) { shadowDistance_ = glm::clamp(dist, 40.0f, 500.0f); }
     float getShadowDistance() const { return shadowDistance_; }

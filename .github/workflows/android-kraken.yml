@@ -102,6 +102,7 @@ jobs:
           grass_cull.comp.spv \
           m2_cull_hiz.comp.spv \
           mobile_upscale.frag.spv \
+          terrain_mobile.frag.spv \
           world_map_fog.frag.spv; do
           grep -q "assets/assets/shaders/${shader}" apk-files.txt || {
             echo "::error::APK is missing ${shader}"
