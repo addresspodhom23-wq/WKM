@@ -2695,8 +2695,18 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         // blended windows and doodads carry leaves and particles, and blended
         // pixels leave no depth behind, so a sky drawn after them would paint
         // over whichever of them stood against it.
+#ifdef __ANDROID__
+        // Diagnostic isolation for Adreno: leave the scene render pass and its
+        // clears exactly as they are, but put no terrain draw between the
+        // shadow mark and this one.  If this still costs tens of milliseconds,
+        // the cost belongs to opening/clearing the main pass rather than to
+        // terrain geometry or its material.  The Android test build is allowed
+        // to show no ground; this is deliberately not the production path.
+        if (vkCtx) vkCtx->gpuMark(currentCmd, "terrain-empty");
+#else
         if (terrainRenderer && camera && terrainEnabled && !skipTerrain)
             executeSecondary(secondaryCmds_[SEC_TERRAIN][frameIdx], "terrain+grass");
+#endif
         executeSecondary(secondaryCmds_[SEC_SKY][frameIdx], "sky");
         if (wmoRenderer && camera && !skipWMO)
             executeSecondary(secondaryCmds_[SEC_WMO][frameIdx], "wmo");

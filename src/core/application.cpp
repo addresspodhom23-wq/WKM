@@ -3801,6 +3801,19 @@ void Application::render() {
             const ImGuiIO& io = ImGui::GetIO();
             auto* engine = addonManager_->getLuaEngine();
 
+            // The Android profile has shown a remarkably stable ~19 ms in
+            // addonWidgets every frame. Split that opaque block into broad
+            // slices without changing its order or behaviour, so the next
+            // phone run says whether offscreen model views, layout, or event
+            // dispatch owns the time.
+            auto addonPartStart = std::chrono::steady_clock::now();
+            auto noteAddonPart = [this, &addonPartStart](const char* name) {
+                const auto now = std::chrono::steady_clock::now();
+                noteStageTime(name, std::chrono::duration<float, std::milli>(
+                    now - addonPartStart).count());
+                addonPartStart = now;
+            };
+
             // The portrait is the character itself rendered small, so it is
             // produced here rather than read from a file, and handed to the
             // widget by name each frame. Told every frame rather than once,
@@ -4382,7 +4395,9 @@ void Application::render() {
             // thing added is the thing on top. Drawing here put the panels
             // down first, so every player's name and health bar in the world
             // showed through the bags and the auction house.
+            noteAddonPart("addonModels");
             widgetRenderer_.layout(engine->widgets(), io.DisplaySize.x, io.DisplaySize.y);
+            noteAddonPart("addonLayout");
 
             // The client's own interface has first claim, but only over the
             // point the cursor is actually on.
@@ -4543,6 +4558,7 @@ void Application::render() {
                     }
                 }
             }
+            noteAddonPart("addonEventsInput");
         });
     }
 
