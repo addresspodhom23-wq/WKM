@@ -274,6 +274,12 @@ void WaterRenderer::recreatePipelines() {
     }
 }
 
+void WaterRenderer::setReflectionSceneEnabled(bool enabled) {
+    if (reflectionSceneEnabled == enabled) return;
+    reflectionSceneEnabled = enabled;
+    LOG_WARNING("[Reflection diagnostic] Scene reflection ", enabled ? "ON" : "OFF");
+}
+
 void WaterRenderer::setRefractionEnabled(bool enabled) {
     if (refractionEnabled == enabled) return;
     refractionEnabled = enabled;

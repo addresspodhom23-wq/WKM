@@ -2695,18 +2695,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         // blended windows and doodads carry leaves and particles, and blended
         // pixels leave no depth behind, so a sky drawn after them would paint
         // over whichever of them stood against it.
-#ifdef __ANDROID__
-        // Diagnostic isolation for Adreno: leave the scene render pass and its
-        // clears exactly as they are, but put no terrain draw between the
-        // shadow mark and this one.  If this still costs tens of milliseconds,
-        // the cost belongs to opening/clearing the main pass rather than to
-        // terrain geometry or its material.  The Android test build is allowed
-        // to show no ground; this is deliberately not the production path.
-        if (vkCtx) vkCtx->gpuMark(currentCmd, "terrain-empty");
-#else
         if (terrainRenderer && camera && terrainEnabled && !skipTerrain)
             executeSecondary(secondaryCmds_[SEC_TERRAIN][frameIdx], "terrain+grass");
-#endif
         executeSecondary(secondaryCmds_[SEC_SKY][frameIdx], "sky");
         if (wmoRenderer && camera && !skipWMO)
             executeSecondary(secondaryCmds_[SEC_WMO][frameIdx], "wmo");
@@ -3803,6 +3793,16 @@ void Renderer::renderReflectionPass() {
     if (!waterRenderer || !camera || !waterRenderer->hasReflectionPass() || !waterRenderer->hasSurfaces()) return;
     if (currentCmd == VK_NULL_HANDLE || !reflPerFrameUBOMapped) return;
 
+    // Keep the clear/layout/descriptor lifecycle when the reflected scene is
+    // disabled. Invalidate its projection too, so water cannot reuse a stale
+    // reflection after a live toggle (including below the water plane).
+    if (!waterRenderer->isReflectionSceneEnabled()) {
+        waterRenderer->updateReflectionUBO(glm::mat4(0.0f));
+        if (waterRenderer->beginReflectionPass(currentCmd))
+            waterRenderer->endReflectionPass(currentCmd);
+        return;
+    }
+
     // Select the current frame's pre-bound reflection descriptor set
     // (each frame's set was bound to its own shadow depth view at init).
     uint32_t frame = vkCtx->getCurrentFrame();
@@ -4044,8 +4044,13 @@ void Renderer::buildFrameGraph(game::GameHandler* gameHandler) {
 
     // Reflection pre-pass → outputs reflection_texture (reads scene, so after shadow)
     renderGraph_->addPass("reflection_pass", {shadowDepth}, {reflTex},
-        [this](VkCommandBuffer) {
+        [this](VkCommandBuffer cmd) {
+            // Bound both sides: this work previously fell into terrain's
+            // timestamp interval, even in the no-terrain diagnostic.
+            vkCtx->gpuMark(cmd, "pre-reflection");
             renderReflectionPass();
+            vkCtx->gpuMark(cmd, waterRenderer && waterRenderer->isReflectionSceneEnabled()
+                ? "reflection-on" : "reflection-off");
         });
 
     renderGraph_->compile();

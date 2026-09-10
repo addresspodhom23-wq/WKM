@@ -1,10 +1,8 @@
 #version 450
 
-// Mobile terrain baseline for tile-based GPUs. This diagnostic version samples
-// only the base layer. The previous mobile pass proved that the desktop ALU
-// work was expensive, but its remaining seven texture reads still cost roughly
-// 50-63 ms on Adreno 618. If this one-read baseline removes that cost, the
-// production path will pre-bake the four WoW layers into one mobile texture.
+// Mobile terrain: retain all four texture layers with simple lighting/fog.
+// The one-layer diagnostic did not establish a texture-fetch bottleneck:
+// its measured interval included the separate water reflection scene.
 
 layout(set = 0, binding = 0) uniform PerFrame {
     mat4 view;
@@ -52,6 +50,12 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     vec4 colour = texture(uBaseTexture, TexCoord);
+    if (hasLayer1 != 0)
+        colour = mix(colour, texture(uLayer1Texture, TexCoord), texture(uLayer1Alpha, LayerUV).r);
+    if (hasLayer2 != 0)
+        colour = mix(colour, texture(uLayer2Texture, TexCoord), texture(uLayer2Alpha, LayerUV).r);
+    if (hasLayer3 != 0)
+        colour = mix(colour, texture(uLayer3Texture, TexCoord), texture(uLayer3Alpha, LayerUV).r);
 
     vec3 normal = normalize(Normal);
     vec3 toLight = normalize(-lightDir.xyz);

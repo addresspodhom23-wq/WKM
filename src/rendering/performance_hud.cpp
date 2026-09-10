@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <string_view>
 
 namespace wowee {
 namespace rendering {
@@ -164,6 +165,14 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
         ImGui::Text("Min: %.1f", minFPS);
         ImGui::Text("Max: %.1f", maxFPS);
         ImGui::Text("Frame: %.2f ms", frameTime * 1000.0f);
+#ifdef __ANDROID__
+        ImGui::TextUnformatted("Diagnostic 10 (live A/B)");
+        if (auto* water = renderer->getWaterRenderer()) {
+            bool reflection = water->isReflectionSceneEnabled();
+            if (ImGui::Checkbox("Reflection scene", &reflection))
+                water->setReflectionSceneEnabled(reflection);
+        }
+#endif
 
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.6f, 1.0f), "CPU TIMINGS (ms)");
@@ -182,6 +191,11 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
             }
             if (!timings.empty()) {
                 ImGui::Text("GPU: %.2f ms (%zu passes)", gpuTotalMs, timings.size());
+                for (const auto& [name, ms] : timings) {
+                    const std::string_view label(name);
+                    if (label == "reflection-on" || label == "reflection-off" || label == "terrain+grass")
+                        ImGui::Text("  %s: %.2f ms", name, ms);
+                }
             }
         }
         auto* wmoRenderer = renderer->getWMORenderer();

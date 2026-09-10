@@ -140,6 +140,11 @@ public:
     bool hasReflectionPass() const { return reflectionRenderPass != VK_NULL_HANDLE; }
     bool hasSurfaces() const { return !surfaces.empty(); }
 
+    // Diagnostic live A/B switch; unlike refraction, this controls the extra
+    // mirrored sky/terrain/building scene. Water itself remains enabled.
+    void setReflectionSceneEnabled(bool enabled);
+    bool isReflectionSceneEnabled() const { return reflectionSceneEnabled; }
+
     void setEnabled(bool enabled) { renderingEnabled = enabled; }
     bool isEnabled() const { return renderingEnabled; }
 
@@ -256,6 +261,11 @@ private:
     std::vector<WaterSurface> surfaces;
     bool renderingEnabled = true;
     bool refractionEnabled = false;
+#ifdef __ANDROID__
+    bool reflectionSceneEnabled = false;
+#else
+    bool reflectionSceneEnabled = true;
+#endif
     VkExtent2D renderExtent_{.width = 0, .height = 0};
 };
 
