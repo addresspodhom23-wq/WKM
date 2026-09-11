@@ -11,6 +11,7 @@
 // is shipped; it is the player's own install being drawn.
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -51,7 +52,9 @@ public:
     /// list this does, where whatever is added last is on top. Drawn from here
     /// the panels went down first and every nameplate in the world showed
     /// through the bags.
-    void layout(WidgetTree& tree, float screenW, float screenH);
+    using LayoutTimingSink = std::function<void(const char*, float)>;
+    void layout(WidgetTree& tree, float screenW, float screenH,
+                const LayoutTimingSink& timing = {});
     void draw(WidgetTree& tree, float screenW, float screenH);
 
     /// What is on screen, and what should be but is not - the instrumentation

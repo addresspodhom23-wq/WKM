@@ -16,6 +16,7 @@
 #include "game/spell_classification.hpp"
 #include "rendering/animation/animation_ids.hpp"
 #include "rendering/animation_controller.hpp"
+#include "rendering/grass_renderer.hpp"
 #include <bit>
 #include <unordered_set>
 #include <cmath>
@@ -4396,7 +4397,8 @@ void Application::render() {
             // down first, so every player's name and health bar in the world
             // showed through the bags and the auction house.
             noteAddonPart("addonModels");
-            widgetRenderer_.layout(engine->widgets(), io.DisplaySize.x, io.DisplaySize.y);
+            widgetRenderer_.layout(engine->widgets(), io.DisplaySize.x, io.DisplaySize.y,
+                [this](const char* label, float ms) { noteStageTime(label, ms); });
             noteAddonPart("addonLayout");
 
             // The client's own interface has first claim, but only over the
@@ -4697,6 +4699,13 @@ void Application::reportStageTimes() {
               << '/' << (m2Renderer ? m2Renderer->getDrawCallCount() : 0)
               << " (instances/draws)";
         if (frameProfileEnabled_) LOG_WARNING(scene.str()); else LOG_INFO(scene.str());
+        if (auto* grass = renderer->getGrassRenderer()) {
+            std::ostringstream state;
+            state << "  procedural grass: enabled=" << grass->isEnabled()
+                  << " ready=" << grass->isReady()
+                  << " source blades=" << grass->sourceBladeCount();
+            if (frameProfileEnabled_) LOG_WARNING(state.str()); else LOG_INFO(state.str());
+        }
     }
 
     stageStats_.clear();

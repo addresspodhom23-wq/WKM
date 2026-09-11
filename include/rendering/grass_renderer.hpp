@@ -55,6 +55,11 @@ public:
     /// Record the indirect draw. Must run inside the render pass.
     void render(VkCommandBuffer cmd, uint32_t frameIndex, VkDescriptorSet perFrameSet);
 
+    // Live diagnostic switch. Population/resources remain resident for A/B.
+    void setEnabled(bool enabled);
+    bool isEnabled() const { return enabled_; }
+    uint32_t sourceBladeCount() const { return bladeCount_; }
+
     /// Replace the live population. Blades carry world positions, so this is
     /// the whole of what the renderer knows about where grass is.
     ///
@@ -114,6 +119,7 @@ private:
     VkContext* vkCtx_ = nullptr;
     VkDescriptorSetLayout perFrameLayout_ = VK_NULL_HANDLE;
     uint32_t bladeCount_ = 0;
+    bool enabled_ = true;
     float cullDistance_ = kCullDistance;
     bool cullReported_ = false;
     uint32_t framesSincePopulated_ = 0;

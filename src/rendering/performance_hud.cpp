@@ -5,6 +5,7 @@
 #include "rendering/terrain_renderer.hpp"
 #include "rendering/terrain_manager.hpp"
 #include "rendering/water_renderer.hpp"
+#include "rendering/grass_renderer.hpp"
 #include "rendering/skybox.hpp"
 #include "rendering/celestial.hpp"
 #include "rendering/starfield.hpp"
@@ -166,11 +167,19 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
         ImGui::Text("Max: %.1f", maxFPS);
         ImGui::Text("Frame: %.2f ms", frameTime * 1000.0f);
 #ifdef __ANDROID__
-        ImGui::TextUnformatted("Diagnostic 10 (live A/B)");
+        ImGui::TextUnformatted("Diagnostic 11 (live A/B)");
         if (auto* water = renderer->getWaterRenderer()) {
             bool reflection = water->isReflectionSceneEnabled();
             if (ImGui::Checkbox("Reflection scene", &reflection))
                 water->setReflectionSceneEnabled(reflection);
+        }
+        if (auto* grass = renderer->getGrassRenderer()) {
+            bool enabled = grass->isEnabled();
+            if (ImGui::Checkbox("Procedural grass", &enabled))
+                grass->setEnabled(enabled);
+            ImGui::Text("Grass source: %u blades", grass->sourceBladeCount());
+        } else {
+            ImGui::TextUnformatted("Procedural grass: unavailable");
         }
 #endif
 

@@ -1,4 +1,5 @@
 #include <cstring>
+#include <chrono>
 #include "ui/widget_renderer.hpp"
 #include "ui/text_markup.hpp"
 #include "ui/link_hit.hpp"
@@ -973,7 +974,15 @@ void WidgetRenderer::render(WidgetTree& tree, float screenW, float screenH) {
     draw(tree, screenW, screenH);
 }
 
-void WidgetRenderer::layout(WidgetTree& tree, float screenW, float screenH) {
+void WidgetRenderer::layout(WidgetTree& tree, float screenW, float screenH,
+                            const LayoutTimingSink& timing) {
+    auto stageStart = std::chrono::steady_clock::now();
+    const auto mark = [&](const char* label) {
+        if (!timing) return;
+        const auto now = std::chrono::steady_clock::now();
+        timing(label, std::chrono::duration<float, std::milli>(now - stageStart).count());
+        stageStart = std::chrono::steady_clock::now();
+    };
     linkScreenH_ = screenH;
     linkScale_ = tree.uiScale();
     // Every descriptor set in this cache belongs to the context, which frees
@@ -1072,18 +1081,24 @@ void WidgetRenderer::layout(WidgetTree& tree, float screenW, float screenH) {
         }
     }
 
+    mark("layoutPreparation");
     sizeTooltips(tree);
+    mark("layoutTooltips");
     // Same reason, for every label that never stated a size: it takes the size
     // of its own text, and anything anchored to it is placed from that.
     sizeFontStrings(tree);
+    mark("layoutTextMeasure");
     // Before the solve, like the two above: this decides a size the solve
     // then places.
     sizeTextures(tree);
+    mark("layoutTextureSizes");
 
     tree.layout(screenW, screenH);
+    mark("layoutTreeSolve");
 
     reportOverflowingText(tree);
     reportLetteredAmounts(tree);
+    mark("layoutDiagnostics");
 }
 
 /// Labels whose glyphs are wider than the rect they were given.

@@ -132,6 +132,7 @@ public:
     TerrainManager* getTerrainManager() const { return terrainManager.get(); }
     PerformanceHUD* getPerformanceHUD() { return performanceHUD.get(); }
     WaterRenderer* getWaterRenderer() const { return waterRenderer.get(); }
+    GrassRenderer* getGrassRenderer() const { return grassRenderer_.get(); }
     Skybox* getSkybox() const { return skySystem ? skySystem->getSkybox() : nullptr; }
     Celestial* getCelestial() const { return skySystem ? skySystem->getCelestial() : nullptr; }
     StarField* getStarField() const { return skySystem ? skySystem->getStarField() : nullptr; }

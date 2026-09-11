@@ -429,8 +429,16 @@ bool GrassRenderer::buildDrawPipeline() {
     return pipeline_ != VK_NULL_HANDLE;
 }
 
+void GrassRenderer::setEnabled(bool enabled) {
+    if (enabled_ == enabled) return;
+    enabled_ = enabled;
+    LOG_WARNING("[Grass diagnostic] Procedural grass ", enabled ? "ON" : "OFF",
+                ", source blades=", bladeCount_);
+}
+
 void GrassRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frameIndex, const Camera& camera,
                                  const glm::vec3& rangeCenter) {
+    if (!enabled_) return;
     if (!isReady() || frameIndex >= kFrames || bladeCount_ == 0) return;
 
     // WOWEE_GRASS_DEBUG=1: every couple of seconds, read back how many blades
@@ -625,6 +633,7 @@ void GrassRenderer::reportCullResult() {
 
 void GrassRenderer::render(VkCommandBuffer cmd, uint32_t frameIndex,
                            VkDescriptorSet perFrameSet) {
+    if (!enabled_) return;
     if (!isReady() || frameIndex >= kFrames || bladeCount_ == 0) return;
 
     if (!drawReported_) {
