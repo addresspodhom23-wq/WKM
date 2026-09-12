@@ -86,6 +86,8 @@ public:
      * Update renderer (camera, etc.)
      */
     void update(float deltaTime);
+    // Unclamped wall time for the HUD; simulation keeps its separate time cap.
+    void recordFrameTime(float elapsedSeconds);
 
     /**
      * Load test terrain for debugging

@@ -1275,6 +1275,7 @@ void Application::run() {
         std::chrono::duration<float> deltaTimeDuration = currentTime - lastTime;
         float deltaTime = deltaTimeDuration.count();
         lastTime = currentTime;
+        if (renderer) renderer->recordFrameTime(deltaTime);
 
         // Cap delta time to prevent large jumps
         if (deltaTime > 0.1f) {

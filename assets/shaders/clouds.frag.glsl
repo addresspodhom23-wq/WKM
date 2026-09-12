@@ -9,6 +9,8 @@ layout(push_constant) uniform Push {
     vec4 windAndLight;    // x = windOffset, y = sunIntensity, z = ambient, w = unused
 } push;
 
+layout(set = 1, binding = 0) uniform sampler2D cloudNoise;
+
 layout(location = 0) in vec3 vWorldDir;
 
 layout(location = 0) out vec4 outColor;
@@ -21,6 +23,11 @@ vec2 hash2(vec2 p) {
 }
 
 float gradientNoise(vec2 p) {
+    if (push.windAndLight.w > 0.5) {
+        // 128 periodic cells, eight samples per cell; texels store cell coordinates.
+        // Explicit LOD remains defined after the non-uniform alpha discard.
+        return textureLod(cloudNoise, p / 128.0 + vec2(0.5 / 1024.0), 0.0).r;
+    }
     vec2 i = floor(p);
     vec2 f = fract(p);
 

@@ -1528,6 +1528,10 @@ uint32_t Renderer::getCurrentZoneId() const {
     return tileZoneId;
 }
 
+void Renderer::recordFrameTime(float elapsedSeconds) {
+    if (performanceHUD) performanceHUD->update(elapsedSeconds);
+}
+
 void Renderer::update(float deltaTime) {
     ZoneScopedN("Renderer::update");
     globalTime += deltaTime;
@@ -1881,10 +1885,6 @@ void Renderer::update(float deltaTime) {
         audioCoordinator_->updateZoneAudio(zctx);
     }
 
-    // Update performance HUD
-    if (performanceHUD) {
-        performanceHUD->update(deltaTime);
-    }
 
     // Periodic cache hygiene: drop model GPU data no longer referenced by active instances.
     static float modelCleanupTimer = 0.0f;

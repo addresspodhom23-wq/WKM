@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <vector>
+#include "rendering/vk_texture.hpp"
 
 namespace wowee {
 namespace rendering {
@@ -51,6 +52,9 @@ public:
     void setEnabled(bool enabled) { enabled_ = enabled; }
     [[nodiscard]] bool isEnabled() const { return enabled_; }
 
+    void setCachedNoiseEnabled(bool enabled) { cachedNoiseEnabled_ = enabled; }
+    [[nodiscard]] bool isCachedNoiseEnabled() const { return cachedNoiseEnabled_; }
+
     // --- Cloud parameters ---
     void setDensity(float density);
     [[nodiscard]] float getDensity() const { return density_; }
@@ -63,9 +67,16 @@ private:
     struct CloudPush {
         glm::vec4 cloudColor;     // xyz = DBC-derived base cloud color, w = unused
         glm::vec4 sunDirDensity;  // xyz = sun direction, w = density
-        glm::vec4 windAndLight;   // x = windOffset, y = sunIntensity, z = ambient, w = unused
+        glm::vec4 windAndLight;   // x = windOffset, y = sunIntensity, z = ambient, w = cached noise enabled
     };
     static_assert(sizeof(CloudPush) == 48, "CloudPush size mismatch");
+
+    bool createNoiseResources();
+    VkTexture noiseTexture_;
+    VkDescriptorSetLayout noiseLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool noisePool_ = VK_NULL_HANDLE;
+    VkDescriptorSet noiseSet_ = VK_NULL_HANDLE;
+    bool cachedNoiseEnabled_ = true;
 
     void generateMesh();
     void createBuffers();

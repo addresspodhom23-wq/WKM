@@ -8,6 +8,8 @@
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
+#include <array>
+#include <algorithm>
 
 namespace wowee {
 namespace rendering {
@@ -57,6 +59,82 @@ void Clouds::buildPipeline(VkDevice device,
 
 }
 
+
+bool Clouds::createNoiseResources() {
+    // Bake the original quintic gradient-noise family once, not per screen pixel.
+    // Wrap gradients as well as sampling so the texture has no repeat seam.
+    constexpr int cells = 128;
+    constexpr int samples = 8;
+    constexpr int size = cells * samples;
+    std::array<glm::vec2, cells * cells> gradients{};
+    auto hash = [](float p) {
+        const float value = std::sin(p) * 43758.5453f;
+        return (value - std::floor(value)) * 2.0f - 1.0f;
+    };
+    for (int y = 0; y < cells; ++y)
+        for (int x = 0; x < cells; ++x)
+            gradients[y * cells + x] = glm::vec2(
+                hash(x * 127.1f + y * 311.7f), hash(x * 269.5f + y * 183.3f));
+    std::vector<uint8_t> pixels(size * size * 4);
+    auto fade = [](float t) { return t*t*t*(t*(t*6.0f-15.0f)+10.0f); };
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            const int ix = x / samples, iy = y / samples;
+            const float fx = float(x % samples) / samples;
+            const float fy = float(y % samples) / samples;
+            auto dot = [&](int dx, int dy) {
+                const auto& g = gradients[((iy + dy) % cells) * cells + (ix + dx) % cells];
+                return g.x * (fx - dx) + g.y * (fy - dy);
+            };
+            const float value = glm::mix(glm::mix(dot(0,0), dot(1,0), fade(fx)),
+                                         glm::mix(dot(0,1), dot(1,1), fade(fx)), fade(fy)) * 0.5f + 0.5f;
+            const auto byte = static_cast<uint8_t>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
+            const size_t offset = (static_cast<size_t>(y) * size + x) * 4;
+            pixels[offset] = pixels[offset+1] = pixels[offset+2] = byte;
+            pixels[offset+3] = 255;
+        }
+    }
+    const VkDevice device = vkCtx_->getDevice();
+    if (!noiseTexture_.upload(*vkCtx_, pixels.data(), size, size, VK_FORMAT_R8G8B8A8_UNORM, false) ||
+        !noiseTexture_.createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                     VK_SAMPLER_ADDRESS_MODE_REPEAT, 1.0f))
+        return false;
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layout{};
+    layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout.bindingCount = 1;
+    layout.pBindings = &binding;
+    if (vkCreateDescriptorSetLayout(device, &layout, nullptr, &noiseLayout_) != VK_SUCCESS) return false;
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    VkDescriptorPoolCreateInfo pool{};
+    pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.maxSets = 1;
+    pool.poolSizeCount = 1;
+    pool.pPoolSizes = &poolSize;
+    if (vkCreateDescriptorPool(device, &pool, nullptr, &noisePool_) != VK_SUCCESS) return false;
+    VkDescriptorSetAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc.descriptorPool = noisePool_;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &noiseLayout_;
+    if (vkAllocateDescriptorSets(device, &alloc, &noiseSet_) != VK_SUCCESS) return false;
+    const auto image = noiseTexture_.descriptorInfo();
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = noiseSet_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    LOG_INFO("[Cloud noise] Cached 1024x1024 noise ready; cached mode ON");
+    return true;
+}
+
 bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     LOG_INFO("Initializing cloud system (Vulkan)");
 
@@ -77,7 +155,12 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     pushRange.size       = sizeof(CloudPush); // 48 bytes
 
     // ------------------------------------------------------------------ pipeline layout
-    pipelineLayout_ = createPipelineLayout(device, {perFrameLayout}, {pushRange});
+    if (!createNoiseResources()) {
+        LOG_ERROR("Failed to create cloud noise resources");
+        shutdown();
+        return false;
+    }
+    pipelineLayout_ = createPipelineLayout(device, {perFrameLayout, noiseLayout_}, {pushRange});
     if (pipelineLayout_ == VK_NULL_HANDLE) {
         LOG_ERROR("Failed to create clouds pipeline layout");
         return false;
@@ -115,7 +198,16 @@ void Clouds::recreatePipelines() {
 void Clouds::shutdown() {
     destroyBuffers();
 
-    if (vkCtx_) destroyPipeline(vkCtx_->getDevice(), pipeline_, pipelineLayout_);
+    if (vkCtx_) {
+        const VkDevice device = vkCtx_->getDevice();
+        destroyPipeline(device, pipeline_, pipelineLayout_);
+        if (noisePool_) vkDestroyDescriptorPool(device, noisePool_, nullptr);
+        if (noiseLayout_) vkDestroyDescriptorSetLayout(device, noiseLayout_, nullptr);
+        noisePool_ = VK_NULL_HANDLE;
+        noiseLayout_ = VK_NULL_HANDLE;
+        noiseSet_ = VK_NULL_HANDLE;
+        noiseTexture_.destroy(device, vkCtx_->getAllocator());
+    }
 
     vkCtx_ = nullptr;
 }
@@ -149,12 +241,15 @@ void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyP
     CloudPush push{};
     push.cloudColor    = glm::vec4(cloudBaseColor, 1.0f);
     push.sunDirDensity = glm::vec4(sunDir, density_);
-    push.windAndLight  = glm::vec4(windOffset_, sunIntensity, ambient, 0.0f);
+    push.windAndLight  = glm::vec4(windOffset_, sunIntensity, ambient, cachedNoiseEnabled_ ? 1.0f : 0.0f);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
         0, 1, &perFrameSet, 0, nullptr);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+        1, 1, &noiseSet_, 0, nullptr);
 
     vkCmdPushConstants(cmd, pipelineLayout_,
         VK_SHADER_STAGE_FRAGMENT_BIT,

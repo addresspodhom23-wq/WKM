@@ -175,6 +175,11 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
             LOG_WARNING("[Sky diagnostic] Sky and clouds ", skyEnabled ? "ON" : "OFF");
         }
         if (auto* clouds = renderer->getClouds()) {
+            bool cachedNoise = clouds->isCachedNoiseEnabled();
+            if (ImGui::Checkbox("Cached cloud noise", &cachedNoise)) {
+                clouds->setCachedNoiseEnabled(cachedNoise);
+                LOG_WARNING("[Cloud noise] Cached mode ", cachedNoise ? "ON" : "OFF");
+            }
             bool cloudsEnabled = clouds->isEnabled();
             if (ImGui::Checkbox("Cloud layer", &cloudsEnabled)) {
                 clouds->setEnabled(cloudsEnabled);
