@@ -91,7 +91,7 @@ void PerformanceHUD::calculateFPS() {
     }
 }
 
-void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
+void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (!enabled || !renderer) {
         return;
     }

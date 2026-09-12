@@ -33,7 +33,7 @@ public:
      * @param renderer Renderer for accessing stats
      * @param camera Camera for position info
      */
-    void render(const Renderer* renderer, const Camera* camera);
+    void render(Renderer* renderer, const Camera* camera);
 
     /**
      * Enable/disable HUD display
