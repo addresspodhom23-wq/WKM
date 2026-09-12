@@ -1,5 +1,8 @@
 #version 450
 
+// Depth writes are disabled for this pipeline: reject hidden sky before noise.
+layout(early_fragment_tests) in;
+
 layout(push_constant) uniform Push {
     vec4 cloudColor;      // xyz = DBC-derived base cloud color, w = unused
     vec4 sunDirDensity;   // xyz = sun direction, w = density
@@ -57,6 +60,7 @@ void main() {
 
     vec3 sunDir = normalize(push.sunDirDensity.xyz);
     float density = push.sunDirDensity.w;
+    if (density <= 0.0) discard;
     float windOffset = push.windAndLight.x;
     float sunIntensity = push.windAndLight.y;
     float ambient = push.windAndLight.z;
@@ -90,6 +94,11 @@ void main() {
     cloud *= smoothstep(0.0, 0.15, altitude);
     if (cloud < 0.01) discard;
 
+    // This was previously checked after the expensive sun-ward FBM sample.
+    // Preserve the same alpha while avoiding lighting for invisible fragments.
+    float alpha = cloud * smoothstep(0.0, 0.25, cloud);
+    if (alpha < 0.01) discard;
+
     // --- Lighting ---
     float sunUp = clamp(sunDir.z, 0.0, 1.0);      // day factor
     float sunView = max(dot(dir, sunDir), 0.0);   // view alignment with the sun
@@ -115,9 +124,5 @@ void main() {
     float edge = smoothstep(0.0, 0.35, cloud) * (1.0 - smoothstep(0.35, 0.85, cloud));
     cloudRgb += vec3(1.0, 0.95, 0.88) * edge * scatter * 0.6;
 
-    // --- Edge softness for alpha ---
-    float alpha = cloud * smoothstep(0.0, 0.25, cloud);
-
-    if (alpha < 0.01) discard;
     outColor = vec4(cloudRgb, alpha);
 }
