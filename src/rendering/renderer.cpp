@@ -2695,6 +2695,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         // blended windows and doodads carry leaves and particles, and blended
         // pixels leave no depth behind, so a sky drawn after them would paint
         // over whichever of them stood against it.
+        // Separate work before the terrain secondary from the terrain interval.
+        // This is an extra timestamp only; draw order and visual settings stay intact.
+        if (vkCtx) vkCtx->gpuMark(currentCmd, "before-terrain");
         if (terrainRenderer && camera && terrainEnabled && !skipTerrain)
             executeSecondary(secondaryCmds_[SEC_TERRAIN][frameIdx], "terrain+grass");
         executeSecondary(secondaryCmds_[SEC_SKY][frameIdx], "sky");
