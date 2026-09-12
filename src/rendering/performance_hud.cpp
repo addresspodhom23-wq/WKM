@@ -174,6 +174,13 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
             renderer->setSkyDiagnosticEnabled(skyEnabled);
             LOG_WARNING("[Sky diagnostic] Sky and clouds ", skyEnabled ? "ON" : "OFF");
         }
+        if (auto* clouds = renderer->getClouds()) {
+            bool cloudsEnabled = clouds->isEnabled();
+            if (ImGui::Checkbox("Cloud layer", &cloudsEnabled)) {
+                clouds->setEnabled(cloudsEnabled);
+                LOG_WARNING("[Sky diagnostic] Cloud layer ", cloudsEnabled ? "ON" : "OFF");
+            }
+        }
         if (auto* water = renderer->getWaterRenderer()) {
             bool reflection = water->isReflectionSceneEnabled();
             if (ImGui::Checkbox("Reflection scene", &reflection))
