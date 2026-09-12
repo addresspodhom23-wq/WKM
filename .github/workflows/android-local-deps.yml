@@ -1,0 +1,36 @@
+name: Android OpenSSL for local builds
+on:
+  workflow_dispatch:
+  push:
+    branches: [kraken-mobile]
+    paths: [.github/workflows/android-local-deps.yml]
+permissions:
+  contents: read
+jobs:
+  openssl:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned NDK
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" >/dev/null
+      - name: Build Android arm64 OpenSSL
+        run: |
+          export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/28.2.13676358"
+          bash tools/build-android-deps.sh arm64-v8a 33
+      - name: Validate and stage libraries
+        run: |
+          set -eu
+          root=build-android-deps/arm64-v8a
+          test -s "$root/lib/libcrypto.a"
+          test -s "$root/lib/libssl.a"
+          test -s "$root/include/openssl/ssl.h"
+          mkdir -p local-deps/build-android-deps/arm64-v8a/lib
+          cp -R "$root/include" local-deps/build-android-deps/arm64-v8a/
+          cp "$root/lib/libcrypto.a" "$root/lib/libssl.a" local-deps/build-android-deps/arm64-v8a/lib/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kraken-Android-OpenSSL-arm64
+          path: local-deps/
+          if-no-files-found: error
+          retention-days: 30
