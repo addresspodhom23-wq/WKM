@@ -414,10 +414,14 @@ endif()
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
-if(WIN32)
-    find_package(PkgConfig QUIET)
-else()
-    find_package(PkgConfig REQUIRED)
+if(NOT ANDROID)
+    # Android dependencies come from the NDK or explicit cross-build paths.
+    # WIN32 describes the target, so it is false even on a Windows Android host.
+    if(WIN32)
+        find_package(PkgConfig QUIET)
+    else()
+        find_package(PkgConfig REQUIRED)
+    endif()
 endif()
 if(ANDROID)
     # Not through pkg-config. There is no Android FFmpeg to find and the host's
