@@ -2483,7 +2483,8 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     static const bool skipChars = (std::getenv("WOWEE_SKIP_CHARS") != nullptr);
     static const bool skipM2 = (std::getenv("WOWEE_SKIP_M2") != nullptr);
     static const bool skipTerrain = (std::getenv("WOWEE_SKIP_TERRAIN") != nullptr);
-    static const bool skipSky = (std::getenv("WOWEE_SKIP_SKY") != nullptr);
+    static const bool skipSkyFromEnvironment = (std::getenv("WOWEE_SKIP_SKY") != nullptr);
+    const bool skipSky = skipSkyFromEnvironment || !skyDiagnosticEnabled_;
 
     // Get time of day for sky-related rendering
     auto* skybox = skySystem ? skySystem->getSkybox() : nullptr;

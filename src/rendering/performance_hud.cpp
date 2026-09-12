@@ -1,3 +1,4 @@
+#include "core/logger.hpp"
 #include "rendering/performance_hud.hpp"
 #include "rendering/renderer.hpp"
 #include "rendering/post_process_pipeline.hpp"
@@ -167,7 +168,12 @@ void PerformanceHUD::render(const Renderer* renderer, const Camera* camera) {
         ImGui::Text("Max: %.1f", maxFPS);
         ImGui::Text("Frame: %.2f ms", frameTime * 1000.0f);
 #ifdef __ANDROID__
-        ImGui::TextUnformatted("Diagnostic 11 (live A/B)");
+        ImGui::TextUnformatted("Sky diagnostic (live A/B)");
+        bool skyEnabled = renderer->isSkyDiagnosticEnabled();
+        if (ImGui::Checkbox("Sky and clouds", &skyEnabled)) {
+            renderer->setSkyDiagnosticEnabled(skyEnabled);
+            LOG_WARNING("[Sky diagnostic] Sky and clouds ", skyEnabled ? "ON" : "OFF");
+        }
         if (auto* water = renderer->getWaterRenderer()) {
             bool reflection = water->isReflectionSceneEnabled();
             if (ImGui::Checkbox("Reflection scene", &reflection))

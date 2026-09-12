@@ -148,6 +148,8 @@ public:
     QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     FootprintRenderer* getFootprintRenderer() const { return footprintRenderer.get(); }
     SkySystem* getSkySystem() const { return skySystem.get(); }
+    bool isSkyDiagnosticEnabled() const { return skyDiagnosticEnabled_; }
+    void setSkyDiagnosticEnabled(bool enabled) { skyDiagnosticEnabled_ = enabled; }
     const std::string& getCurrentZoneName() const;
     uint32_t getCurrentZoneId() const;
     /// The area under the player, asked of AreaTable rather than resolved to a
@@ -249,6 +251,7 @@ private:
     std::unique_ptr<Weather> weather;
     std::unique_ptr<Lightning> lightning;
     std::unique_ptr<LightingManager> lightingManager;
+    bool skyDiagnosticEnabled_ = true;
     std::unique_ptr<SkySystem> skySystem;  // Coordinator for sky rendering
     std::unique_ptr<SwimEffects> swimEffects;
     std::unique_ptr<MountDust> mountDust;
