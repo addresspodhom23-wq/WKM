@@ -9,6 +9,8 @@ layout(push_constant) uniform Push {
     vec4 windAndLight;    // x = windOffset, y = sunIntensity, z = ambient, w = unused
 } push;
 
+// Select at pipeline creation so the driver can eliminate the unused noise path.
+layout(constant_id = 0) const bool cachedNoise = true;
 layout(set = 1, binding = 0) uniform sampler2D cloudNoise;
 
 layout(location = 0) in vec3 vWorldDir;
@@ -23,7 +25,7 @@ vec2 hash2(vec2 p) {
 }
 
 float gradientNoise(vec2 p) {
-    if (push.windAndLight.w > 0.5) {
+    if (cachedNoise) {
         // 128 periodic cells, eight samples per cell; texels store cell coordinates.
         // Explicit LOD remains defined after the non-uniform alpha discard.
         return textureLod(cloudNoise, p / 128.0 + vec2(0.5 / 1024.0), 0.0).r;

@@ -67,7 +67,7 @@ private:
     struct CloudPush {
         glm::vec4 cloudColor;     // xyz = DBC-derived base cloud color, w = unused
         glm::vec4 sunDirDensity;  // xyz = sun direction, w = density
-        glm::vec4 windAndLight;   // x = windOffset, y = sunIntensity, z = ambient, w = cached noise enabled
+        glm::vec4 windAndLight;   // x = windOffset, y = sunIntensity, z = ambient, w = unused
     };
     static_assert(sizeof(CloudPush) == 48, "CloudPush size mismatch");
 
@@ -85,6 +85,7 @@ private:
     // Vulkan objects
     VkContext*       vkCtx_          = nullptr;
     VkPipeline       pipeline_       = VK_NULL_HANDLE;
+    VkPipeline       referencePipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkBuffer         vertexBuffer_   = VK_NULL_HANDLE;
     VmaAllocation    vertexAlloc_    = VK_NULL_HANDLE;

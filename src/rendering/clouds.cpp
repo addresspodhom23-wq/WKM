@@ -43,8 +43,19 @@ void Clouds::buildPipeline(VkDevice device,
     std::vector<VkDynamicState> dynamicStates = viewportAndScissorDynamic();
 
     // ------------------------------------------------------------------ pipeline
-    pipeline_ = PipelineBuilder()
-        .setShaders(vertStage, fragStage)
+    // Specialization keeps procedural sine/hash code out of the cached variant.
+    // Both pipelines share the layout; switching the HUD needs no compilation.
+    for (VkBool32 cached = VK_FALSE; cached <= VK_TRUE; ++cached) {
+        const VkSpecializationMapEntry entry{0, 0, sizeof(cached)};
+        VkSpecializationInfo specialization{};
+        specialization.mapEntryCount = 1;
+        specialization.pMapEntries = &entry;
+        specialization.dataSize = sizeof(cached);
+        specialization.pData = &cached;
+        auto specializedFragment = fragStage;
+        specializedFragment.pSpecializationInfo = &specialization;
+        const VkPipeline result = PipelineBuilder()
+        .setShaders(vertStage, specializedFragment)
         .setVertexInput({binding}, {posAttr})
         .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
         .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
@@ -55,8 +66,9 @@ void Clouds::buildPipeline(VkDevice device,
         .setRenderPass(vkCtx_->getImGuiRenderPass())
         .setDynamicStates(dynamicStates)
         .build(device, vkCtx_->getPipelineCache());
-
-
+        if (cached) pipeline_ = result;
+        else referencePipeline_ = result;
+    }
 }
 
 
@@ -168,7 +180,7 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
 
     buildPipeline(device, vertStage, fragStage);
 
-    if (pipeline_ == VK_NULL_HANDLE) {
+    if (pipeline_ == VK_NULL_HANDLE || referencePipeline_ == VK_NULL_HANDLE) {
         LOG_ERROR("Failed to create clouds pipeline");
         return false;
     }
@@ -177,7 +189,7 @@ bool Clouds::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
     generateMesh();
     createBuffers();
 
-    LOG_INFO("Cloud system initialized: ", indexCount_ / 3, " triangles");
+    LOG_INFO("Cloud system initialized: ", indexCount_ / 3, " triangles; specialized noise pipelines");
     return true;
 }
 
@@ -186,6 +198,7 @@ void Clouds::recreatePipelines() {
     VkDevice device = vkCtx_->getDevice();
 
     destroy(device, pipeline_);
+    destroy(device, referencePipeline_);
 
     auto shaders = loadShaderPair(device, "assets/shaders/clouds.vert.spv", "assets/shaders/clouds.frag.spv", "clouds");
     if (!shaders) return;
@@ -200,6 +213,7 @@ void Clouds::shutdown() {
 
     if (vkCtx_) {
         const VkDevice device = vkCtx_->getDevice();
+        destroy(device, referencePipeline_);
         destroyPipeline(device, pipeline_, pipelineLayout_);
         if (noisePool_) vkDestroyDescriptorPool(device, noisePool_, nullptr);
         if (noiseLayout_) vkDestroyDescriptorSetLayout(device, noiseLayout_, nullptr);
@@ -217,7 +231,8 @@ void Clouds::shutdown() {
 // ---------------------------------------------------------------------------
 
 void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyParams& params) {
-    if (!enabled_ || pipeline_ == VK_NULL_HANDLE) {
+    const VkPipeline activePipeline = cachedNoiseEnabled_ ? pipeline_ : referencePipeline_;
+    if (!enabled_ || activePipeline == VK_NULL_HANDLE) {
         return;
     }
 
@@ -241,9 +256,9 @@ void Clouds::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const SkyP
     CloudPush push{};
     push.cloudColor    = glm::vec4(cloudBaseColor, 1.0f);
     push.sunDirDensity = glm::vec4(sunDir, density_);
-    push.windAndLight  = glm::vec4(windOffset_, sunIntensity, ambient, cachedNoiseEnabled_ ? 1.0f : 0.0f);
+    push.windAndLight  = glm::vec4(windOffset_, sunIntensity, ambient, 0.0f);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
         0, 1, &perFrameSet, 0, nullptr);
