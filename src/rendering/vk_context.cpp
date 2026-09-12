@@ -1,5 +1,6 @@
 #define VMA_IMPLEMENTATION
 #include <set>
+#include <chrono>
 #include <thread>
 #include <mutex>
 #include "rendering/vk_context.hpp"
@@ -2796,7 +2797,14 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
     static int endFrameCounter = 0;
     endFrameCounter++;
 
+#ifdef __ANDROID__
+    using EndFrameClock = std::chrono::steady_clock;
+    const auto cpuStart = EndFrameClock::now();
+#endif
     VkResult endResult = vkEndCommandBuffer(cmd);
+#ifdef __ANDROID__
+    const auto commandEnd = EndFrameClock::now();
+#endif
     if (endResult != VK_SUCCESS) {
         LOG_ERROR("endFrame[", endFrameCounter, "] vkEndCommandBuffer FAILED: ", static_cast<int>(endResult));
     }
@@ -2843,9 +2851,15 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
         submitInfo.pSignalSemaphores = &renderSem;
     }
 
+#ifdef __ANDROID__
+    const auto submitStart = EndFrameClock::now();
+#endif
     VkResult submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo,
                                           frameTimeline_ != VK_NULL_HANDLE ? VK_NULL_HANDLE
                                                                            : frame.inFlightFence);
+#ifdef __ANDROID__
+    const auto submitEnd = EndFrameClock::now();
+#endif
     if (submitResult == VK_SUCCESS && frameTimeline_ != VK_NULL_HANDLE) {
         // Only once the submit is in: on failure the timeline is never
         // signalled, and a slot left waiting on an unreachable value would
@@ -2897,7 +2911,39 @@ void VkContext::endFrame(VkCommandBuffer cmd, uint32_t imageIndex) {
     presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
+#ifdef __ANDROID__
+    const auto presentStart = EndFrameClock::now();
+#endif
     VkResult result = vkQueuePresentKHR(presentQueue, &presentInfo);
+#ifdef __ANDROID__
+    const auto presentEnd = EndFrameClock::now();
+    // CPU wall times of API calls, not GPU execution durations. No extra waits.
+    static auto reportStart = cpuStart;
+    static double sums[4] = {}, peaks[4] = {};
+    static unsigned sampleCount = 0;
+    const double samples[4] = {
+        std::chrono::duration<double, std::milli>(commandEnd - cpuStart).count(),
+        std::chrono::duration<double, std::milli>(submitEnd - submitStart).count(),
+        std::chrono::duration<double, std::milli>(presentEnd - presentStart).count(),
+        std::chrono::duration<double, std::milli>(presentEnd - cpuStart).count()
+    };
+    ++sampleCount;
+    for (unsigned i = 0; i < 4; ++i) {
+        sums[i] += samples[i];
+        peaks[i] = std::max(peaks[i], samples[i]);
+    }
+    if (presentEnd - reportStart >= std::chrono::seconds(10)) {
+        LOG_WARNING("[Frame API CPU] samples=", sampleCount,
+                    " endCommand avg/max=", sums[0] / sampleCount, "/", peaks[0],
+                    " submit avg/max=", sums[1] / sampleCount, "/", peaks[1],
+                    " present avg/max=", sums[2] / sampleCount, "/", peaks[2],
+                    " contextTotal avg/max=", sums[3] / sampleCount, "/", peaks[3],
+                    " ms");
+        for (unsigned i = 0; i < 4; ++i) { sums[i] = 0; peaks[i] = 0; }
+        sampleCount = 0;
+        reportStart = presentEnd;
+    }
+#endif
     // Presenting unrotated onto a rotated surface is suboptimal by definition,
     // and says so on every frame for as long as the swapchain lives. Rebuilding
     // on that answer rebuilds every frame, which is what stopped the client
