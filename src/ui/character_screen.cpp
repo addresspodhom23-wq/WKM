@@ -14,10 +14,38 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 
 namespace wowee { namespace ui {
 
 namespace {
+const char* russianCharacterLabel(const char* label) {
+    const std::string_view name(label);
+    if (name == "Human") return "Человек";
+    if (name == "Orc") return "Орк";
+    if (name == "Dwarf") return "Дворф";
+    if (name == "Night Elf") return "Ночной эльф";
+    if (name == "Undead") return "Нежить";
+    if (name == "Tauren") return "Таурен";
+    if (name == "Gnome") return "Гном";
+    if (name == "Troll") return "Тролль";
+    if (name == "Blood Elf") return "Эльф крови";
+    if (name == "Draenei") return "Дреней";
+    if (name == "Warrior") return "Воин";
+    if (name == "Paladin") return "Паладин";
+    if (name == "Hunter") return "Охотник";
+    if (name == "Rogue") return "Разбойник";
+    if (name == "Priest") return "Жрец";
+    if (name == "Death Knight") return "Рыцарь смерти";
+    if (name == "Shaman") return "Шаман";
+    if (name == "Mage") return "Маг";
+    if (name == "Warlock") return "Чернокнижник";
+    if (name == "Druid") return "Друид";
+    if (name == "Male") return "Мужчина";
+    if (name == "Female") return "Женщина";
+    if (name == "Unknown") return "Неизвестно";
+    return label;
+}
 
 // Written in units and drawn at a scale taken from the window, the same way
 // the login card is. See paper_ui.hpp.
@@ -136,14 +164,14 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     Column col{a.x + px(kPad), b.x - px(kPad), a.y + px(kPad)};
 
     // ---- heading ----------------------------------------------------------
-    ui_.text(col.at(), "Choose a Hero", titleSize, theme.ink, /*titleFace=*/true);
+    ui_.text(col.at(), "Выбор персонажа", titleSize, theme.ink, /*titleFace=*/true);
     {
-        const float w = ui_.textWidth("Choose a Hero", titleSize, true);
+        const float w = ui_.textWidth("Выбор персонажа", titleSize, true);
         const float y = col.y + ui_.inkHeight(titleSize, true);
         ui_.squiggle(ImVec2(col.x0, y), ImVec2(col.x0 + w * 1.04f, y), theme.crayonRed,
                      px(2.0f), 0x4417u);
     }
-    ui_.textRight(col.x1, col.y + titleSize * 0.55f, "Or make a new one.", smallSize,
+    ui_.textRight(col.x1, col.y + titleSize * 0.55f, "Или создайте нового.", smallSize,
                   theme.pencil);
     col.gap(ui_.inkHeight(titleSize, true) + px(18));
 
@@ -173,11 +201,11 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     const float classX = col.x0 + listW * 0.67f;
     const float zoneX = col.x0 + listW * 0.83f;
 
-    ui_.text(ImVec2(col.x0 + px(10), bodyTop), "Name", labelSize, theme.inkSoft);
-    ui_.text(ImVec2(levelX, bodyTop), "Lv", labelSize, theme.inkSoft);
-    ui_.text(ImVec2(raceX, bodyTop), "Race", labelSize, theme.inkSoft);
-    ui_.text(ImVec2(classX, bodyTop), "Class", labelSize, theme.inkSoft);
-    ui_.text(ImVec2(zoneX, bodyTop), "Where", labelSize, theme.inkSoft);
+    ui_.text(ImVec2(col.x0 + px(10), bodyTop), "Имя", labelSize, theme.inkSoft);
+    ui_.text(ImVec2(levelX, bodyTop), "Ур.", labelSize, theme.inkSoft);
+    ui_.text(ImVec2(raceX, bodyTop), "Раса", labelSize, theme.inkSoft);
+    ui_.text(ImVec2(classX, bodyTop), "Класс", labelSize, theme.inkSoft);
+    ui_.text(ImVec2(zoneX, bodyTop), "Локация", labelSize, theme.inkSoft);
 
     const float listTop = bodyTop + ui_.lineHeight(labelSize) + px(6);
     ui_.rule(ImVec2(col.x0, listTop - px(4)), ImVec2(col.x0 + listW, listTop - px(4)),
@@ -186,7 +214,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     const auto enterWorld = [&](const game::Character& character) {
         characterSelected = true;
         saveLastCharacter(character.guid);
-        setStatus("Entering world with " + character.name + "...");
+        setStatus("Вход в мир: " + character.name + "...");
         gameHandler.selectCharacter(character.guid);
         if (onCharacterSelected) onCharacterSelected(character.guid);
     };
@@ -207,9 +235,9 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
                 std::snprintf(level, sizeof(level), "%d", character.level);
                 ui_.text(ImVec2(levelX, smallY), level, smallSize,
                          selected ? theme.ink : theme.inkSoft);
-                ui_.text(ImVec2(raceX, smallY), game::getRaceName(character.race), smallSize,
+                ui_.text(ImVec2(raceX, smallY), russianCharacterLabel(game::getRaceName(character.race)), smallSize,
                          theme.inkSoft);
-                ui_.text(ImVec2(classX, smallY), game::getClassName(character.characterClass),
+                ui_.text(ImVec2(classX, smallY), russianCharacterLabel(game::getClassName(character.characterClass)),
                          smallSize,
                          ui_.onPaper(classColor(static_cast<uint8_t>(character.characterClass))));
 
@@ -269,7 +297,7 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
     ui_.rule(ImVec2(col.x0, col.y), ImVec2(col.x1, col.y), paperFade(theme.pencil, 0.55f),
              px(1.0f), 0x2288u);
     col.gap(px(8));
-    ui_.text(col.at(), "Double-click a hero, or press Enter, to go in.", smallSize,
+    ui_.text(col.at(), "Дважды нажмите на персонажа или нажмите Enter.", smallSize,
              theme.pencil);
     col.gap(ui_.lineHeight(smallSize) + px(8));
 
@@ -283,20 +311,20 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
             return hit;
         };
 
-        if (quiet("back", "Back", px(100))) {
+        if (quiet("back", "Назад", px(100))) {
             if (onBack) onBack();
         }
-        if (quiet("refresh", "Refresh", px(110))) {
+        if (quiet("refresh", "Обновить", px(110))) {
             if (gameHandler.getState() == game::WorldState::READY ||
                 gameHandler.getState() == game::WorldState::CHAR_LIST_RECEIVED) {
                 gameHandler.requestCharacterList();
-                setStatus("Refreshing character list...");
+                setStatus("Обновляем список персонажей...");
             }
         }
-        if (quiet("create", "New Hero", px(130))) {
+        if (quiet("create", "Создать", px(130))) {
             if (onCreateCharacter) onCreateCharacter();
         }
-        if (quiet("addons", "AddOns", px(110))) {
+        if (quiet("addons", "Аддоны", px(110))) {
             showAddonsWindow_ = true;
         }
 
@@ -305,13 +333,13 @@ void CharacterScreen::render(game::GameHandler& gameHandler) {
             const float enterW = px(190);
             const float deleteW = px(100);
             if (ui_.button("delete", ImVec2(col.x1 - enterW - px(12) - deleteW, y),
-                           ImVec2(col.x1 - enterW - px(12), y + h), "Delete")) {
+                           ImVec2(col.x1 - enterW - px(12), y + h), "Удалить")) {
                 deleteConfirmStage = 1;
             }
             const bool disconnected = gameHandler.getState() == game::WorldState::DISCONNECTED ||
                                       gameHandler.getState() == game::WorldState::FAILED;
             if (ui_.button("enter", ImVec2(col.x1 - enterW, y), ImVec2(col.x1, y + h),
-                           "Enter World", PaperUI::ButtonKind::Primary, !disconnected)) {
+                           "Войти в мир", PaperUI::ButtonKind::Primary, !disconnected)) {
                 enterWorld(character);
             }
         }
@@ -346,12 +374,12 @@ void CharacterScreen::renderNotice(game::GameHandler& gameHandler, float screenW
         gameHandler.requestCharacterList();
     }
 
-    const char* heading = loading ? "One moment" : (disconnected ? "Disconnected" : "Nobody here");
+    const char* heading = loading ? "Подождите" : (disconnected ? "Соединение разорвано" : "Нет персонажей");
     const char* body =
-        loading ? "Asking the realm who lives here..."
+        loading ? "Получаем список персонажей..."
                 : (disconnected
-                       ? "The server closed the connection before it sent the character list."
-                       : "This account has no characters on this realm yet.");
+                       ? "Сервер закрыл соединение до получения списка персонажей."
+                       : "На этом сервере у вас пока нет персонажей.");
 
     const float w = std::min(px(520), screenW - px(40));
     const float h = px(250);
@@ -374,19 +402,19 @@ void CharacterScreen::renderNotice(game::GameHandler& gameHandler, float screenW
         x += bw + px(10);
         return hit;
     };
-    if (quiet("notice.back", "Back", px(100))) {
+    if (quiet("notice.back", "Назад", px(100))) {
         if (onBack) onBack();
     }
     if (!loading) {
-        if (quiet("notice.refresh", "Refresh", px(110))) {
+        if (quiet("notice.refresh", "Обновить", px(110))) {
             if (gameHandler.getState() == game::WorldState::READY ||
                 gameHandler.getState() == game::WorldState::CHAR_LIST_RECEIVED) {
                 gameHandler.requestCharacterList();
-                setStatus("Refreshing character list...");
+                setStatus("Обновляем список персонажей...");
             }
         }
         if (ui_.button("notice.create", ImVec2(col.x1 - px(150), y), ImVec2(col.x1, y + bh),
-                       "New Hero", PaperUI::ButtonKind::Primary)) {
+                       "Создать", PaperUI::ButtonKind::Primary)) {
             if (onCreateCharacter) onCreateCharacter();
         }
     }
@@ -476,7 +504,7 @@ void CharacterScreen::renderDetails(game::GameHandler& gameHandler,
         }
         col.y = imgB.y + mat + px(14);
     } else if (!assetManager_ || !assetManager_->isInitialized()) {
-        ui_.text(col.at(), "No picture - the assets are not loaded.", smallSize, theme.pencil);
+        ui_.text(col.at(), "Изображение недоступно: данные не загружены.", smallSize, theme.pencil);
         col.gap(ui_.lineHeight(smallSize) + px(10));
     }
 
@@ -488,15 +516,15 @@ void CharacterScreen::renderDetails(game::GameHandler& gameHandler,
     col.gap(px(10));
 
     char level[32];
-    std::snprintf(level, sizeof(level), "Level %d %s", character.level,
-                  game::getGenderName(character.gender));
+    std::snprintf(level, sizeof(level), "Уровень %d, %s", character.level,
+                  russianCharacterLabel(game::getGenderName(character.gender)));
     ui_.text(col.at(), level, bodySize, theme.inkSoft);
     col.gap(bodySize * 1.35f);
 
-    ui_.text(col.at(), game::getRaceName(character.race), bodySize, theme.inkSoft);
+    ui_.text(col.at(), russianCharacterLabel(game::getRaceName(character.race)), bodySize, theme.inkSoft);
     col.gap(bodySize * 1.35f);
 
-    ui_.text(col.at(), game::getClassName(character.characterClass), bodySize,
+    ui_.text(col.at(), russianCharacterLabel(game::getClassName(character.characterClass)), bodySize,
              ui_.onPaper(classColor(static_cast<uint8_t>(character.characterClass))));
     col.gap(bodySize * 1.35f);
 
@@ -504,7 +532,7 @@ void CharacterScreen::renderDetails(game::GameHandler& gameHandler,
         std::string zone = gameHandler.getWhoAreaName(character.zoneId);
         if (zone.empty()) {
             char fallback[32];
-            std::snprintf(fallback, sizeof(fallback), "Zone %u", character.zoneId);
+            std::snprintf(fallback, sizeof(fallback), "Зона %u", character.zoneId);
             zone = fallback;
         }
         ui_.text(col.at(), zone.c_str(), bodySize, theme.pencil);
@@ -513,17 +541,17 @@ void CharacterScreen::renderDetails(game::GameHandler& gameHandler,
 
     if (character.hasGuild()) {
         const std::string& guildName = gameHandler.lookupGuildName(character.guildId);
-        const std::string line = guildName.empty() ? std::string("Guild: resolving...")
+        const std::string line = guildName.empty() ? std::string("Гильдия: загрузка...")
                                                    : "<" + guildName + ">";
         ui_.text(col.at(), line.c_str(), smallSize, theme.inkSoft);
     } else {
-        ui_.text(col.at(), "No guild", smallSize, theme.pencil);
+        ui_.text(col.at(), "Без гильдии", smallSize, theme.pencil);
     }
     col.gap(ui_.lineHeight(smallSize));
 
     if (character.hasPet()) {
         char pet[64];
-        std::snprintf(pet, sizeof(pet), "Pet, level %d (family %d)", character.pet.level,
+        std::snprintf(pet, sizeof(pet), "Питомец: уровень %d (семейство %d)", character.pet.level,
                       character.pet.family);
         ui_.text(col.at(), pet, smallSize, theme.pencil);
     }
@@ -549,29 +577,29 @@ void CharacterScreen::renderDeleteConfirm(const game::Character& character, floa
 
     char line[192];
     if (final) {
-        ui_.text(col.at(), "This cannot be undone", px(26), theme.crayonRed,
+        ui_.text(col.at(), "Это действие необратимо", px(26), theme.crayonRed,
                  /*titleFace=*/true);
         col.gap(px(30));
         std::snprintf(line, sizeof(line),
-                      "%s will be gone for good. Are you certain?", character.name.c_str());
+                      "Персонаж %s будет удалён навсегда. Вы уверены?", character.name.c_str());
     } else {
-        ui_.text(col.at(), "Delete this hero?", px(26), theme.ink, /*titleFace=*/true);
+        ui_.text(col.at(), "Удалить персонажа?", px(26), theme.ink, /*titleFace=*/true);
         col.gap(px(30));
-        std::snprintf(line, sizeof(line), "%s, level %d %s %s.", character.name.c_str(),
-                      character.level, game::getRaceName(character.race),
-                      game::getClassName(character.characterClass));
+        std::snprintf(line, sizeof(line), "%s, уровень %d, %s, %s.", character.name.c_str(),
+                      character.level, russianCharacterLabel(game::getRaceName(character.race)),
+                      russianCharacterLabel(game::getClassName(character.characterClass)));
     }
     col.gap(ui_.wrapped(col.at(), col.width(), line, px(kBodySize), theme.inkSoft) + px(10));
 
     const float y = b.y - px(28) - px(kButtonH);
     const float bh = px(kButtonH);
     if (ui_.button("del.cancel", ImVec2(col.x0, y), ImVec2(col.x0 + px(110), y + bh),
-                   "Keep")) {
+                   "Оставить")) {
         deleteConfirmStage = 0;
     }
     const float confirmW = px(final ? 200.0f : 170.0f);
     if (ui_.button("del.confirm", ImVec2(col.x1 - confirmW, y), ImVec2(col.x1, y + bh),
-                   final ? "Delete for good" : "Yes, delete",
+                   final ? "Удалить навсегда" : "Да, удалить",
                    PaperUI::ButtonKind::Primary)) {
         if (final) {
             if (onDeleteCharacter) onDeleteCharacter(character.guid);
@@ -609,7 +637,7 @@ void CharacterScreen::renderAddonsSheet(float screenW, float screenH) {
     Column col{a.x + px(28), b.x - px(28), a.y + px(28)};
     const float smallSize = px(kSmallSize);
 
-    ui_.text(col.at(), "AddOns", px(30), theme.ink, /*titleFace=*/true);
+    ui_.text(col.at(), "Аддоны", px(30), theme.ink, /*titleFace=*/true);
     {
         const float r = smallSize * 0.95f;
         if (ui_.glyphButton("addons.close", ImVec2(col.x1 - r, col.y + r), r,
@@ -621,13 +649,13 @@ void CharacterScreen::renderAddonsSheet(float screenW, float screenH) {
 
     auto* am = services_.addonManager;
     if (!am) {
-        ui_.text(col.at(), "The addon system is not running.", px(kBodySize), theme.pencil);
+        ui_.text(col.at(), "Система аддонов не запущена.", px(kBodySize), theme.pencil);
         ui_.setLayer(PaperLayer::Page);
         return;
     }
 
     const auto& addons = am->getAddons();
-    ui_.text(col.at(), "Enabled addons load when you enter the world, or on /reload.",
+    ui_.text(col.at(), "Аддоны загружаются при входе в мир или по команде /reload.",
              smallSize, theme.pencil);
     col.gap(ui_.lineHeight(smallSize) + px(8));
     ui_.rule(ImVec2(col.x0, col.y), ImVec2(col.x1, col.y), paperFade(theme.ink, 0.45f),
@@ -637,8 +665,8 @@ void CharacterScreen::renderAddonsSheet(float screenW, float screenH) {
     const float listBottom = b.y - px(28);
     if (addons.empty()) {
         col.gap(ui_.wrapped(col.at(), col.width(),
-                            "None installed. Put addon folders under interface/AddOns/ in your "
-                            "data path, then restart the client.",
+                            "Аддоны не установлены. Поместите их в interface/AddOns/ внутри "
+                            "папки данных и перезапустите клиент.",
                             px(kBodySize), theme.pencil));
         ui_.setLayer(PaperLayer::Page);
         return;
@@ -669,14 +697,14 @@ void CharacterScreen::renderAddonsSheet(float screenW, float screenH) {
                      enabled ? theme.ink : theme.pencil);
 
             std::string sub;
-            if (auto it = addon.directives.find("Version");
+            if (auto it = addon.directives.find("Версия");
                 it != addon.directives.end() && !it->second.empty()) {
                 sub = "v" + it->second;
             }
-            if (auto it = addon.directives.find("Author");
+            if (auto it = addon.directives.find("Автор");
                 it != addon.directives.end() && !it->second.empty()) {
                 if (!sub.empty()) sub += "  ";
-                sub += "by " + it->second;
+                sub += "автор: " + it->second;
             }
             if (!sub.empty()) {
                 ui_.text(ImVec2(textX, rowA.y + px(4) + px(kBodySize) * 1.15f), sub.c_str(),
