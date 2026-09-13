@@ -139,14 +139,14 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
     ImGui::SetNextWindowBgAlpha(0.7f);  // Transparent background
 
-    if (!ImGui::Begin("Performance", nullptr, flags)) {
+    if (!ImGui::Begin("Производительность###Performance", nullptr, flags)) {
         ImGui::End();
         return;
     }
 
     // FPS section
     if (showFPS) {
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "PERFORMANCE");
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "ПРОИЗВОДИТЕЛЬНОСТЬ");
         ImGui::Separator();
 
         // Color-code FPS
@@ -159,52 +159,56 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
             fpsColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);  // Red
         }
 
-        ImGui::Text("FPS: ");
+        ImGui::Text("Кадров/с (FPS): ");
         ImGui::SameLine();
         ImGui::TextColored(fpsColor, "%.1f", currentFPS);
 
-        ImGui::Text("Avg: %.1f", averageFPS);
-        ImGui::Text("Min: %.1f", minFPS);
-        ImGui::Text("Max: %.1f", maxFPS);
-        ImGui::Text("Frame: %.2f ms", frameTime * 1000.0f);
+        ImGui::Text("Среднее: %.1f", averageFPS);
+        ImGui::Text("Минимум: %.1f", minFPS);
+        ImGui::Text("Максимум: %.1f", maxFPS);
+        ImGui::Text("Время кадра: %.2f мс", frameTime * 1000.0f);
 #ifdef __ANDROID__
-        ImGui::TextUnformatted("Sky diagnostic (live A/B)");
+        ImGui::TextUnformatted("ПРОВЕРКА ГРАФИКИ");
+        ImGui::TextUnformatted("Галочка = включено, пусто = выключено");
         bool skyEnabled = renderer->isSkyDiagnosticEnabled();
-        if (ImGui::Checkbox("Sky and clouds", &skyEnabled)) {
+        if (ImGui::Checkbox("Небо целиком###Sky and clouds", &skyEnabled)) {
             renderer->setSkyDiagnosticEnabled(skyEnabled);
             LOG_WARNING("[Sky diagnostic] Sky and clouds ", skyEnabled ? "ON" : "OFF");
         }
+        if (!skyEnabled)
+            ImGui::TextUnformatted("Небо и облака сейчас не рисуются");
         if (auto* clouds = renderer->getClouds()) {
             bool cachedNoise = clouds->isCachedNoiseEnabled();
-            if (ImGui::Checkbox("Cached cloud noise", &cachedNoise)) {
+            if (ImGui::Checkbox("Ускоренный расчёт облаков###Cached cloud noise", &cachedNoise)) {
                 clouds->setCachedNoiseEnabled(cachedNoise);
                 LOG_WARNING("[Cloud noise] Cached mode ", cachedNoise ? "ON" : "OFF");
             }
+            ImGui::TextUnformatted("Без ускорения: исходный расчёт облаков");
             bool cloudsEnabled = clouds->isEnabled();
-            if (ImGui::Checkbox("Cloud layer", &cloudsEnabled)) {
+            if (ImGui::Checkbox("Слой облаков###Cloud layer", &cloudsEnabled)) {
                 clouds->setEnabled(cloudsEnabled);
                 LOG_WARNING("[Sky diagnostic] Cloud layer ", cloudsEnabled ? "ON" : "OFF");
             }
         }
         if (auto* water = renderer->getWaterRenderer()) {
             bool reflection = water->isReflectionSceneEnabled();
-            if (ImGui::Checkbox("Reflection scene", &reflection))
+            if (ImGui::Checkbox("Отражения мира в воде###Reflection scene", &reflection))
                 water->setReflectionSceneEnabled(reflection);
         }
         if (auto* grass = renderer->getGrassRenderer()) {
             bool enabled = grass->isEnabled();
-            if (ImGui::Checkbox("Procedural grass", &enabled))
+            if (ImGui::Checkbox("Объёмная трава###Procedural grass", &enabled))
                 grass->setEnabled(enabled);
-            ImGui::Text("Grass source: %u blades", grass->sourceBladeCount());
+            ImGui::Text("Создано травинок: %u", grass->sourceBladeCount());
         } else {
-            ImGui::TextUnformatted("Procedural grass: unavailable");
+            ImGui::TextUnformatted("Объёмная трава: недоступна");
         }
 #endif
 
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.6f, 1.0f), "CPU TIMINGS (ms)");
-        ImGui::Text("Update: %.2f (Camera: %.2f)", renderer->getLastUpdateMs(), renderer->getLastCameraUpdateMs());
-        ImGui::Text("Render: %.2f (Terrain: %.2f, WMO: %.2f, M2: %.2f)",
+        ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.6f, 1.0f), "ПРОЦЕССОР (мс)");
+        ImGui::Text("Обновление: %.2f (камера: %.2f)", renderer->getLastUpdateMs(), renderer->getLastCameraUpdateMs());
+        ImGui::Text("Отрисовка: %.2f (земля: %.2f, WMO: %.2f, M2: %.2f)",
                     renderer->getLastRenderMs(),
                     renderer->getLastTerrainRenderMs(),
                     renderer->getLastWMORenderMs(),
@@ -217,11 +221,13 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
                 gpuTotalMs += ms;
             }
             if (!timings.empty()) {
-                ImGui::Text("GPU: %.2f ms (%zu passes)", gpuTotalMs, timings.size());
+                ImGui::Text("Видеочип: %.2f мс (этапов: %zu)", gpuTotalMs, timings.size());
                 for (const auto& [name, ms] : timings) {
                     const std::string_view label(name);
                     if (label == "reflection-on" || label == "reflection-off" || label == "terrain+grass")
-                        ImGui::Text("  %s: %.2f ms", name, ms);
+                        ImGui::Text("  %s: %.2f мс",
+                            label == "terrain+grass" ? "Земля и трава" :
+                            label == "reflection-on" ? "Отражения вкл." : "Отражения выкл.", ms);
                 }
             }
         }
@@ -230,25 +236,27 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
         auto* terrainManager = renderer->getTerrainManager();
         auto* terrainRenderer = renderer->getTerrainRenderer();
         if (terrainManager || terrainRenderer) {
-            ImGui::Text("Scene: %d tiles, %d chunks drawn",
+            ImGui::Text("Мир: %d тайлов, видно участков: %d",
                         terrainManager ? terrainManager->getLoadedTileCount() : 0,
                         terrainRenderer ? terrainRenderer->getRenderedChunkCount() : 0);
         }
         if (wmoRenderer || m2Renderer) {
-            ImGui::Text("Objects: WMO %u/%u, M2 %u/%u (instances/draws)",
+            ImGui::Text("Объекты: WMO %u/%u, M2 %u/%u",
                         wmoRenderer ? wmoRenderer->getInstanceCount() : 0,
                         wmoRenderer ? wmoRenderer->getDrawCallCount() : 0,
                         m2Renderer ? m2Renderer->getInstanceCount() : 0,
                         m2Renderer ? m2Renderer->getDrawCallCount() : 0);
         }
+        if (wmoRenderer || m2Renderer)
+            ImGui::TextUnformatted("WMO: здания, M2: модели; объекты/отрисовки");
         if (!compact && (wmoRenderer || m2Renderer)) {
-            ImGui::Text("Collision queries:");
+            ImGui::Text("Проверки столкновений:");
             if (wmoRenderer) {
-                ImGui::Text("  WMO: %.2f ms (%u calls)",
+                ImGui::Text("  WMO: %.2f мс (вызовов: %u)",
                             wmoRenderer->getQueryTimeMs(), wmoRenderer->getQueryCallCount());
             }
             if (m2Renderer) {
-                ImGui::Text("  M2:  %.2f ms (%u calls)",
+                ImGui::Text("  M2: %.2f мс (вызовов: %u)",
                             m2Renderer->getQueryTimeMs(), m2Renderer->getQueryCallCount());
             }
         }
@@ -265,8 +273,11 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
         }
 
         // FSR info
+        if (!renderer->getPostProcessPipeline()->isFSREnabled() &&
+            !renderer->getPostProcessPipeline()->isFSR2Enabled())
+            ImGui::TextUnformatted("FSR: ВЫКЛ");
         if (renderer->getPostProcessPipeline()->isFSREnabled()) {
-            ImGui::TextColored(colors::kGreen, "FSR 1.0: ON");
+            ImGui::TextColored(colors::kGreen, "FSR 1.0: ВКЛ");
             auto* ctx = renderer->getVkContext();
             if (ctx) {
                 auto ext = ctx->getSwapchainExtent();
@@ -277,29 +288,29 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
             }
         }
         if (renderer->getPostProcessPipeline()->isFSR2Enabled()) {
-            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "FSR 3 Upscale: ON");
-            ImGui::Text("  JitterSign=%.2f", renderer->getPostProcessPipeline()->getFSR2JitterSign());
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "Масштабирование FSR 3: ВКЛ");
+            ImGui::Text("  Сдвиг выборки: %.2f", renderer->getPostProcessPipeline()->getFSR2JitterSign());
             const bool fgEnabled = renderer->getPostProcessPipeline()->isAmdFsr3FramegenEnabled();
             const bool fgReady = renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeReady();
             const bool fgActive = renderer->getPostProcessPipeline()->isAmdFsr3FramegenRuntimeActive();
-            const char* fgStatus = "Disabled";
+            const char* fgStatus = "Выключено";
             if (fgEnabled) {
-                fgStatus = fgActive ? "Active" : (fgReady ? "Ready (waiting/fallback)" : "Unavailable");
+                fgStatus = fgActive ? "Работает" : (fgReady ? "Готово (ожидание/резерв)" : "Недоступно");
             }
-            ImGui::Text("  FSR3 FG: %s (%s)", fgStatus, renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimePath());
+            ImGui::Text("  Генерация кадров FSR3: %s (%s)", fgStatus, renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimePath());
             const std::string& fgErr = renderer->getPostProcessPipeline()->getAmdFsr3FramegenRuntimeError();
             if (!fgErr.empty()) {
-                ImGui::TextWrapped("  FG Last Error: %s", fgErr.c_str());
+                ImGui::TextWrapped("  Ошибка генерации кадров: %s", fgErr.c_str());
             }
-            ImGui::Text("  FG Dispatches: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FramegenDispatchCount());
-            ImGui::Text("  Upscale Dispatches: %zu", renderer->getPostProcessPipeline()->getAmdFsr3UpscaleDispatchCount());
-            ImGui::Text("  FG Fallbacks: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FallbackCount());
+            ImGui::Text("  Запусков генерации кадров: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FramegenDispatchCount());
+            ImGui::Text("  Запусков масштабирования: %zu", renderer->getPostProcessPipeline()->getAmdFsr3UpscaleDispatchCount());
+            ImGui::Text("  Переходов в резервный режим: %zu", renderer->getPostProcessPipeline()->getAmdFsr3FallbackCount());
         }
         if (renderer->getPostProcessPipeline()->isFXAAEnabled()) {
             if (renderer->getPostProcessPipeline()->isFSR2Enabled()) {
-                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "FXAA: ON (FSR3+FXAA combined)");
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.8f, 1.0f), "Сглаживание FXAA: ВКЛ (с FSR3)");
             } else {
-                ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.6f, 1.0f), "FXAA: ON");
+                ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.6f, 1.0f), "Сглаживание FXAA: ВКЛ");
             }
         }
 
@@ -310,7 +321,7 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showRenderer) {
         auto* terrainRenderer = renderer->getTerrainRenderer();
         if (terrainRenderer) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "RENDERING");
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "ОТРИСОВКА");
             ImGui::Separator();
 
             int totalChunks = terrainRenderer->getChunkCount();
@@ -318,16 +329,16 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
             int culled = terrainRenderer->getCulledChunkCount();
             int triangles = terrainRenderer->getTriangleCount();
 
-            ImGui::Text("Chunks: %d", totalChunks);
-            ImGui::Text("Rendered: %d", rendered);
-            ImGui::Text("Culled: %d", culled);
+            ImGui::Text("Участков: %d", totalChunks);
+            ImGui::Text("Отрисовано: %d", rendered);
+            ImGui::Text("Отсечено: %d", culled);
 
             if (totalChunks > 0) {
                 float visiblePercent = (rendered * 100.0f) / totalChunks;
-                ImGui::Text("Visible: %.1f%%", visiblePercent);
+                ImGui::Text("Видимо: %.1f%%", visiblePercent);
             }
 
-            ImGui::Text("Triangles: %s",
+            ImGui::Text("Треугольников: %s",
                        triangles >= 1000000 ?
                        (std::to_string(triangles / 1000) + "K").c_str() :
                        std::to_string(triangles).c_str());
@@ -340,13 +351,13 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showTerrain) {
         auto* terrainManager = renderer->getTerrainManager();
         if (terrainManager) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "TERRAIN");
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ЛАНДШАФТ");
             ImGui::Separator();
 
-            ImGui::Text("Loaded tiles: %d", terrainManager->getLoadedTileCount());
+            ImGui::Text("Загружено тайлов: %d", terrainManager->getLoadedTileCount());
 
             auto currentTile = terrainManager->getCurrentTile();
-            ImGui::Text("Current tile: [%d,%d]", currentTile.x, currentTile.y);
+            ImGui::Text("Текущий тайл: [%d,%d]", currentTile.x, currentTile.y);
 
             ImGui::Spacing();
         }
@@ -354,11 +365,11 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
         // Water info
         auto* waterRenderer = renderer->getWaterRenderer();
         if (waterRenderer) {
-            ImGui::TextColored(ImVec4(0.2f, 0.5f, 1.0f, 1.0f), "WATER");
+            ImGui::TextColored(ImVec4(0.2f, 0.5f, 1.0f, 1.0f), "ВОДА");
             ImGui::Separator();
 
-            ImGui::Text("Surfaces: %d", waterRenderer->getSurfaceCount());
-            ImGui::Text("Enabled: %s", waterRenderer->isEnabled() ? "YES" : "NO");
+            ImGui::Text("Поверхностей: %d", waterRenderer->getSurfaceCount());
+            ImGui::Text("Включено: %s", waterRenderer->isEnabled() ? "ДА" : "НЕТ");
 
             ImGui::Spacing();
         }
@@ -368,57 +379,57 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showTerrain) {
         auto* skybox = renderer->getSkybox();
         if (skybox) {
-            ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "SKY");
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "НЕБО");
             ImGui::Separator();
 
             float time = skybox->getTimeOfDay();
             int hours = static_cast<int>(time);
             int minutes = static_cast<int>((time - hours) * 60);
 
-            ImGui::Text("Time: %02d:%02d", hours, minutes);
-            ImGui::Text("Auto: %s", skybox->isTimeProgressionEnabled() ? "YES" : "NO");
+            ImGui::Text("Время: %02d:%02d", hours, minutes);
+            ImGui::Text("Смена времени: %s", skybox->isTimeProgressionEnabled() ? "ДА" : "НЕТ");
 
             // Celestial info
             auto* celestial = renderer->getCelestial();
             if (celestial) {
-                ImGui::Text("Sun/Moon: %s", celestial->isEnabled() ? "YES" : "NO");
+                ImGui::Text("Солнце и луна: %s", celestial->isEnabled() ? "ДА" : "НЕТ");
 
                 // Moon phase info
                 float phase = celestial->getMoonPhase();
-                const char* phaseName = "Unknown";
-                if (phase < 0.0625f || phase >= 0.9375f) phaseName = "New";
-                else if (phase < 0.1875f) phaseName = "Wax Cresc";
-                else if (phase < 0.3125f) phaseName = "1st Qtr";
-                else if (phase < 0.4375f) phaseName = "Wax Gibb";
-                else if (phase < 0.5625f) phaseName = "Full";
-                else if (phase < 0.6875f) phaseName = "Wan Gibb";
-                else if (phase < 0.8125f) phaseName = "Last Qtr";
-                else phaseName = "Wan Cresc";
+                const char* phaseName = "Неизвестно";
+                if (phase < 0.0625f || phase >= 0.9375f) phaseName = "Новолуние";
+                else if (phase < 0.1875f) phaseName = "Растущий серп";
+                else if (phase < 0.3125f) phaseName = "Первая четверть";
+                else if (phase < 0.4375f) phaseName = "Растущая луна";
+                else if (phase < 0.5625f) phaseName = "Полнолуние";
+                else if (phase < 0.6875f) phaseName = "Убывающая луна";
+                else if (phase < 0.8125f) phaseName = "Последняя четверть";
+                else phaseName = "Убывающий серп";
 
-                ImGui::Text("Moon: %s (%.0f%%)", phaseName, phase * 100.0f);
-                ImGui::Text("Cycling: %s", celestial->isMoonPhaseCycling() ? "YES" : "NO");
+                ImGui::Text("Луна: %s (%.0f%%)", phaseName, phase * 100.0f);
+                ImGui::Text("Смена фаз: %s", celestial->isMoonPhaseCycling() ? "ДА" : "НЕТ");
             }
 
             // Star field info
             auto* starField = renderer->getStarField();
             if (starField) {
-                ImGui::Text("Stars: %d (%s)", starField->getStarCount(),
-                           starField->isEnabled() ? "ON" : "OFF");
+                ImGui::Text("Звёзд: %d (%s)", starField->getStarCount(),
+                           starField->isEnabled() ? "ВКЛ" : "ВЫКЛ");
             }
 
             // Cloud info
             auto* clouds = renderer->getClouds();
             if (clouds) {
-                ImGui::Text("Clouds: %s (%.0f%%)",
-                           clouds->isEnabled() ? "ON" : "OFF",
+                ImGui::Text("Облака: %s (%.0f%%)",
+                           clouds->isEnabled() ? "ВКЛ" : "ВЫКЛ",
                            clouds->getDensity() * 100.0f);
             }
 
             // Lens flare info
             auto* lensFlare = renderer->getLensFlare();
             if (lensFlare) {
-                ImGui::Text("Lens Flare: %s (%.0f%%)",
-                           lensFlare->isEnabled() ? "ON" : "OFF",
+                ImGui::Text("Солнечные блики: %s (%.0f%%)",
+                           lensFlare->isEnabled() ? "ВКЛ" : "ВЫКЛ",
                            lensFlare->getIntensity() * 100.0f);
             }
 
@@ -430,24 +441,24 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showRenderer) {
         auto* weather = renderer->getWeather();
         if (weather) {
-            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "WEATHER");
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "ПОГОДА");
             ImGui::Separator();
 
-            const char* typeName = "None";
+            const char* typeName = "Нет осадков";
             using WeatherType = rendering::Weather::Type;
             auto type = weather->getWeatherType();
-            if (type == WeatherType::RAIN) typeName = "Rain";
-            else if (type == WeatherType::SNOW) typeName = "Snow";
+            if (type == WeatherType::RAIN) typeName = "Дождь";
+            else if (type == WeatherType::SNOW) typeName = "Снег";
 
-            ImGui::Text("Type: %s", typeName);
+            ImGui::Text("Тип: %s", typeName);
             if (weather->isEnabled()) {
-                ImGui::Text("Particles: %d", weather->getParticleCount());
-                ImGui::Text("Intensity: %.0f%%", weather->getIntensity() * 100.0f);
+                ImGui::Text("Частиц: %d", weather->getParticleCount());
+                ImGui::Text("Интенсивность: %.0f%%", weather->getIntensity() * 100.0f);
             }
 
             auto* lightning = renderer->getLightning();
             if (lightning && lightning->isEnabled()) {
-                ImGui::Text("Lightning: active (%.0f%%)", lightning->getIntensity() * 100.0f);
+                ImGui::Text("Молнии: включены (%.0f%%)", lightning->getIntensity() * 100.0f);
             }
 
             ImGui::Spacing();
@@ -458,10 +469,10 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showRenderer) {
         auto* terrainRenderer = renderer->getTerrainRenderer();
         if (terrainRenderer) {
-            ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "FOG");
+            ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "ТУМАН");
             ImGui::Separator();
 
-            ImGui::Text("Distance fog: %s", terrainRenderer->isFogEnabled() ? "ON" : "OFF");
+            ImGui::Text("Туман вдали: %s", terrainRenderer->isFogEnabled() ? "ВКЛ" : "ВЫКЛ");
 
             ImGui::Spacing();
         }
@@ -471,10 +482,10 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showRenderer) {
         auto* charRenderer = renderer->getCharacterRenderer();
         if (charRenderer) {
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "CHARACTERS");
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "ПЕРСОНАЖИ");
             ImGui::Separator();
 
-            ImGui::Text("Instances: %zu", charRenderer->getInstanceCount());
+            ImGui::Text("Экземпляров: %zu", charRenderer->getInstanceCount());
 
             ImGui::Spacing();
         }
@@ -484,20 +495,20 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     if (showRenderer) {
         auto* wmoRenderer = renderer->getWMORenderer();
         if (wmoRenderer) {
-            ImGui::TextColored(ImVec4(0.8f, 0.7f, 0.6f, 1.0f), "WMO BUILDINGS");
+            ImGui::TextColored(ImVec4(0.8f, 0.7f, 0.6f, 1.0f), "ЗДАНИЯ (WMO)");
             ImGui::Separator();
 
-            ImGui::Text("Models: %u", wmoRenderer->getModelCount());
-            ImGui::Text("Instances: %u", wmoRenderer->getInstanceCount());
-            ImGui::Text("Triangles: %u", wmoRenderer->getTotalTriangleCount());
-            ImGui::Text("Draw Calls: %u", wmoRenderer->getDrawCallCount());
-            ImGui::Text("Floor Cache: %zu", wmoRenderer->getFloorCacheSize());
-            ImGui::Text("Dist Culled: %u groups", wmoRenderer->getDistanceCulledGroups());
+            ImGui::Text("Моделей: %u", wmoRenderer->getModelCount());
+            ImGui::Text("Экземпляров: %u", wmoRenderer->getInstanceCount());
+            ImGui::Text("Треугольников: %u", wmoRenderer->getTotalTriangleCount());
+            ImGui::Text("Вызовов отрисовки: %u", wmoRenderer->getDrawCallCount());
+            ImGui::Text("Кэш поверхностей: %zu", wmoRenderer->getFloorCacheSize());
+            ImGui::Text("Отсечено по дальности: %u групп", wmoRenderer->getDistanceCulledGroups());
             if (wmoRenderer->isOcclusionCullingEnabled()) {
-                ImGui::Text("Occl Culled: %u groups", wmoRenderer->getOcclusionCulledGroups());
+                ImGui::Text("Скрыто препятствиями: %u групп", wmoRenderer->getOcclusionCulledGroups());
             }
             if (wmoRenderer->isPortalCullingEnabled()) {
-                ImGui::Text("Portal Culled: %u groups", wmoRenderer->getPortalCulledGroups());
+                ImGui::Text("Отсечено порталами: %u групп", wmoRenderer->getPortalCulledGroups());
             }
 
             ImGui::Spacing();
@@ -508,7 +519,7 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
     {
         const std::string& zoneName = renderer->getCurrentZoneName();
         if (!zoneName.empty()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "ZONE");
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "ЛОКАЦИЯ");
             ImGui::Separator();
             ImGui::Text("%s", zoneName.c_str());
             ImGui::Spacing();
@@ -517,53 +528,53 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
 
     // Camera info
     if (showCamera && camera) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "CAMERA");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "КАМЕРА");
         ImGui::Separator();
 
         glm::vec3 pos = camera->getPosition();
-        ImGui::Text("Pos: %.1f, %.1f, %.1f", pos.x, pos.y, pos.z);
+        ImGui::Text("Позиция: %.1f, %.1f, %.1f", pos.x, pos.y, pos.z);
 
         glm::vec3 forward = camera->getForward();
-        ImGui::Text("Dir: %.2f, %.2f, %.2f", forward.x, forward.y, forward.z);
+        ImGui::Text("Направление: %.2f, %.2f, %.2f", forward.x, forward.y, forward.z);
 
         ImGui::Spacing();
     }
 
     // Controls help
     if (showControls) {
-        ImGui::TextColored(kTitle, "CONTROLS");
+        ImGui::TextColored(kTitle, "УПРАВЛЕНИЕ");
         ImGui::Separator();
 
-        ImGui::TextColored(kSectionHeader, "Movement");
-        ImGui::TextColored(kHelpText, "WASD: Move/Strafe");
-        ImGui::TextColored(kHelpText, "Q/E: Strafe left/right");
-        ImGui::TextColored(kHelpText, "Space: Jump");
-        ImGui::TextColored(kHelpText, "X: Sit/Stand");
-        ImGui::TextColored(kHelpText, "~: Auto-run");
-        ImGui::TextColored(kHelpText, "Z: Sheathe weapons");
+        ImGui::TextColored(kSectionHeader, "Перемещение");
+        ImGui::TextColored(kHelpText, "WASD: движение");
+        ImGui::TextColored(kHelpText, "Q/E: шаг влево/вправо");
+        ImGui::TextColored(kHelpText, "Пробел: прыжок");
+        ImGui::TextColored(kHelpText, "X: сесть/встать");
+        ImGui::TextColored(kHelpText, "~: автобег");
+        ImGui::TextColored(kHelpText, "Z: убрать оружие");
 
         ImGui::Spacing();
-        ImGui::TextColored(kSectionHeader, "UI Panels");
-        ImGui::TextColored(kHelpText, "B: Bags/Inventory");
-        ImGui::TextColored(kHelpText, "C: Character sheet");
-        ImGui::TextColored(kHelpText, "L: Quest log");
-        ImGui::TextColored(kHelpText, "N: Talents");
-        ImGui::TextColored(kHelpText, "P: Spellbook");
-        ImGui::TextColored(kHelpText, "M: World map");
+        ImGui::TextColored(kSectionHeader, "Окна интерфейса");
+        ImGui::TextColored(kHelpText, "B: сумки");
+        ImGui::TextColored(kHelpText, "C: персонаж");
+        ImGui::TextColored(kHelpText, "L: задания");
+        ImGui::TextColored(kHelpText, "N: таланты");
+        ImGui::TextColored(kHelpText, "P: заклинания");
+        ImGui::TextColored(kHelpText, "M: карта мира");
 
         ImGui::Spacing();
-        ImGui::TextColored(kSectionHeader, "Combat & Chat");
-        ImGui::TextColored(kHelpText, "1-0,-,=: Action bar");
-        ImGui::TextColored(kHelpText, "Tab: Target cycle");
-        ImGui::TextColored(kHelpText, "Enter: Chat");
-        ImGui::TextColored(kHelpText, "/: Chat command");
+        ImGui::TextColored(kSectionHeader, "Бой и чат");
+        ImGui::TextColored(kHelpText, "1-0,-,=: панель действий");
+        ImGui::TextColored(kHelpText, "Tab: смена цели");
+        ImGui::TextColored(kHelpText, "Enter: чат");
+        ImGui::TextColored(kHelpText, "/: команда чата");
 
         ImGui::Spacing();
-        ImGui::TextColored(kSectionHeader, "Debug");
-        ImGui::TextColored(kHelpText, "F1: Toggle this HUD");
-        ImGui::TextColored(kHelpText, "F4: Toggle shadows");
-        ImGui::TextColored(kHelpText, "F7: Level-up FX");
-        ImGui::TextColored(kHelpText, "Esc: Settings/Close");
+        ImGui::TextColored(kSectionHeader, "Диагностика");
+        ImGui::TextColored(kHelpText, "F1: показать/скрыть счётчик");
+        ImGui::TextColored(kHelpText, "F4: включить/выключить тени");
+        ImGui::TextColored(kHelpText, "F7: эффект повышения уровня");
+        ImGui::TextColored(kHelpText, "Esc: настройки/закрыть");
     }
 
     ImGui::End();
