@@ -227,12 +227,12 @@ void main() {
         vec4 ripple = texture(ClassicWater, TexCoord);
         vec3 illumination = clamp(ambientColor.rgb + lightColor.rgb *
             max(-lightDir.z, 0.0), vec3(0.0), vec3(1.0));
-        // Lighter blue palette for original-texture water. Partly neutralize
+        // Dark blue palette for original-texture water. Partly neutralize
         // warm land lighting so it does not suppress the blue channel, while
         // retaining its intensity (including night-time darkening).
         vec3 blueTint = basicType > 0.5
-            ? vec3(0.12, 0.42, 0.68)
-            : vec3(0.14, 0.48, 0.70);
+            ? vec3(0.06, 0.28, 0.46)
+            : vec3(0.07, 0.32, 0.50);
         float lightLevel = dot(illumination, vec3(0.2126, 0.7152, 0.0722));
         vec3 waterLight = mix(illumination, vec3(lightLevel), 0.65);
         vec3 color = (blueTint + ripple.rgb) * waterLight;
@@ -240,13 +240,8 @@ void main() {
         float fogFactor = clamp((fogParams.y - dist) /
             max(fogParams.y - fogParams.x, 0.001), 0.0, 1.0);
         color = mix(fogColor.rgb, color, fogFactor);
-        // Texture alpha describes the ripple pattern, not the whole body's
-        // opacity. Preserve the material baseline so low-alpha BLP frames
-        // do not make the sea disappear. This also reduces opacity contrast
-        // when viewing the same two-sided surface from underwater.
-        float bodyAlpha = clamp(waterAlpha, 0.0, 1.0);
-        float alpha = mix(bodyAlpha, 1.0, clamp(ripple.a, 0.0, 1.0));
-        outColor = vec4(color, clamp(alpha * alphaScale, 0.0, 1.0));
+        // Opaque from both sides as requested; BLP RGB still animates the ripples.
+        outColor = vec4(color, 1.0);
         return;
     }
 
