@@ -272,7 +272,7 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
         }
 
         if (authState == auth::AuthState::AUTHENTICATED) {
-            setStatus("Authentication successful!", false);
+            setStatus("Вход выполнен!", false);
             authenticating = false;
 
             // Compute and save password hash if user typed a fresh password
@@ -307,11 +307,11 @@ void AuthScreen::render(auth::AuthHandler& authHandler) {
                 authHandler.disconnect();
                 beginAuthAttempt(authHandler);
             } else {
-                setStatus(failureReason.empty() ? "Authentication failed" : failureReason, true);
+                setStatus(failureReason.empty() ? "Не удалось войти" : failureReason, true);
                 authenticating = false;
             }
         } else if (!waitingForSecurityCode && authTimer >= AUTH_TIMEOUT) {
-            setStatus("Connection timed out - server did not respond", true);
+            setStatus("Сервер не ответил вовремя", true);
             authenticating = false;
             authHandler.disconnect();
         }
@@ -509,8 +509,8 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
 
     {
         PaperUI::FieldOpts opts;
-        opts.placeholder = "account name";
-        const PaperUI::FieldResult r = labelledField("Account", "account", username_, opts);
+        opts.placeholder = "имя аккаунта";
+        const PaperUI::FieldResult r = labelledField("Аккаунт", "account", username_, opts);
         if (r.changed) statusProminent = false;
         if (r.submitted) ui_.focus("password");
     }
@@ -518,7 +518,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
     {
         // The eye sits on the label row, right-aligned, so the box itself is
         // the same shape as the one above it.
-        ui_.text(col.at(), "Password", labelSize, theme.inkSoft);
+        ui_.text(col.at(), "Пароль", labelSize, theme.inkSoft);
         const float eyeR = labelSize * 0.72f;
         if (ui_.glyphButton("reveal", ImVec2(col.x1 - eyeR, col.y + labelSize * 0.5f), eyeR,
                             showPassword ? PaperUI::Glyph::Eye : PaperUI::Glyph::EyeClosed)) {
@@ -530,7 +530,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
         const auto [a, b] = col.row(px(kFieldHeight));
         PaperUI::FieldOpts opts;
         opts.password = !showPassword;
-        opts.placeholder = "password";
+        opts.placeholder = "пароль";
         const PaperUI::FieldResult r = ui_.field("password", a, b, password_, opts);
         col.gap(px(kRowGap));
 
@@ -547,7 +547,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
     }
 
     if (codeInMain) {
-        ui_.text(col.at(), "Security code", labelSize, theme.inkSoft);
+        ui_.text(col.at(), "Код безопасности", labelSize, theme.inkSoft);
         ui_.textRight(col.x1, col.y + (labelSize - smallSize) * 0.5f,
                       authState == auth::AuthState::AUTHENTICATOR_REQUIRED ? "authenticator"
                                                                            : "PIN",
@@ -557,7 +557,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
         PaperUI::FieldOpts opts;
         opts.password = true;
         opts.digitsOnly = true;
-        opts.placeholder = "code";
+        opts.placeholder = "код";
         const PaperUI::FieldResult r = ui_.field("pin", a, b, pinCode_, opts);
         col.gap(px(kRowGap));
         if (r.submitted) submit = true;
@@ -584,19 +584,19 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
         char label[64];
         bool enabled = true;
         if (codeInMain) {
-            std::snprintf(label, sizeof(label), "Submit Code");
+            std::snprintf(label, sizeof(label), "Отправить код");
         } else if (authenticating) {
-            std::snprintf(label, sizeof(label), "Connecting  %.0fs", authTimer);
+            std::snprintf(label, sizeof(label), "Подключение: %.0f с", authTimer);
             enabled = false;
         } else {
-            std::snprintf(label, sizeof(label), "Log In");
+            std::snprintf(label, sizeof(label), "Войти");
         }
         if (ui_.button("login", a, b, label, PaperUI::ButtonKind::Primary, enabled)) submit = true;
     }
 
     // ---- the disclosure --------------------------------------------------
     {
-        const char* label = advancedOpen_ ? "fewer options" : "more options";
+        const char* label = advancedOpen_ ? "скрыть настройки" : "дополнительные настройки";
         const float w = ui_.textWidth(label, smallSize);
         if (ui_.link("advanced", ImVec2(centreX - w * 0.5f, col.y), label, smallSize)) {
             advancedOpen_ = !advancedOpen_;
@@ -614,11 +614,11 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
 
         // Saved servers.
         {
-            ui_.text(col.at(), "Realm", labelSize, theme.inkSoft);
+            ui_.text(col.at(), "Сервер", labelSize, theme.inkSoft);
             col.gap(labelRow);
             std::vector<std::string> rows;
             rows.reserve(servers_.size() + 1);
-            rows.emplace_back("Somewhere else...");
+            rows.emplace_back("Другой сервер...");
             for (const auto& s : servers_) {
                 std::string row = makeServerKey(s.hostname, s.port);
                 if (!s.username.empty()) row += "   " + s.username;
@@ -628,9 +628,9 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
                                    selectedServerIndex_ < static_cast<int>(servers_.size()))
                 ? makeServerKey(servers_[selectedServerIndex_].hostname,
                                 servers_[selectedServerIndex_].port)
-                : makeServerKey(hostname_.text(), port) + "   (not saved)";
+                : makeServerKey(hostname_.text(), port) + "   (не сохранён)";
 
-            int choice = selectedServerIndex_ + 1;  // row 0 is "somewhere else"
+            int choice = selectedServerIndex_ + 1;  // row 0 is "другой сервер"
             const auto [a, b] = col.row(px(kFieldHeight));
             if (ui_.dropdown("servers", a, b, preview, rows, &choice)) {
                 if (choice == 0) selectedServerIndex_ = -1;
@@ -644,8 +644,8 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
             const float portW = px(84);
             const float gap = px(12);
             const float hostW = contentW - portW - gap;
-            ui_.text(col.at(), "Address", labelSize, theme.inkSoft);
-            ui_.text(ImVec2(col.x0 + hostW + gap, col.y), "Port", labelSize, theme.inkSoft);
+            ui_.text(col.at(), "Адрес", labelSize, theme.inkSoft);
+            ui_.text(ImVec2(col.x0 + hostW + gap, col.y), "Порт", labelSize, theme.inkSoft);
             col.gap(labelRow);
 
             const float y = col.y;
@@ -677,7 +677,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
         if (haveExpansions) {
             const auto& profiles = registry->getAllProfiles();
 
-            ui_.text(col.at(), "Expansion", labelSize, theme.inkSoft);
+            ui_.text(col.at(), "Версия игры", labelSize, theme.inkSoft);
             col.gap(labelRow);
             std::vector<std::string> rows;
             rows.reserve(profiles.size());
@@ -686,7 +686,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
             const std::string preview =
                 (expansionIndex >= 0 && expansionIndex < static_cast<int>(profiles.size()))
                     ? rows[static_cast<size_t>(expansionIndex)]
-                    : std::string("choose one");
+                    : std::string("выберите версию");
             {
                 const auto [a, b] = col.row(px(kFieldHeight));
                 if (ui_.dropdown("expansion", a, b, preview, rows, &expansionIndex)) {
@@ -703,18 +703,18 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
             std::vector<std::string> rows2;
             std::vector<std::string> ids;
             rows2.emplace_back(protocolProfile
-                                   ? "Match protocol  (" + protocolProfile->shortName + ")"
-                                   : "Match protocol");
+                                   ? "Как у протокола (" + protocolProfile->shortName + ")"
+                                   : "Как у протокола");
             ids.emplace_back();
             for (const auto& candidate : profiles) {
                 if (!std::filesystem::exists(candidate.dataPath + "/manifest.json")) continue;
-                rows2.push_back(candidate.shortName + " assets");
+                rows2.push_back(candidate.shortName + " — данные");
                 ids.push_back(candidate.id);
             }
             const char* dataPathEnv = std::getenv("WOW_DATA_PATH");
             const std::filesystem::path baseData = dataPathEnv ? dataPathEnv : "./Data";
             if (std::filesystem::exists(baseData / "manifest.json")) {
-                rows2.emplace_back("Legacy root Data");
+                rows2.emplace_back("Старая папка Data");
                 ids.emplace_back("legacy");
             }
 
@@ -722,7 +722,7 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
             for (int i = 0; i < static_cast<int>(ids.size()); ++i)
                 if (ids[static_cast<size_t>(i)] == assetProfileId_) { assetChoice = i; break; }
 
-            ui_.text(col.at(), "Assets", labelSize, theme.inkSoft);
+            ui_.text(col.at(), "Данные игры", labelSize, theme.inkSoft);
             col.gap(labelRow);
             {
                 const auto [a, b] = col.row(px(kFieldHeight));
@@ -735,25 +735,25 @@ void AuthScreen::renderCard(auth::AuthHandler& authHandler, float screenW, float
                 col.gap(px(kRowGap));
             }
             if (!assetProfileId_.empty()) {
-                ui_.text(col.at(), "Cross-expansion DBC and model formats may differ.", smallSize,
+                ui_.text(col.at(), "Форматы данных разных версий игры могут отличаться.", smallSize,
                          theme.pencil);
                 col.gap(smallRow + px(4));
             }
         } else {
-            ui_.text(col.at(), "Expansion: WotLK 3.3.5a (default)", smallSize, theme.pencil);
+            ui_.text(col.at(), "Версия: WotLK 3.3.5a (по умолчанию)", smallSize, theme.pencil);
             col.gap(smallRow + px(kRowGap));
         }
 
         if (codeInAdvanced) {
-            ui_.text(col.at(), "Security code", labelSize, theme.inkSoft);
-            ui_.textRight(col.x1, col.y + (labelSize - smallSize) * 0.5f, "if your realm asks",
+            ui_.text(col.at(), "Код безопасности", labelSize, theme.inkSoft);
+            ui_.textRight(col.x1, col.y + (labelSize - smallSize) * 0.5f, "если требует сервер",
                           smallSize, theme.pencil);
             col.gap(labelRow);
             const auto [a, b] = col.row(px(kFieldHeight));
             PaperUI::FieldOpts opts;
             opts.password = true;
             opts.digitsOnly = true;
-            opts.placeholder = "PIN or authenticator";
+            opts.placeholder = "PIN или код приложения";
             if (ui_.field("pin", a, b, pinCode_, opts).submitted) submit = true;
             col.gap(px(kRowGap));
         }
@@ -944,7 +944,7 @@ void AuthScreen::stopLoginMusic() {
 void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
     // Validate inputs
     if (username_.empty()) {
-        setStatus("Enter an account name", true);
+        setStatus("Введите имя аккаунта", true);
         return;
     }
 
@@ -952,12 +952,12 @@ void AuthScreen::attemptAuth(auth::AuthHandler& authHandler) {
     const bool useHash = usingStoredHash && password_.text() == PASSWORD_PLACEHOLDER;
 
     if (!useHash && password_.empty()) {
-        setStatus("Enter a password", true);
+        setStatus("Введите пароль", true);
         return;
     }
 
     if (hostname_.empty()) {
-        setStatus("Enter an address to connect to", true);
+        setStatus("Введите адрес сервера", true);
         return;
     }
 
@@ -999,7 +999,7 @@ void AuthScreen::beginAuthAttempt(auth::AuthHandler& authHandler) {
         ss << "Retrying " << hostname_.text() << ":" << port
            << " with auth protocol " << static_cast<int>(protocolVersion) << "...";
     } else {
-        ss << "Connecting to " << hostname_.text() << ":" << port << "...";
+        ss << "Подключение к " << hostname_.text() << ":" << port << "...";
     }
     setStatus(ss.str(), false);
 
@@ -1038,7 +1038,7 @@ void AuthScreen::beginAuthAttempt(auth::AuthHandler& authHandler) {
     if (authHandler.connect(hostname_.text(), static_cast<uint16_t>(port))) {
         authenticating = true;
         authTimer = 0.0f;
-        setStatus(isRetry ? "Reconnected, authenticating..." : "Connected, authenticating...", false);
+        setStatus(isRetry ? "Соединение восстановлено, проверяем аккаунт..." : "Соединение установлено, проверяем аккаунт...", false);
         pinAutoSubmitted_ = false;
         securityPromptFocused_ = false;
 
@@ -1060,8 +1060,8 @@ void AuthScreen::beginAuthAttempt(auth::AuthHandler& authHandler) {
         pinCode_.clear();
     } else {
         std::stringstream errSs;
-        errSs << "Failed to connect to " << hostname_.text() << ":" << port
-              << " - check that the server is online and the address is correct";
+        errSs << "Не удалось подключиться к " << hostname_.text() << ":" << port
+              << " — проверьте адрес и доступность сервера";
         setStatus(errSs.str(), true);
         authenticating = false;
     }
@@ -1580,7 +1580,7 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
 
     Column col{a.x + px(kPad), b.x - px(kPad), a.y + px(kPad)};
 
-    ui_.text(col.at(), "Graphics", px(kTitle), theme.ink, /*titleFace=*/true);
+    ui_.text(col.at(), "Графика", px(kTitle), theme.ink, /*titleFace=*/true);
     {
         const float r = px(kSmall) * 0.95f;
         if (ui_.glyphButton("gfx.close", ImVec2(col.x1 - r, col.y + r), r,
@@ -1589,7 +1589,7 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
         }
     }
     col.gap(px(kTitle) * 1.05f);
-    ui_.text(col.at(), "These take effect the next time you log in.", px(kSmall), theme.pencil);
+    ui_.text(col.at(), "Изменения вступят в силу при следующем входе.", px(kSmall), theme.pencil);
     col.gap(smallRow + px(8));
     ui_.rule(ImVec2(col.x0, col.y), ImVec2(col.x1, col.y), paperFade(theme.pencil, 0.6f),
              px(1.0f), 0x9A17u);
@@ -1597,9 +1597,9 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
 
     // ---- preset -----------------------------------------------------------
     {
-        ui_.text(col.at(), "Preset", px(kLabel), theme.inkSoft);
+        ui_.text(col.at(), "Качество", px(kLabel), theme.inkSoft);
         col.gap(labelRow);
-        const std::vector<std::string> names = {"Custom", "Low", "Medium", "High", "Ultra"};
+        const std::vector<std::string> names = {"Своё", "Низкое", "Среднее", "Высокое", "Максимум"};
         int preset = std::clamp(loginGfx_.preset, 0, static_cast<int>(names.size()) - 1);
         const auto [pa, pb] = col.cell(0.0f, px(220), px(kControl));
         if (ui_.dropdown("gfx.preset", pa, pb, names[static_cast<size_t>(preset)], names,
@@ -1623,13 +1623,13 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
             ui_.checkbox(id, ImVec2(left.x0, left.y), px(kCheckBox), label, value);
             left.gap(px(kCheckStep));
         };
-        toggle("gfx.shadows", "Shadows", &loginGfx_.shadows);
+        toggle("gfx.shadows", "Тени", &loginGfx_.shadows);
         toggle("gfx.fxaa", "FXAA", &loginGfx_.fxaa);
-        toggle("gfx.normals", "Normal mapping", &loginGfx_.normalMapping);
-        toggle("gfx.pom", "Parallax occlusion", &loginGfx_.pom);
-        toggle("gfx.water", "Water refraction", &loginGfx_.waterRefraction);
-        toggle("gfx.vsync", "V-Sync", &loginGfx_.vsync);
-        toggle("gfx.fullscreen", "Fullscreen", &loginGfx_.fullscreen);
+        toggle("gfx.normals", "Рельеф текстур", &loginGfx_.normalMapping);
+        toggle("gfx.pom", "Объём текстур", &loginGfx_.pom);
+        toggle("gfx.water", "Преломление воды", &loginGfx_.waterRefraction);
+        toggle("gfx.vsync", "Верт. синхронизация", &loginGfx_.vsync);
+        toggle("gfx.fullscreen", "Полный экран", &loginGfx_.fullscreen);
     }
 
     // ---- the ranges -------------------------------------------------------
@@ -1642,18 +1642,18 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
         };
 
         {
-            const auto [ra, rb] = labelled("Anti-aliasing");
+            const auto [ra, rb] = labelled("Сглаживание");
             // The same four the settings schema offers. This list once had
             // three, so 8x could be set in the game, never shown here, and
             // silently rewritten by anything picked here instead.
-            const std::vector<std::string> names = {"Off", "2x MSAA", "4x MSAA", "8x MSAA"};
+            const std::vector<std::string> names = {"Выкл.", "2x MSAA", "4x MSAA", "8x MSAA"};
             int aa = std::clamp(loginGfx_.antiAliasing, 0, 3);
             if (ui_.dropdown("gfx.aa", ra, rb, names[static_cast<size_t>(aa)], names, &aa))
                 loginGfx_.antiAliasing = aa;
             right.gap(px(8));
         }
         {
-            const auto [ra, rb] = labelled("Parallax quality");
+            const auto [ra, rb] = labelled("Качество объёма");
             // The names and the count both come from the one scale, so this
             // cannot go back to offering two entries of a three-entry setting
             // and writing the wrong index for the ones it did offer.
@@ -1667,24 +1667,24 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
             right.gap(px(8));
         }
         {
-            const auto [ra, rb] = labelled("Shadow distance");
+            const auto [ra, rb] = labelled("Дальность теней");
             ui_.sliderFloat("gfx.shadowdist", ra, rb, &loginGfx_.shadowDistance, 50.0f, 600.0f);
             right.gap(px(8));
         }
         {
-            const auto [ra, rb] = labelled("View distance");
+            const auto [ra, rb] = labelled("Дальность обзора");
             ui_.sliderFloat("gfx.viewdist", ra, rb, &loginGfx_.viewDistance, 400.0f, 2400.0f);
             right.gap(px(8));
         }
         {
             // 150, not 200: GameScreen::loadSettings clamps there, so the last
             // fifty units of this slider were silently discarded at login.
-            const auto [ra, rb] = labelled("Ground clutter");
+            const auto [ra, rb] = labelled("Мелкая растительность");
             ui_.sliderInt("gfx.clutter", ra, rb, &loginGfx_.groundClutter, 0, 150);
             right.gap(px(8));
         }
         {
-            const auto [ra, rb] = labelled("Brightness");
+            const auto [ra, rb] = labelled("Яркость");
             ui_.sliderInt("gfx.brightness", ra, rb, &loginGfx_.brightness, 0, 100);
             right.gap(px(8));
         }
@@ -1697,17 +1697,17 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
         const float y = col.y;
         const float bh = px(kButton);
         if (ui_.button("gfx.reset", ImVec2(col.x0, y), ImVec2(col.x0 + px(170), y + bh),
-                       "Reset to Medium")) {
+                       "Средние настройки")) {
             applyPresetToState(loginGfx_, 2);
             loginGfx_.preset = 2;
         }
         const float applyW = px(130);
         const float cancelW = px(110);
         if (ui_.button("gfx.cancel", ImVec2(col.x1 - applyW - px(12) - cancelW, y),
-                       ImVec2(col.x1 - applyW - px(12), y + bh), "Cancel")) {
+                       ImVec2(col.x1 - applyW - px(12), y + bh), "Отмена")) {
             settingsOpen_ = false;
         }
-        if (ui_.button("gfx.apply", ImVec2(col.x1 - applyW, y), ImVec2(col.x1, y + bh), "Apply",
+        if (ui_.button("gfx.apply", ImVec2(col.x1 - applyW, y), ImVec2(col.x1, y + bh), "Применить",
                        PaperUI::ButtonKind::Primary)) {
             saveLoginGraphicsState();
             if (services_.window && services_.window->isVsyncEnabled() != loginGfx_.vsync) {

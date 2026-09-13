@@ -170,6 +170,17 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
 #ifdef __ANDROID__
         ImGui::TextUnformatted("ПРОВЕРКА ГРАФИКИ");
         ImGui::TextUnformatted("Галочка = включено, пусто = выключено");
+        ImGui::TextUnformatted("Осадки: ВЫКЛ");
+        bool buildingsEnabled = renderer->isBuildingDiagnosticEnabled();
+        if (ImGui::Checkbox("Здания (WMO)###buildings", &buildingsEnabled)) {
+            renderer->setBuildingDiagnosticEnabled(buildingsEnabled);
+            LOG_WARNING("[Scene diagnostic] Buildings ", buildingsEnabled ? "ON" : "OFF");
+        }
+        bool modelsEnabled = renderer->isModelDiagnosticEnabled();
+        if (ImGui::Checkbox("Деревья и другие модели (M2)###models", &modelsEnabled)) {
+            renderer->setModelDiagnosticEnabled(modelsEnabled);
+            LOG_WARNING("[Scene diagnostic] Models ", modelsEnabled ? "ON" : "OFF");
+        }
         bool skyEnabled = renderer->isSkyDiagnosticEnabled();
         if (ImGui::Checkbox("Небо целиком###Sky and clouds", &skyEnabled)) {
             renderer->setSkyDiagnosticEnabled(skyEnabled);

@@ -150,6 +150,11 @@ public:
     QuestMarkerRenderer* getQuestMarkerRenderer() const { return questMarkerRenderer.get(); }
     FootprintRenderer* getFootprintRenderer() const { return footprintRenderer.get(); }
     SkySystem* getSkySystem() const { return skySystem.get(); }
+    bool isBuildingDiagnosticEnabled() const { return buildingDiagnosticEnabled_; }
+    void setBuildingDiagnosticEnabled(bool enabled) { buildingDiagnosticEnabled_ = enabled; }
+    bool isModelDiagnosticEnabled() const { return modelDiagnosticEnabled_; }
+    void setModelDiagnosticEnabled(bool enabled) { modelDiagnosticEnabled_ = enabled; }
+
     bool isSkyDiagnosticEnabled() const { return skyDiagnosticEnabled_; }
     void setSkyDiagnosticEnabled(bool enabled) { skyDiagnosticEnabled_ = enabled; }
     const std::string& getCurrentZoneName() const;
@@ -253,6 +258,8 @@ private:
     std::unique_ptr<Weather> weather;
     std::unique_ptr<Lightning> lightning;
     std::unique_ptr<LightingManager> lightingManager;
+    bool buildingDiagnosticEnabled_ = true;
+    bool modelDiagnosticEnabled_ = true;
     bool skyDiagnosticEnabled_ = true;
     std::unique_ptr<SkySystem> skySystem;  // Coordinator for sky rendering
     std::unique_ptr<SwimEffects> swimEffects;

@@ -2479,9 +2479,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
     const glm::mat4& projection = camera ? camera->getProjectionMatrix() : glm::mat4(1.0f);
 
     // GPU crash diagnostic: skip individual renderers to isolate which one faults
-    static const bool skipWMO = (std::getenv("WOWEE_SKIP_WMO") != nullptr);
+    const bool skipWMO = (std::getenv("WOWEE_SKIP_WMO") != nullptr) || !buildingDiagnosticEnabled_;
     static const bool skipChars = (std::getenv("WOWEE_SKIP_CHARS") != nullptr);
-    static const bool skipM2 = (std::getenv("WOWEE_SKIP_M2") != nullptr);
+    const bool skipM2 = (std::getenv("WOWEE_SKIP_M2") != nullptr) || !modelDiagnosticEnabled_;
     static const bool skipTerrain = (std::getenv("WOWEE_SKIP_TERRAIN") != nullptr);
     static const bool skipSkyFromEnvironment = (std::getenv("WOWEE_SKIP_SKY") != nullptr);
     const bool skipSky = skipSkyFromEnvironment || !skyDiagnosticEnabled_;

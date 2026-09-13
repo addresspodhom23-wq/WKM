@@ -92,7 +92,14 @@ public:
     /**
      * @brief Enable or disable weather
      */
-    void setEnabled(bool enabled) { this->enabled = enabled; }
+    void setEnabled(bool enabled) {
+#ifdef __ANDROID__
+        (void)enabled;
+        this->enabled = false; // Precipitation disabled in the mobile client.
+#else
+        this->enabled = enabled;
+#endif
+    }
     [[nodiscard]] bool isEnabled() const { return enabled; }
 
     /**
