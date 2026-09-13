@@ -1228,6 +1228,14 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             pc.isFoliage = -1;
             return;
         }
+#ifdef __ANDROID__
+        // Keep vegetation fixed in place, including player-brush displacement.
+        // Sky and cloth retain their separate rendering modes.
+        if (mdl.shadowWindFoliage) {
+            pc.isFoliage = 0;
+            return;
+        }
+#endif
         if (mdl.isHangingCloth) {
             // Held at the top and free at the hem, so the shader is given the
             // top rather than a height to normalise against. The throw is a
@@ -2168,7 +2176,11 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
     // Helper lambda to draw instances with a given foliageSway setting
     auto drawPass = [&](bool foliagePass) {
         ShadowParamsUBO params{};
+#ifdef __ANDROID__
+        params.foliageSway = 0; // Match stationary vegetation in the color pass.
+#else
         params.foliageSway = foliagePass ? 1 : 0;
+#endif
         params.windTime = globalTime;
         params.foliageMotionDamp = 1.0f;
         // For foliage pass: enable texture+alphaTest in UBO (per-batch textures bound below)
