@@ -232,7 +232,13 @@ void main() {
         float fogFactor = clamp((fogParams.y - dist) /
             max(fogParams.y - fogParams.x, 0.001), 0.0, 1.0);
         color = mix(fogColor.rgb, color, fogFactor);
-        outColor = vec4(color, clamp(ripple.a * alphaScale, 0.0, 1.0));
+        // Texture alpha describes the ripple pattern, not the whole body's
+        // opacity. Preserve the material baseline so low-alpha BLP frames
+        // do not make the sea disappear. This also reduces opacity contrast
+        // when viewing the same two-sided surface from underwater.
+        float bodyAlpha = clamp(waterAlpha, 0.0, 1.0);
+        float alpha = mix(bodyAlpha, 1.0, clamp(ripple.a, 0.0, 1.0));
+        outColor = vec4(color, clamp(alpha * alphaScale, 0.0, 1.0));
         return;
     }
 
