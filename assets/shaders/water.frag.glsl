@@ -231,8 +231,8 @@ void main() {
         // warm land lighting so it does not suppress the blue channel, while
         // retaining its intensity (including night-time darkening).
         vec3 blueTint = basicType > 0.5
-            ? vec3(0.06, 0.28, 0.46)
-            : vec3(0.07, 0.32, 0.50);
+            ? vec3(0.07, 0.32, 0.52)
+            : vec3(0.08, 0.36, 0.56);
         float lightLevel = dot(illumination, vec3(0.2126, 0.7152, 0.0722));
         vec3 waterLight = mix(illumination, vec3(lightLevel), 0.65);
         vec3 color = (blueTint + ripple.rgb) * waterLight;
