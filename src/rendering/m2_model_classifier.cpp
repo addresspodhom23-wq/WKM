@@ -472,6 +472,11 @@ M2ClassificationResult classifyM2Model(
     // m2.vert.glsl, which brushes it aside for the player and leaves the
     // authored motion alone.
     r.disableAnimation = r.isFoliageLike || chestName;
+#ifdef __ANDROID__
+    // Mobile vegetation is static, including authored ground-detail motion.
+    // Do not freeze independently classified ambient creatures.
+    if (r.isGroundDetail && !ambientCreature) r.disableAnimation = true;
+#endif
     // Ground clutter is foliage whether or not its name says so: the detail
     // doodads the ground-effect scatterer places are grass, weeds and flowers,
     // and most of them are named for their tileset rather than for a plant
