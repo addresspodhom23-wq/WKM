@@ -997,6 +997,7 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
             constexpr float PLAYER_HEIGHT = 2.0f;
             constexpr float MAX_TOTAL_PUSH = 0.02f; // Cap total push per instance
             bool pushed = false;
+            bool treeBlocked = false;
             float totalPushX = 0.0f, totalPushY = 0.0f;
 
             for (uint32_t ti : tl_m2_collisionTriScratch) {
@@ -1022,6 +1023,21 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
                 glm::vec3 closest = closestPointOnTriangle(localPos, v0, v1, v2);
                 glm::vec3 diff = localPos - closest;
                 float distXY = std::sqrt(diff.x * diff.x + diff.y * diff.y);
+
+                // Trees are solid, not soft push volumes. Preserve the last
+                // position when moving deeper into contact, but allow escape
+                // from an overlap (e.g. after spawning beside a trunk).
+                if (model.collisionTreeTrunk && distXY < localRadius) {
+                    const glm::vec3 previousClosest =
+                        closestPointOnTriangle(localFrom, v0, v1, v2);
+                    const glm::vec2 previousDelta(localFrom.x - previousClosest.x,
+                                                  localFrom.y - previousClosest.y);
+                    const float previousDistance = glm::length(previousDelta);
+                    if (distXY < previousDistance - 1e-5f) {
+                        treeBlocked = true;
+                        break;
+                    }
+                }
 
                 if (distXY < localRadius && distXY > 1e-4f) {
                     // Gentle push - very small fraction of penetration
@@ -1049,6 +1065,13 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
                         pushed = true;
                     }
                 }
+            }
+
+            if (treeBlocked) {
+                adjustedPos.x = from.x;
+                adjustedPos.y = from.y;
+                collided = true;
+                continue;
             }
 
             if (pushed) {
