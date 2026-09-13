@@ -227,7 +227,15 @@ void main() {
         vec4 ripple = texture(ClassicWater, TexCoord);
         vec3 illumination = clamp(ambientColor.rgb + lightColor.rgb *
             max(-lightDir.z, 0.0), vec3(0.0), vec3(1.0));
-        vec3 color = (waterColor.rgb + ripple.rgb) * illumination;
+        // Lighter blue palette for original-texture water. Partly neutralize
+        // warm land lighting so it does not suppress the blue channel, while
+        // retaining its intensity (including night-time darkening).
+        vec3 blueTint = basicType > 0.5
+            ? vec3(0.12, 0.42, 0.68)
+            : vec3(0.14, 0.48, 0.70);
+        float lightLevel = dot(illumination, vec3(0.2126, 0.7152, 0.0722));
+        vec3 waterLight = mix(illumination, vec3(lightLevel), 0.65);
+        vec3 color = (blueTint + ripple.rgb) * waterLight;
         float dist = length(viewPos.xyz - FragPos);
         float fogFactor = clamp((fogParams.y - dist) /
             max(fogParams.y - fogParams.x, 0.001), 0.0, 1.0);
