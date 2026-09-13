@@ -1588,7 +1588,7 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
             settingsOpen_ = false;
         }
     }
-    col.gap(px(kTitle) * 1.05f);
+    col.gap(ui_.inkHeight(px(kTitle), true) + px(10));
     ui_.text(col.at(), "Изменения вступят в силу при следующем входе.", px(kSmall), theme.pencil);
     col.gap(smallRow + px(8));
     ui_.rule(ImVec2(col.x0, col.y), ImVec2(col.x1, col.y), paperFade(theme.pencil, 0.6f),
@@ -1659,7 +1659,7 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
             // and writing the wrong index for the ones it did offer.
             std::vector<std::string> names;
             for (int i = 0; i < rendering::kPomQualityCount; ++i)
-                names.emplace_back(rendering::kPomQualityLabels[i]);
+                names.emplace_back(i == 0 ? "Низкое" : i == 1 ? "Среднее" : "Высокое");
             int quality = std::clamp(loginGfx_.pomQuality, 0, rendering::kPomQualityCount - 1);
             if (ui_.dropdown("gfx.pomq", ra, rb, names[static_cast<size_t>(quality)], names,
                              &quality))
