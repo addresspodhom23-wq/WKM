@@ -65,12 +65,14 @@ float fbm(vec2 p, int octaves) {
 void main() {
     vec3 dir = normalize(vWorldDir);
     float altitude = dir.z;
-    if (altitude < 0.0) discard;
+    // The simplified layer stops before the stretched horizon region.
+    const float horizonStart = cachedNoise ? 0.12 : 0.0;
+    if (altitude <= horizonStart) discard;
 
     vec3 sunDir = normalize(push.sunDirDensity.xyz);
     float density = push.sunDirDensity.w;
     if (density <= 0.0) discard;
-    float windOffset = push.windAndLight.x;
+    float windOffset = cachedNoise ? 0.0 : push.windAndLight.x;
     float sunIntensity = push.windAndLight.y;
     float ambient = push.windAndLight.z;
 
@@ -81,18 +83,29 @@ void main() {
 
     // --- Cumulus layer: domain-warped FBM for billowy, irregular shapes ---
     vec2 p = uv * 0.8 + wind;
-    vec2 q = vec2(fbm(p, 4), fbm(p + vec2(5.2, 1.3), 4));
-    float shape = fbm(p + q * 1.4, 5);
+    // Six texture reads in the simplified path, versus up to 27 previously.
+    // Match the original amplitude sums to retain similar density thresholds.
+    vec2 q = cachedNoise
+        ? vec2(gradientNoise(p), gradientNoise(p + vec2(5.2, 1.3))) * 0.9375
+        : vec2(fbm(p, 4), fbm(p + vec2(5.2, 1.3), 4));
+    float shape = cachedNoise
+        ? fbm(p + q * 1.4, 3) * (0.96875 / 0.875)
+        : fbm(p + q * 1.4, 5);
 
     // Coverage: density opens the threshold; erosion breaks up the edges
     float coverage = smoothstep(0.42 - density * 0.22, 0.74 - density * 0.10, shape);
-    float erosion = fbm(uv * 3.1 + wind * 1.6 + q, 3);
+    float erosion = cachedNoise
+        ? gradientNoise(uv * 3.1 + q) * 0.875
+        : fbm(uv * 3.1 + wind * 1.6 + q, 3);
     float cumulus = coverage * smoothstep(0.22, 0.55, erosion + coverage * 0.4);
 
     // --- Cirrus layer: thin, stretched, faster-drifting streaks ---
-    vec2 cuv = vec2(uv.x * 0.32, uv.y * 1.5) + wind * 1.8 + vec2(3.7, 9.1);
-    float cirrus = fbm(cuv, 3) * fbm(cuv * 2.3 + 4.0, 3);
-    cirrus = smoothstep(0.16, 0.5, cirrus) * 0.30 * (0.35 + 0.65 * density);
+    float cirrus = 0.0;
+    if (!cachedNoise) {
+        vec2 cuv = vec2(uv.x * 0.32, uv.y * 1.5) + wind * 1.8 + vec2(3.7, 9.1);
+        cirrus = fbm(cuv, 3) * fbm(cuv * 2.3 + 4.0, 3);
+        cirrus = smoothstep(0.16, 0.5, cirrus) * 0.30 * (0.35 + 0.65 * density);
+    }
 
     float cloud = clamp(cumulus + cirrus * (1.0 - cumulus), 0.0, 1.0);
 
@@ -100,7 +113,7 @@ void main() {
     cloud *= clamp(density * 1.6, 0.0, 1.0);
 
     // Horizon fade
-    cloud *= smoothstep(0.0, 0.15, altitude);
+    cloud *= smoothstep(horizonStart, cachedNoise ? 0.30 : 0.15, altitude);
     if (cloud < 0.01) discard;
 
     // This was previously checked after the expensive sun-ward FBM sample.
@@ -114,8 +127,11 @@ void main() {
 
     // Self-shadowing: re-sample the shape a step toward the sun; if the cloud
     // is denser upstream, this point sits in its own shadow.
-    float towardSun = fbm(p + q * 1.4 + sunDir.xy * 0.35, 5);
-    float shadow = clamp(1.0 - (towardSun - shape) * 2.2, 0.35, 1.0);
+    float shadow = mix(1.0, 0.65, cumulus);
+    if (!cachedNoise) {
+        float towardSun = fbm(p + q * 1.4 + sunDir.xy * 0.35, 5);
+        shadow = clamp(1.0 - (towardSun - shape) * 2.2, 0.35, 1.0);
+    }
 
     // Thick cores read darker - sunlight doesn't penetrate deep cloud
     float coreDarken = mix(1.0, 0.55, cumulus * cumulus);
