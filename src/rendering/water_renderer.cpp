@@ -11,6 +11,7 @@
 #include "rendering/camera.hpp"
 #include "rendering/frustum.hpp"
 #include "pipeline/adt_loader.hpp"
+#include "pipeline/asset_manager.hpp"
 #include "pipeline/wmo_loader.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -55,7 +56,82 @@ WaterRenderer::~WaterRenderer() {
     shutdown();
 }
 
-bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout) {
+
+bool WaterRenderer::loadClassicWaterTextures(pipeline::AssetManager* assets) {
+    VkDevice device = vkCtx->getDevice();
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    classicSetLayout_ = createDescriptorSetLayout(device, {binding});
+    if (!classicSetLayout_) return false;
+    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 61};
+    VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    pool.maxSets = 61;
+    pool.poolSizeCount = 1;
+    pool.pPoolSizes = &size;
+    if (vkCreateDescriptorPool(device, &pool, nullptr, &classicPool_) != VK_SUCCESS)
+        return false;
+
+    auto finish = [&](ClassicWaterFrame& frame) {
+        if (!frame.texture.createSampler(device, VK_FILTER_LINEAR, VK_FILTER_LINEAR,
+                                         VK_SAMPLER_ADDRESS_MODE_REPEAT, 1.0f)) return false;
+        VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        alloc.descriptorPool = classicPool_;
+        alloc.descriptorSetCount = 1;
+        alloc.pSetLayouts = &classicSetLayout_;
+        if (vkAllocateDescriptorSets(device, &alloc, &frame.set) != VK_SUCCESS) return false;
+        auto image = frame.texture.descriptorInfo();
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = frame.set;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &image;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        return true;
+    };
+    // Missing data stays a plain translucent surface, never procedural water.
+    const uint8_t fallback[] = {0, 0, 0, 56};
+    if (!classicFallback_.texture.upload(*vkCtx, fallback, 1, 1,
+                                        VK_FORMAT_R8G8B8A8_UNORM, false) ||
+        !finish(classicFallback_)) return false;
+    if (!classicWater_) return true;
+    if (!assets) {
+        LOG_WARNING("[Classic water] No asset manager; using plain fallback");
+        return true;
+    }
+    const char* prefixes[] = {"XTextures/River/Lake_A.", "XTextures/Ocean/Ocean_H."};
+    for (size_t type = 0; type < classicFrames_.size(); ++type) {
+        auto& frames = classicFrames_[type];
+        frames.reserve(30);
+        bool complete = true;
+        for (int index = 1; index <= 30; ++index) {
+            const std::string path = std::string(prefixes[type]) + std::to_string(index) + ".blp";
+            // Decode for Android devices without BC texture support; upload builds mips.
+            auto image = assets->loadTexture(path, false);
+            if (!image.isValid()) {
+                LOG_WARNING("[Classic water] Missing/invalid ", path, "; using plain fallback");
+                complete = false;
+                break;
+            }
+            ClassicWaterFrame frame;
+            if (!frame.texture.uploadBLP(*vkCtx, image) || !finish(frame)) return false;
+            frames.push_back(std::move(frame));
+        }
+        if (!complete) {
+            // An incomplete sequence must not play with a shortened period.
+            frames.clear();
+        }
+        LOG_INFO("[Classic water] ", prefixes[type], " frames=", frames.size(),
+                 " fps=30; procedural waves/refraction/foam OFF");
+    }
+    return true;
+}
+
+bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                               pipeline::AssetManager* assets) {
     vkCtx = ctx;
     if (!vkCtx) return false;
 
@@ -141,13 +217,15 @@ bool WaterRenderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLay
         return false;
     }
 
+    if (!loadClassicWaterTextures(assets)) return false;
+
     // --- Pipeline layout ---
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset = 0;
     pushRange.size = sizeof(WaterPushConstants);
 
-    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout, sceneSetLayout };
+    std::vector<VkDescriptorSetLayout> setLayouts = { perFrameLayout, materialSetLayout, sceneSetLayout, classicSetLayout_ };
     pipelineLayout = createPipelineLayout(device, setLayouts, { pushRange });
     if (!pipelineLayout) {
         LOG_ERROR("WaterRenderer: failed to create pipeline layout");
@@ -275,12 +353,14 @@ void WaterRenderer::recreatePipelines() {
 }
 
 void WaterRenderer::setReflectionSceneEnabled(bool enabled) {
+    if (classicWater_) enabled = false;
     if (reflectionSceneEnabled == enabled) return;
     reflectionSceneEnabled = enabled;
     LOG_WARNING("[Reflection diagnostic] Scene reflection ", enabled ? "ON" : "OFF");
 }
 
 void WaterRenderer::setRefractionEnabled(bool enabled) {
+    if (classicWater_) enabled = false;
     if (refractionEnabled == enabled) return;
     refractionEnabled = enabled;
 
@@ -346,6 +426,11 @@ void WaterRenderer::shutdown() {
     destroySceneHistoryResources();
     destroy(device, waterPipeline);
     destroy(device, pipelineLayout);
+    destroy(device, classicPool_);
+    for (auto& frames : classicFrames_) frames.clear();
+    classicFallback_.texture.destroy(device, vkCtx->getAllocator());
+    classicFallback_.set = VK_NULL_HANDLE;
+    destroy(device, classicSetLayout_);
     destroy(device, sceneDescPool);
     destroy(device, sceneSetLayout);
     destroy(device, materialDescPool);
@@ -396,6 +481,7 @@ void WaterRenderer::destroySceneHistoryResources() {
 // nothing downstream can put that back. It is the thing in the middle of the
 // screen, so it gets the pixels.
 VkExtent2D WaterRenderer::refractionCaptureExtent() const {
+    if (classicWater_) return {.width = 1, .height = 1};
     VkExtent2D full = vkCtx ? vkCtx->getSwapchainExtent() : VkExtent2D{.width = 0, .height = 0};
     return { .width = std::max(1u, full.width), .height = std::max(1u, full.height) };
 }
@@ -1092,7 +1178,7 @@ void WaterRenderer::clear() {
 // ==============================================================
 
 void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
-                            const Camera& camera, float /*time*/, bool use1x, uint32_t frameIndex) {
+                            const Camera& camera, float time, bool use1x, uint32_t frameIndex) {
     VkPipeline pipeline = (use1x && water1xPipeline) ? water1xPipeline : waterPipeline;
     if (!renderingEnabled || surfaces.empty() || !pipeline) {
         if (renderDiagCounter_++ % 300 == 0 && !surfaces.empty()) {
@@ -1170,6 +1256,23 @@ void WaterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
         // against a near plane of 0.05 while the camera's is 0.5.
         push.depthRange = glm::vec2(camera.getNearPlane(), camera.getFarPlane());
         push.sceneValid = sceneHistoryReady ? 1.0f : 0.0f;
+        push.pad0 = (classicWater_ && basicType < 2) ? 1.0f : 0.0f;
+
+        VkDescriptorSet textureSet = classicFallback_.set;
+        if (classicWater_ && basicType < 2) {
+            const auto& frames = classicFrames_[basicType];
+            if (!frames.empty()) {
+                // Initial playback rate; not encoded in the Vanilla LiquidType DBC.
+                constexpr float animationFps = 30.0f;
+                const float seconds = std::isfinite(time) ? std::max(time, 0.0f) : 0.0f;
+                const auto frame = static_cast<size_t>(std::fmod(
+                    std::floor(static_cast<double>(seconds) * animationFps),
+                    static_cast<double>(frames.size())));
+                textureSet = frames[frame].set;
+            }
+        }
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                                3, 1, &textureSet, 0, nullptr);
 
         vkCmdPushConstants(cmd, pipelineLayout,
                             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -1192,6 +1295,7 @@ void WaterRenderer::captureSceneHistory(VkCommandBuffer cmd,
                                         VkExtent2D srcExtent,
                                         bool srcDepthIsMsaa,
                                         uint32_t frameIndex) {
+    if (classicWater_) return; // Original texture water needs no scene copy.
     uint32_t fi = frameIndex % SCENE_HISTORY_FRAMES;
     auto& sh = sceneHistory[fi];
     if (!vkCtx || !cmd || !sh.colorImage || !sh.depthImage || srcExtent.width == 0 || srcExtent.height == 0) {
@@ -1873,6 +1977,7 @@ void WaterRenderer::uploadFrameUBO() {
 // character runs out of it - froth pinned under the feet reads as a decal.
 void WaterRenderer::updateWake(float deltaTime, const glm::vec2& pos,
                                const glm::vec2& travelDir, float intensity, bool wading) {
+    if (classicWater_) return;
     // Age the existing trail. Drift is what spreads a swimmer's two emission
     // lines apart with distance behind, which is the V.
     for (auto& p : wakePoints_) {

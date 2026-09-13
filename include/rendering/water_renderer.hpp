@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <array>
+#include "rendering/vk_texture.hpp"
 #include <memory>
 #include <optional>
 #include <cstdint>
@@ -11,6 +13,7 @@
 
 namespace wowee {
 namespace pipeline {
+    class AssetManager;
     struct ADTTerrain;
     struct LiquidData;
     struct WMOLiquid;
@@ -80,7 +83,8 @@ public:
     WaterRenderer();
     ~WaterRenderer();
 
-    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout);
+    bool initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
+                    pipeline::AssetManager* assets);
     void shutdown();
 
     void loadFromTerrain(const pipeline::ADTTerrain& terrain, bool append = false,
@@ -189,6 +193,22 @@ private:
     void createReflectionResources();
     void destroyReflectionResources();
 
+    // Immutable descriptor per animation frame: safe with frames in flight.
+    struct ClassicWaterFrame {
+        VkTexture texture;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+    };
+    bool loadClassicWaterTextures(pipeline::AssetManager* assets);
+    VkDescriptorSetLayout classicSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool classicPool_ = VK_NULL_HANDLE;
+    ClassicWaterFrame classicFallback_;
+    std::array<std::vector<ClassicWaterFrame>, 2> classicFrames_;
+#ifdef __ANDROID__
+    bool classicWater_ = true;
+#else
+    bool classicWater_ = false;
+#endif
+
     VkContext* vkCtx = nullptr;
 
     // Pipeline
@@ -271,3 +291,4 @@ private:
 
 } // namespace rendering
 } // namespace wowee
+

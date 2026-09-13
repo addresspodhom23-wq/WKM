@@ -56,6 +56,8 @@ layout(location = 4) in vec2 ScreenUV;
 
 layout(location = 0) out vec4 outColor;
 
+layout(set = 3, binding = 0) uniform sampler2D ClassicWater;
+
 // ============================================================
 // Dual-scroll detail normals (multi-octave ripple overlay)
 // ============================================================
@@ -218,6 +220,21 @@ float cellularFoam(vec2 p) { return cellularFoam(p, 1.0); }
 void main() {
     float time = fogParams.z;
     float basicType = push.liquidBasicType;
+
+    if (push.pad0 > 0.5) {
+        // The source BLP contains both the ripple detail and surface opacity.
+        // Frame selection is CPU-side with immutable descriptors, not noise.
+        vec4 ripple = texture(ClassicWater, TexCoord);
+        vec3 illumination = clamp(ambientColor.rgb + lightColor.rgb *
+            max(-lightDir.z, 0.0), vec3(0.0), vec3(1.0));
+        vec3 color = (waterColor.rgb + ripple.rgb) * illumination;
+        float dist = length(viewPos.xyz - FragPos);
+        float fogFactor = clamp((fogParams.y - dist) /
+            max(fogParams.y - fogParams.x, 0.001), 0.0, 1.0);
+        color = mix(fogColor.rgb, color, fogFactor);
+        outColor = vec4(color, clamp(ripple.a * alphaScale, 0.0, 1.0));
+        return;
+    }
 
     // ============================================================
     // Magma / Slime - self-luminous flowing surfaces, skip water path
@@ -697,3 +714,4 @@ void main() {
 
     outColor = vec4(color, alpha);
 }
+

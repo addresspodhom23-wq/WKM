@@ -146,6 +146,18 @@ void main() {
     float time = fogParams.z;
     vec4 worldPos = push.model * vec4(aPos, 1.0);
 
+    // Original texture animation keeps the extracted liquid mesh stationary.
+    if (push.pad0 > 0.5) {
+        FragPos = worldPos.xyz;
+        Normal = vec3(0.0, 0.0, 1.0);
+        // Stable world-space tiling; merged water meshes have varying sizes.
+        TexCoord = worldPos.xy / (533.333333 / 16.0);
+        WaveOffset = 0.0;
+        gl_Position = projection * view * worldPos;
+        ScreenUV = vec2(0.0);
+        return;
+    }
+
     // Evaluate Gerstner waves using X,Y horizontal plane
     GerstnerResult waves = evaluateGerstnerWaves(
         vec2(worldPos.x, worldPos.y), time,
