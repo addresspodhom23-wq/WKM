@@ -86,7 +86,10 @@ struct M2Texture {
 
 // Render batch (submesh)
 struct M2Batch {
-    uint8_t flags;
+    // Vanilla texUnit stores the first field as a full uint16. WotLK splits
+    // equivalent scheduling information differently, so keep priorityPlane
+    // separately while preserving all 16 authored Vanilla flag bits.
+    uint16_t flags;
     int8_t priorityPlane;
     uint16_t shader;                // Shader ID
     uint16_t skinSectionIndex;      // Submesh index
