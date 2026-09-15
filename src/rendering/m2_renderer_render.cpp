@@ -1711,6 +1711,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             case 0: desiredPipeline = opaquePipeline_; break;
                             case 1: desiredPipeline = alphaTestPipeline_; break;
                             case 2: desiredPipeline = alphaPipeline_; break;
+                            case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
                             default: desiredPipeline = additivePipeline_; break;
                         }
                     }
@@ -1932,7 +1933,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             VkPipeline desiredPipeline;
             switch (effectiveBlendMode) {
-                case 2: desiredPipeline = alphaPipeline_; break;
+                case M2_BLEND_ALPHA: desiredPipeline = alphaPipeline_; break;
+                case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
                 default: desiredPipeline = additivePipeline_; break;
             }
             if (desiredPipeline != currentPipeline) {

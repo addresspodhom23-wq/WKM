@@ -16,6 +16,8 @@ int main() {
     const auto wmo=read("assets/shaders/wmo.frag.glsl");
     const auto m2Loader=read("src/pipeline/m2_loader.cpp");
     const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
+    const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
+    const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
@@ -54,5 +56,12 @@ int main() {
     assert(m2Renderer.find("bgpu.materialFlags & 0x02u") != std::string::npos);
     assert(m2.find("int unfogged") != std::string::npos);
     assert(m2.find("vanillaRendering && unfogged != 0") != std::string::npos);
+
+    // Vanilla blend mode 3 (Add) is ONE+ONE, while mode 4 (AddAlpha) is
+    // SRC_ALPHA+ONE. They must not share the same Vulkan blend state.
+    assert(m2Header.find("additiveOnePipeline_") != std::string::npos);
+    assert(vkPipeline.find("PipelineBuilder::blendAdditiveOne()") != std::string::npos);
+    assert(vkPipeline.find("srcColorBlendFactor = VK_BLEND_FACTOR_ONE") != std::string::npos);
+    assert(m2Render.find("case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_") != std::string::npos);
     return 0;
 }
