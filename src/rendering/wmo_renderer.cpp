@@ -531,9 +531,8 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         uint32_t texIndex = 0;  // Default to first texture
         const uint32_t t1 = resolveTextureIndex(mat.texture1);
         const uint32_t t2 = resolveTextureIndex(mat.texture2);
-        const uint32_t t3 = resolveTextureIndex(mat.texture3);
 
-        // Prefer first valid non-empty texture among texture1/2/3.
+        // Vanilla 1.12 MOMT has exactly two authored texture offsets.
         auto pickValid = [&](uint32_t idx) -> bool {
             if (idx == std::numeric_limits<uint32_t>::max()) return false;
             if (idx >= model.textures.size()) return false;
@@ -542,16 +541,13 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
             return true;
         };
         if (!pickValid(t1)) {
-            if (!pickValid(t2)) {
-                pickValid(t3);
-            }
+            pickValid(t2);
         }
 
         if (matLogCount < 20) {
             core::Logger::getInstance().debug("  Material ", i,
                 ": tex1=", mat.texture1, "->", t1,
                 " tex2=", mat.texture2, "->", t2,
-                " tex3=", mat.texture3, "->", t3,
                 " chosen=", texIndex);
             matLogCount++;
         }
@@ -613,7 +609,7 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
             // Detect distance-only LOD/exterior shell groups:
             // 1. Very low vertex count (<100) - portal connectors, tiny shells
             // 2. ALWAYS_DRAW (0x10000) with low verts - distant LOD stand-ins
-            // 3. Pure OUTDOOR groups (0x8 set, 0x2000 not set) in large WMOs -
+            // 3. Pure OUTDOOR groups (0x8 EXTERIOR set) in large WMOs -
             //    exterior cityscape shells (e.g. "city01" in Stormwind)
             bool alwaysDraw = (wmoGroup.flags & 0x10000) != 0;
             size_t nVerts = wmoGroup.vertices.size();
@@ -630,7 +626,7 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
                 // "city01" etc are exterior cityscape shells in large WMOs
                 isCityShell = (lower.find("city") == 0 && lower.size() <= 8);
             }
-            bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
+            bool isIndoor = pipeline::wmoGroupIsInterior112(wmoGroup.flags);
             const bool isStormwindCathedralShell = isStormwindCityWmo && isLargeWmo &&
                                                    isIndoor && (wmoGroup.flags & 0x80) != 0;
             if ((nVerts < 100 && isLargeWmo && !isIndoor) ||
@@ -827,7 +823,7 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         // Allocate descriptor sets and UBOs for each merged batch
         groupRes.mergedBatches.reserve(batchMap.size());
         bool anyTextured = false;
-        bool isInterior = (groupRes.groupFlags & 0x2000) != 0;
+        bool isInterior = pipeline::wmoGroupIsInterior112(groupRes.groupFlags);
         for (auto& [key, mb] : batchMap) {
             if (mb.hasTexture) anyTextured = true;
 
@@ -957,27 +953,10 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         PortalData pd;
         pd.startVertex = portal.startVertex;
         pd.vertexCount = portal.vertexCount;
-        // Compute portal plane from vertices if we have them
-        if (portal.vertexCount >= 3 && portal.startVertex + portal.vertexCount <= model.portalVertices.size()) {
-            glm::vec3 v0 = model.portalVertices[portal.startVertex];
-            glm::vec3 v1 = model.portalVertices[portal.startVertex + 1];
-            glm::vec3 v2 = model.portalVertices[portal.startVertex + 2];
-            // Degenerate portal (collinear or coincident verts) → cross is
-            // zero → normalize returns NaN. Fall back to up-axis instead of
-            // poisoning the portal-frustum cull.
-            glm::vec3 cross = glm::cross(v1 - v0, v2 - v0);
-            float crossLen = glm::length(cross);
-            if (crossLen > 1e-6f) {
-                pd.normal = cross / crossLen;
-                pd.distance = glm::dot(pd.normal, v0);
-            } else {
-                pd.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-                pd.distance = 0.0f;
-            }
-        } else {
-            pd.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-            pd.distance = 0.0f;
-        }
+        // MOPT already authors the separating C4Plane. Rebuilding it from
+        // polygon winding loses the authored sign/orientation used by MOPR.side.
+        pd.normal = portal.normal;
+        pd.distance = portal.distance;
         modelData.portals.push_back(pd);
     }
     for (const auto& ref : model.portalRefs) {
@@ -1681,9 +1660,8 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                 // when the camera group is interior-only - the same rule
                 // getVisibleGroupsViaPortals applies to the viewer position.
                 constexpr uint32_t WMO_GROUP_FLAG_OUTDOOR = 0x8;
-                constexpr uint32_t WMO_GROUP_FLAG_INDOOR = 0x2000;
                 const uint32_t gFlags = model.groups[camGroup].groupFlags;
-                const bool isIndoor = (gFlags & WMO_GROUP_FLAG_INDOOR) != 0;
+                const bool isIndoor = pipeline::wmoGroupIsInterior112(gFlags);
                 const bool isOutdoor = (gFlags & WMO_GROUP_FLAG_OUTDOOR) != 0;
                 if (!isIndoor || isOutdoor) {
                     usePortalCulling = false;
@@ -2347,7 +2325,6 @@ void WMORenderer::getVisibleGroupsViaPortals(const ModelData& model,
                                               const glm::mat4& modelMatrix,
                                               std::unordered_set<uint32_t>& outVisibleGroups) const {
     constexpr uint32_t WMO_GROUP_FLAG_OUTDOOR = 0x8;
-    constexpr uint32_t WMO_GROUP_FLAG_INDOOR = 0x2000;
 
     // Find camera's containing group
     int cameraGroup = findContainingGroup(model, cameraLocalPos);
@@ -2367,7 +2344,7 @@ void WMORenderer::getVisibleGroupsViaPortals(const ModelData& model,
     // Only trust portal traversal when the camera is in an interior-only group.
     if (cameraGroup < static_cast<int>(model.groups.size())) {
         const uint32_t gFlags = model.groups[cameraGroup].groupFlags;
-        const bool isIndoor = (gFlags & WMO_GROUP_FLAG_INDOOR) != 0;
+        const bool isIndoor = pipeline::wmoGroupIsInterior112(gFlags);
         const bool isOutdoor = (gFlags & WMO_GROUP_FLAG_OUTDOOR) != 0;
         if (!isIndoor || isOutdoor) {
             for (size_t gi = 0; gi < model.groups.size(); gi++) {
@@ -3918,11 +3895,8 @@ void WMORenderer::updateActiveGroup(float glX, float glY, float glZ) {
 /// Five queries ask this before they look at an instance at all, and each had
 /// its own copy. The focus is what keeps a raycast from walking every building
 /// in the zone when the caller only cares about what is near the player.
-/// MOGP flag 0x2000: the group is indoors. It is what separates a
-/// building's inside from the porch and the roof, which are groups of the
-/// same model, and so what decides whether the sky is still drawn.
-constexpr uint32_t kWMOGroupIndoor = 0x2000;
-
+/// Vanilla 1.12 does not use the later-era 0x2000 shortcut here. A true
+/// interior is a group with neither EXTERIOR(0x08) nor exterior-lit(0x40).
 bool WMORenderer::outsideCollisionFocus(const WMOInstance& instance) const {
     return collisionFocus.excludes(instance.worldBoundsMin,
                                    instance.worldBoundsMax);
@@ -4028,7 +4002,8 @@ bool WMORenderer::isInsideWMOGroups(float glX, float glY, float glZ,
         const glm::vec3 localPos =
             glm::vec3(instance.invModelMatrix * glm::vec4(glX, glY, glZ, 1.0f));
         for (const auto& group : model.groups) {
-            if (interiorOnly && !(group.groupFlags & kWMOGroupIndoor)) continue;
+            if (interiorOnly &&
+                !pipeline::wmoGroupIsInterior112(group.groupFlags)) continue;
             if (localPos.x >= group.boundingBoxMin.x && localPos.x <= group.boundingBoxMax.x &&
                 localPos.y >= group.boundingBoxMin.y && localPos.y <= group.boundingBoxMax.y &&
                 localPos.z >= group.boundingBoxMin.z && localPos.z <= group.boundingBoxMax.z) {
