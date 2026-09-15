@@ -15,6 +15,7 @@ int main() {
     const auto m2=read("assets/shaders/m2.frag.glsl");
     const auto wmo=read("assets/shaders/wmo.frag.glsl");
     const auto m2Loader=read("src/pipeline/m2_loader.cpp");
+    const auto m2Header=read("include/rendering/m2_renderer.hpp");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
     assert(renderer.find("classicRendering_ ? 1.0f : 0.0f") != std::string::npos);
@@ -40,5 +41,10 @@ int main() {
     assert(transLookupPos > texUnitPos);
     assert(uvAnimLookupPos > transLookupPos);
     assert(unnamedPos > uvAnimLookupPos);
+
+    // Vanilla material bit 0x04 is the only reason an M2 batch is two-sided.
+    assert(m2Header.find("int32_t twoSided") != std::string::npos);
+    assert(m2.find("int twoSided") != std::string::npos);
+    assert(m2.find("vanillaRendering && twoSided == 0 && !gl_FrontFacing") != std::string::npos);
     return 0;
 }
