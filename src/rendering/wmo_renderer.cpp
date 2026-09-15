@@ -3019,15 +3019,15 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
             continue;
         }
 
-        if (!triMopyFlags.empty()) {
+        // MOBR is authoritative when the WMO carries an authored BSP.
+        // MOPY is only the fallback collision classifier for groups that do
+        // not have MOBN/MOBR. Applying both throws away legitimate BSP faces.
+        if (bspCollisionFaceMask.empty() && !triMopyFlags.empty()) {
             const uint8_t flags =
                 triIndex < triMopyFlags.size() ? triMopyFlags[triIndex] : 0;
             const uint8_t material =
                 triIndex < triMopyMaterialIds.size() ? triMopyMaterialIds[triIndex] : 0;
             if (!wmoMopyCollidable(flags, material)) {
-                // Keep bounds/normals arrays indexed one-to-one with MOVI
-                // triangles, but do not put decorative/non-collision faces in
-                // the spatial query lists.
                 triBounds[triIndex] = { .minZ = 0.0f, .maxZ = 0.0f };
                 triNormals[triIndex] = glm::vec3(0.0f, 0.0f, 1.0f);
                 continue;
