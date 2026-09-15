@@ -37,6 +37,8 @@ layout(set = 1, binding = 7) uniform TerrainParams {
     int hasLayer3;
 };
 
+layout(set = 1, binding = 8) uniform sampler2D uBakedShadow;
+
 // Retain set 0's descriptor interface even though this shader deliberately
 // never samples the map. That keeps the existing pipeline layout compatible.
 layout(set = 0, binding = 1) uniform sampler2DShadow uShadowMap;
@@ -57,11 +59,14 @@ void main() {
     if (hasLayer3 != 0)
         colour = mix(colour, texture(uLayer3Texture, TexCoord), texture(uLayer3Alpha, LayerUV).r);
 
+    const bool vanillaRendering = shadowParams.w > 0.5;
     vec3 normal = normalize(Normal);
     vec3 toLight = normalize(-lightDir.xyz);
     float diffuseAmount = max(dot(normal, toLight), 0.0);
+    const float bakedSun =
+        vanillaRendering ? texture(uBakedShadow, LayerUV).r : 1.0;
     vec3 lit = colour.rgb *
-        (ambientColor.rgb + diffuseAmount * lightColor.rgb);
+        (ambientColor.rgb + bakedSun * diffuseAmount * lightColor.rgb);
 
     float distanceToCamera = length(viewPos.xyz - FragPos);
     float fogRange = max(fogParams.y - fogParams.x, 0.001);
