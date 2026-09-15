@@ -151,11 +151,13 @@ struct WMOGroup {
     glm::vec3 boundingBoxMax;
     uint16_t portalStart;
     uint16_t portalCount;
-    uint16_t batchCountA;
-    uint16_t batchCountB;
-    uint32_t fogIndices[4];     // Fog references
-    uint32_t liquidType;
-    uint32_t groupId;
+    uint8_t transparentBatchCount = 0;
+    uint8_t interiorBatchCount = 0;
+    uint8_t exteriorBatchCount = 0;
+    uint8_t batchPadding = 0;
+    uint8_t fogIndices[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    uint32_t liquidType = 0;
+    uint32_t groupId = 0;       // WMOAreaTable area/group id
 
     // Geometry
     std::vector<WMOVertex> vertices;
@@ -224,6 +226,10 @@ struct WMOModel {
 
     // Fog
     std::vector<WMOFog> fogs;
+
+    // Optional MCVP whole-WMO convex volume planes. A point behind all planes
+    // is inside the authored volume.
+    std::vector<glm::vec4> convexVolumePlanes;
 
     // Group names
     std::vector<std::string> groupNames;
