@@ -36,10 +36,10 @@ constexpr SettingDesc kSchema[] = {
     {"graphicspreset", "Quality preset", SettingKind::Enum, 0, 5, 1, "Graphics", "Quality",
      "Sets every graphics option at once: view distance, shadows,\n"
      "anti-aliasing, surface detail, ground clutter and grass.\n"
-     "Original WoW removes added renderer effects and uses conservative\n"
-     "3.3.5-era world-detail values as a mobile baseline.\n"
+     "Original WoW uses Vanilla 1.12-era draw distances and detail rules,\n"
+     "with Kraken-only surface effects disabled for a mobile baseline.\n"
      "Change any one of them afterwards and this reads Custom.",
-     "Custom|Low|Medium|High|Ultra|Original WoW", 0},
+     "Custom|Low|Medium|High|Ultra|Original WoW 1.12", 0},
     // No shadows row, because turning them off crashes the client.
     //
     // With the casters skipped the shadow pass still begins, clears and
