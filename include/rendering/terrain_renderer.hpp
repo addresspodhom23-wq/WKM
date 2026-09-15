@@ -38,7 +38,7 @@ struct TerrainChunkGPU {
     VmaAllocation indexAlloc = VK_NULL_HANDLE;
     uint32_t indexCount = 0;
 
-    // Material descriptor set (set 1: 7 samplers + params UBO)
+    // Material descriptor set (set 1: 7 layer samplers + params UBO + MCSH)
     VkDescriptorSet materialSet = VK_NULL_HANDLE;
 
     // Per-chunk params UBO (hasLayer1/2/3)
@@ -49,7 +49,11 @@ struct TerrainChunkGPU {
     VkTexture* baseTexture = nullptr;
     VkTexture* layerTextures[3] = {nullptr, nullptr, nullptr};
     VkTexture* alphaTextures[3] = {nullptr, nullptr, nullptr};
+    VkTexture* bakedShadowTexture = nullptr;
     int layerCount = 0;
+
+    // MCSH is unique to this terrain chunk rather than a shared tileset asset.
+    std::unique_ptr<VkTexture> ownedBakedShadowTexture;
 
     // Per-chunk alpha textures (owned by this chunk, destroyed on removal)
     std::vector<std::unique_ptr<VkTexture>> ownedAlphaTextures;
@@ -166,6 +170,8 @@ private:
     TerrainChunkGPU uploadChunk(const pipeline::ChunkMesh& chunk);
     VkTexture* loadTexture(const std::string& path);
     VkTexture* createAlphaTexture(const std::vector<uint8_t>& alphaData);
+    std::unique_ptr<VkTexture> createBakedShadowTexture(
+        std::span<const uint8_t> packedMCSH);
     bool isChunkVisible(const TerrainChunkGPU& chunk, const Frustum& frustum);
     void calculateBoundingSphere(TerrainChunkGPU& chunk, const pipeline::ChunkMesh& meshChunk);
     VkDescriptorSet allocateMaterialSet();
