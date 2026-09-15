@@ -29,6 +29,15 @@ int main() {
     assert(loader.find("portal.plane.w = read<float>") != std::string::npos);
     assert(loader.find("constexpr uint32_t kFogSize = 48") != std::string::npos);
 
+    // Vanilla MOMT has exactly two authored texture offsets. The final record
+    // slots are runtime handles, not a third texture.
+    assert(loader.find("constexpr uint32_t kMaterialSize = 64") != std::string::npos);
+    assert(loaderH.find("runtimeTexture1") != std::string::npos);
+    assert(loaderH.find("runtimeTexture2") != std::string::npos);
+    assert(loader.find("texture3") == std::string::npos);
+    assert(loaderH.find("texture3") == std::string::npos);
+    assert(wmo.find("mat.texture3") == std::string::npos);
+
     // Exact 68-byte Vanilla MOGP header.
     assert(loader.find("group.batchCountA = read<uint16_t>") != std::string::npos);
     assert(loader.find("group.batchCountD = read<uint16_t>") != std::string::npos);
