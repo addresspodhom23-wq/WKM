@@ -374,6 +374,9 @@ struct M2MaterialUBO {
     // Authored M2 material flag 0x04. Vanilla uses it to disable back-face
     // culling for leaf cards, cloth and other intentionally two-sided pieces.
     int32_t twoSided;
+    // Authored M2 material flag 0x02. Vanilla excludes these batches from
+    // distance fog (glows, overlays and other deliberately unfogged surfaces).
+    int32_t unfogged;
 };
 
 // M2 params UBO - matches M2Params in m2.vert.glsl (set 1, binding 1)

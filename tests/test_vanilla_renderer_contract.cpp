@@ -15,6 +15,7 @@ int main() {
     const auto m2=read("assets/shaders/m2.frag.glsl");
     const auto wmo=read("assets/shaders/wmo.frag.glsl");
     const auto m2Loader=read("src/pipeline/m2_loader.cpp");
+    const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
@@ -46,5 +47,12 @@ int main() {
     assert(m2Header.find("int32_t twoSided") != std::string::npos);
     assert(m2.find("int twoSided") != std::string::npos);
     assert(m2.find("vanillaRendering && twoSided == 0 && !gl_FrontFacing") != std::string::npos);
+
+    // Vanilla material bit 0x02 is Unfogged: it must survive material setup and
+    // bypass world distance fog in the Vanilla renderer.
+    assert(m2Header.find("int32_t unfogged") != std::string::npos);
+    assert(m2Renderer.find("bgpu.materialFlags & 0x02u") != std::string::npos);
+    assert(m2.find("int unfogged") != std::string::npos);
+    assert(m2.find("vanillaRendering && unfogged != 0") != std::string::npos);
     return 0;
 }
