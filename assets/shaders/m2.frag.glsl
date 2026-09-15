@@ -159,7 +159,13 @@ void main() {
         float mip = textureQueryLod(uTexture, TexCoord).x;
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
-    if (alphaTest != 0) {
+    if (classicVegetation && alphaTest != 0) {
+        // This draw uses an opaque, depth-writing pipeline. Fractional coverage
+        // cannot blend away dark transparent edge texels here. Use the texture's
+        // alpha mask directly, retaining painted dark leaves and branch detail.
+        if (texColor.a < alphaCutoff) discard;
+        texColor.a = 1.0;
+    } else if (alphaTest != 0) {
         // Screen-space sharpened alpha: rescale so the cutoff maps to the
         // texel boundary. With MSAA + alpha-to-coverage on the cutout
         // pipeline this dithers the edge band across samples, smoothing
@@ -168,7 +174,7 @@ void main() {
         texColor.a = clamp((texColor.a - alphaCutoff) / max(aGrad, 0.001) * 0.5 + 0.5, 0.0, 1.0);
         if (texColor.a < 1.0 / 255.0) discard;
     }
-    if (colorKeyBlack != 0) {
+    if (colorKeyBlack != 0 && !classicVegetation) {
         float lum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
         if (lum < colorKeyThreshold) discard;
     }
