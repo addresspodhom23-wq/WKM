@@ -254,6 +254,10 @@ struct M2Instance {
     /// one and not the scenery beside it.
     float highlight = 0.0f;
 
+    // Per-instance colour. Ordinary world M2s stay white; WMO doodads receive
+    // the MODD packed colour authored by the Vanilla client.
+    glm::vec4 instanceColor{1.0f};
+
     // Particle emitter state
     std::vector<float> emitterAccumulators;  // fractional particle counter per emitter
     std::vector<M2Particle> particles;
@@ -476,6 +480,7 @@ public:
 
     /// Light an instance while it is being pressed on. 0 clears it.
     void setInstanceHighlight(uint32_t instanceId, float amount);
+    void setInstanceColor(uint32_t instanceId, const glm::vec4& color);
     /// Take the light off whatever has it, whichever instance that was.
     void clearInstanceHighlights();
     /// Set the animation sequence by animation ID (e.g. anim::OPEN, anim::CLOSE).
@@ -699,14 +704,15 @@ private:
         int32_t boneBase;          //  4 bytes @ offset 80
         int32_t boneCount;         //  4 bytes @ offset 84 - clamps skinning reads
         float highlight = 0.0f;    //  4 bytes @ offset 88 - pressed-on lift
-        int32_t _pad = {};         //  4 bytes @ offset 92 - align to 96 (std430)
+        int32_t _pad = {};         //  4 bytes @ offset 92
+        glm::vec4 instanceColor{1.0f}; // 16 bytes @ offset 96 - Vanilla MODD colour
     };
     // How many instances one frame may hand the GPU, not how many exist. Ground
     // clutter is what fills it: it is drawn by the thousand and every tuft
     // takes a slot of its own, so at 16384 a dwarf standing in Dun Morogh
     // grass was already losing whole models for a frame at a time - which reads
     // as clutter blinking rather than as anything being over budget. Two
-    // buffers of 96 bytes a slot, so this costs 6 MB rather than 3.
+    // buffers of 112 bytes a slot, including authored per-instance colour.
     static constexpr uint32_t MAX_INSTANCE_DATA = 32768;
     VkDescriptorSetLayout instanceSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool instanceDescPool_ = VK_NULL_HANDLE;
