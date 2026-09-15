@@ -2535,7 +2535,12 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             m2Renderer->setInsideInterior(cameraController->isInsideInteriorWMO());
         }
         auto prepStart = std::chrono::steady_clock::now();
-        if (wmoRenderer) wmoRenderer->prepareRender();
+        if (wmoRenderer) {
+            wmoRenderer->prepareRender();
+            if (camera && m2Renderer) {
+                wmoRenderer->updateDoodadVisibility(*camera, characterPosition);
+            }
+        }
         auto prepWmoEnd = std::chrono::steady_clock::now();
         if (m2Renderer && camera) m2Renderer->prepareRender(frameIdx, *camera);
         if (useOriginalSkybox && camera)
@@ -2801,6 +2806,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
         }
 
         if (m2Renderer && camera && !skipM2) {
+            if (wmoRenderer) {
+                wmoRenderer->updateDoodadVisibility(*camera, characterPosition);
+            }
             if (cameraController) {
                 // Use isInsideInteriorWMO (flag 0x2000) for correct indoor detection
                 m2Renderer->setInsideInterior(cameraController->isInsideInteriorWMO());
