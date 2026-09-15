@@ -1371,13 +1371,15 @@ void M2Renderer::recreatePipelines() {
     destroy(device, alphaPipeline_);
     destroy(device, additiveOnePipeline_);
     destroy(device, additivePipeline_);
+    destroy(device, modulatePipeline_);
+    destroy(device, modulate2xPipeline_);
     destroy(device, particlePipeline_);
     destroy(device, particleAdditivePipeline_);
     destroy(device, smokePipeline_);
     destroy(device, ribbonPipeline_);
     destroy(device, ribbonAdditivePipeline_);
 
-    // The same ten pipelines initialize() builds, built by the same
+    // The same twelve pipelines initialize() builds, built by the same
     // function. The layouts are untouched above, so it makes none.
     buildMainPassPipelines(perFrameLayout_);
 

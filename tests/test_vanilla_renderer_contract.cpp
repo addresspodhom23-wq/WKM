@@ -63,5 +63,16 @@ int main() {
     assert(vkPipeline.find("PipelineBuilder::blendAdditiveOne()") != std::string::npos);
     assert(vkPipeline.find("srcColorBlendFactor = VK_BLEND_FACTOR_ONE") != std::string::npos);
     assert(m2Render.find("case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_") != std::string::npos);
+
+    // Vanilla modes 5/6 are multiplicative, not additive:
+    // Mod = DST_COLOR/ZERO, Mod2x = DST_COLOR/SRC_COLOR.
+    assert(m2Header.find("modulatePipeline_") != std::string::npos);
+    assert(m2Header.find("modulate2xPipeline_") != std::string::npos);
+    assert(vkPipeline.find("PipelineBuilder::blendModulate()") != std::string::npos);
+    assert(vkPipeline.find("PipelineBuilder::blendModulate2x()") != std::string::npos);
+    assert(vkPipeline.find("srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR") != std::string::npos);
+    assert(vkPipeline.find("dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR") != std::string::npos);
+    assert(m2Render.find("case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_") != std::string::npos);
+    assert(m2Render.find("case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_") != std::string::npos);
     return 0;
 }

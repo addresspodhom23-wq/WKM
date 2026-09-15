@@ -545,7 +545,7 @@ public:
 
     void recreatePipelines();
 
-    /// Build the ten main-pass pipelines. Called by initialize() and again by
+    /// Build the twelve main-pass pipelines. Called by initialize() and again by
     /// recreatePipelines() after a device loss, which is the reason it exists:
     /// the two used to be separate copies of the same 190 lines.
     bool buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout);
@@ -645,7 +645,9 @@ private:
     VkPipeline alphaTestPipeline_ = VK_NULL_HANDLE;     // blend mode 1
     VkPipeline alphaPipeline_ = VK_NULL_HANDLE;         // blend mode 2
     VkPipeline additiveOnePipeline_ = VK_NULL_HANDLE;   // blend mode 3: ONE + ONE
-    VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 4+: SRC_ALPHA + ONE
+    VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 4: SRC_ALPHA + ONE
+    VkPipeline modulatePipeline_ = VK_NULL_HANDLE;      // blend mode 5: DST_COLOR + ZERO
+    VkPipeline modulate2xPipeline_ = VK_NULL_HANDLE;    // blend mode 6: DST_COLOR + SRC_COLOR
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
     // Shadow rendering (Phase 7)

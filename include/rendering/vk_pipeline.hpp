@@ -87,6 +87,8 @@ public:
     static VkPipelineColorBlendAttachmentState blendAlpha();
     static VkPipelineColorBlendAttachmentState blendAdditive();
     static VkPipelineColorBlendAttachmentState blendAdditiveOne();
+    static VkPipelineColorBlendAttachmentState blendModulate();
+    static VkPipelineColorBlendAttachmentState blendModulate2x();
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages_;

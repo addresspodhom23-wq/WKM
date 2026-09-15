@@ -245,7 +245,7 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
     return count;
 }
 
-/// The ten main-pass pipelines, built once at startup and again after a
+/// The twelve main-pass pipelines, built once at startup and again after a
 /// device loss.
 ///
 /// Both paths used to build them: initialize() here and recreatePipelines() in
@@ -338,6 +338,10 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
                                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
     additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false,
                                         VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    modulatePipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate(), false,
+                                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    modulate2xPipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate2x(), false,
+                                          VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
 
     // --- Build particle pipelines ---
     if (particleVert.isValid() && particleFrag.isValid()) {
@@ -1124,6 +1128,8 @@ void M2Renderer::shutdown() {
     destroyPipeline(alphaPipeline_);
     destroyPipeline(additiveOnePipeline_);
     destroyPipeline(additivePipeline_);
+    destroyPipeline(modulatePipeline_);
+    destroyPipeline(modulate2xPipeline_);
     destroyPipeline(particlePipeline_);
     destroyPipeline(particleAdditivePipeline_);
     destroyPipeline(smokePipeline_);

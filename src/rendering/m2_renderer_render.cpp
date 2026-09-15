@@ -1712,6 +1712,9 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             case 1: desiredPipeline = alphaTestPipeline_; break;
                             case 2: desiredPipeline = alphaPipeline_; break;
                             case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
+                            case M2_BLEND_ADD_ALPHA: desiredPipeline = additivePipeline_; break;
+                            case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_; break;
+                            case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                             default: desiredPipeline = additivePipeline_; break;
                         }
                     }
@@ -1935,6 +1938,9 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             switch (effectiveBlendMode) {
                 case M2_BLEND_ALPHA: desiredPipeline = alphaPipeline_; break;
                 case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
+                case M2_BLEND_ADD_ALPHA: desiredPipeline = additivePipeline_; break;
+                case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_; break;
+                case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                 default: desiredPipeline = additivePipeline_; break;
             }
             if (desiredPipeline != currentPipeline) {

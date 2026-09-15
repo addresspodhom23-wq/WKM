@@ -263,6 +263,32 @@ VkPipelineColorBlendAttachmentState PipelineBuilder::blendAdditiveOne() {
     return state;
 }
 
+VkPipelineColorBlendAttachmentState PipelineBuilder::blendModulate() {
+    VkPipelineColorBlendAttachmentState state{};
+    state.colorWriteMask = kColorWriteAll;
+    state.blendEnable = VK_TRUE;
+    state.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+    state.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+    state.colorBlendOp = VK_BLEND_OP_ADD;
+    state.srcAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+    state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    state.alphaBlendOp = VK_BLEND_OP_ADD;
+    return state;
+}
+
+VkPipelineColorBlendAttachmentState PipelineBuilder::blendModulate2x() {
+    VkPipelineColorBlendAttachmentState state{};
+    state.colorWriteMask = kColorWriteAll;
+    state.blendEnable = VK_TRUE;
+    state.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+    state.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR;
+    state.colorBlendOp = VK_BLEND_OP_ADD;
+    state.srcAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+    state.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    state.alphaBlendOp = VK_BLEND_OP_ADD;
+    return state;
+}
+
 VkPipelineLayout createPipelineLayout(VkDevice device,
     const std::vector<VkDescriptorSetLayout>& setLayouts,
     const std::vector<VkPushConstantRange>& pushConstants)
