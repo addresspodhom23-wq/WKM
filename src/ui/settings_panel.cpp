@@ -872,10 +872,10 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
         if (preset == GraphicsPreset::ORIGINAL_WOW) {
             // Vanilla 1.12 baseline: preserve the authored world instead of
             // stacking Kraken-only detail on top. 1.12 caps farclip around 777,
-            // uses ~170 for maximum ground-effect distance, full particle/weather
+            // uses a short ~70-yard ground-effect range, full particle/weather
             // density, and simple legacy surface lighting. We keep those visual
             // rules while letting Vulkan batch/cull them efficiently on Android.
-            pendingGroundClutterDistance = 170;
+            pendingGroundClutterDistance = 70;
             pendingParticleDensity       = 100;
             pendingWeatherDetail         = 3;
             pendingEnvironmentDetail     = 100;
@@ -928,7 +928,7 @@ void SettingsPanel::updateGraphicsPresetFromCurrentSettings() {
             // world-detail choices. The four existing presets retain exactly
             // the recognition rules they had before this profile was added.
             (i != 4 ||
-             (std::abs(pendingGroundClutterDistance - 170) <= 5 &&
+             (std::abs(pendingGroundClutterDistance - 70) <= 5 &&
               std::abs(pendingParticleDensity - 100) <= 5 &&
               pendingWeatherDetail == 3 &&
               std::abs(pendingEnvironmentDetail - 100) <= 5 &&
