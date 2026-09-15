@@ -113,18 +113,43 @@ struct WMOBspNode {
     float planeDistance = 0.0f;
 };
 
-// WMO Liquid (MLIQ chunk data)
-struct WMOLiquid {
-    uint32_t xVerts = 0;        // Vertices in X direction
-    uint32_t yVerts = 0;        // Vertices in Y direction
-    uint32_t xTiles = 0;        // Tiles in X (= xVerts - 1)
-    uint32_t yTiles = 0;        // Tiles in Y (= yVerts - 1)
-    glm::vec3 basePosition;     // Corner position in model space
-    uint16_t materialId = 0;    // Liquid material/type
-    std::vector<float> heights; // Height per vertex (xVerts * yVerts)
-    std::vector<uint8_t> flags; // Flags per tile (xTiles * yTiles)
+// One exact Vanilla MLIQ vertex: 4 interpretation-dependent bytes + height.
+struct WMOLiquidVertex {
+    uint8_t flow1 = 0;
+    uint8_t flow2 = 0;
+    uint8_t flow1Pct = 0;
+    uint8_t filler = 0;
+    float height = 0.0f;
 
-    [[nodiscard]] bool hasLiquid() const { return xVerts > 0 && yVerts > 0; }
+    [[nodiscard]] int16_t magmaS() const {
+        return static_cast<int16_t>(
+            static_cast<uint16_t>(flow1) |
+            (static_cast<uint16_t>(flow2) << 8));
+    }
+    [[nodiscard]] int16_t magmaT() const {
+        return static_cast<int16_t>(
+            static_cast<uint16_t>(flow1Pct) |
+            (static_cast<uint16_t>(filler) << 8));
+    }
+};
+
+// WMO Liquid (MLIQ, Vanilla 1.12)
+struct WMOLiquid {
+    uint32_t xVerts = 0;
+    uint32_t yVerts = 0;
+    uint32_t xTiles = 0;
+    uint32_t yTiles = 0;
+    glm::vec3 basePosition{0.0f};
+    uint16_t materialId = 0;       // raw MLIQ material field
+    uint16_t liquidTypeId = 0;     // resolved Vanilla LiquidType ID
+    std::vector<WMOLiquidVertex> vertices;
+    std::vector<float> heights;    // convenience mirror for queries/render upload
+    std::vector<uint8_t> flags;    // SMOLTile bytes
+
+    [[nodiscard]] bool hasLiquid() const {
+        return xVerts > 0 && yVerts > 0 &&
+               vertices.size() == static_cast<size_t>(xVerts) * yVerts;
+    }
 };
 
 // WMO Group Vertex
@@ -197,6 +222,8 @@ struct WMOModel {
     uint32_t nDoodadNames;
     uint32_t nDoodadDefs;
     uint32_t nDoodadSets;
+    uint16_t headerFlags = 0;     // MOHD +0x3c
+    uint16_t numLod = 0;          // MOHD +0x3e (zero in Vanilla assets)
 
     glm::vec3 ambientColor;     // MOHD ambient color (used for interior group lighting)
     glm::vec3 boundingBoxMin;
