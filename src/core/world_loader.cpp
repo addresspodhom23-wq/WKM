@@ -19,6 +19,7 @@
 #include "rendering/terrain_manager.hpp"
 #include "rendering/character_renderer.hpp"
 #include "rendering/wmo_renderer.hpp"
+#include "rendering/placement_transform.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/quest_marker_renderer.hpp"
 #include "rendering/footprint_renderer.hpp"
@@ -393,18 +394,17 @@ void WorldLoader::loadMapGeometry(uint32_t mapId, const std::string& mapName,
                     LOG_INFO("Loaded ", loadedGroups, " / ", wmoModel.nGroups, " WMO groups for instance");
                 }
 
-                // WMO-only maps: MODF uses same format as ADT MODF.
-                // Apply the same rotation conversion that outdoor WMOs get
-                // (including the implicit +180° Z yaw), but skip the ZEROPOINT
-                // position offset for zero-position instances (server sends
-                // coordinates relative to the WMO, not relative to map corner).
+                // WMO-only maps carry the same 64-byte MODF placement as
+                // ordinary ADT WMOs. Use the one shared Vanilla 1.12 mapping so
+                // instance maps cannot drift back to the old (-C,-A,B) guess.
                 glm::vec3 wmoPos(0.0f);
-                glm::vec3 wmoRot(
-                    -wdtInfo.rotation[2] * core::coords::PI / 180.0f,
-                    -wdtInfo.rotation[0] * core::coords::PI / 180.0f,
-                    (wdtInfo.rotation[1] + 180.0f) * core::coords::PI / 180.0f
-                );
-                if (wdtInfo.position[0] != 0.0f || wdtInfo.position[1] != 0.0f || wdtInfo.position[2] != 0.0f) {
+                const glm::vec3 wmoRot =
+                    rendering::placementEulerFromAdtDegrees(wdtInfo.rotation);
+                const float wmoScale =
+                    static_cast<float>(wdtInfo.scale) / 1024.0f;
+                if (wdtInfo.position[0] != 0.0f ||
+                    wdtInfo.position[1] != 0.0f ||
+                    wdtInfo.position[2] != 0.0f) {
                     wmoPos = core::coords::adtToWorld(
                         wdtInfo.position[0], wdtInfo.position[1], wdtInfo.position[2]);
                 }
@@ -412,7 +412,8 @@ void WorldLoader::loadMapGeometry(uint32_t mapId, const std::string& mapName,
                 showProgress("Uploading instance geometry...", 0.70f);
                 uint32_t wmoModelId = 900000 + mapId;  // Unique ID range for instance WMOs
                 if (wmoRenderer->loadModel(wmoModel, wmoModelId)) {
-                    uint32_t instanceId = wmoRenderer->createInstance(wmoModelId, wmoPos, wmoRot, 1.0f);
+                    uint32_t instanceId =
+                        wmoRenderer->createInstance(wmoModelId, wmoPos, wmoRot, wmoScale);
                     if (instanceId > 0) {
                         LOG_DEBUG("Instance WMO loaded: modelId=", wmoModelId,
                                 " instanceId=", instanceId);
@@ -425,11 +426,9 @@ void WorldLoader::loadMapGeometry(uint32_t mapId, const std::string& mapName,
                         LOG_DEBUG("  Player canonical: (", spawnCanonical.x, ", ", spawnCanonical.y, ", ", spawnCanonical.z, ")");
                         // Show player position in WMO local space
                         {
-                            glm::mat4 instMat(1.0f);
-                            instMat = glm::translate(instMat, wmoPos);
-                            instMat = glm::rotate(instMat, wmoRot.z, glm::vec3(0,0,1));
-                            instMat = glm::rotate(instMat, wmoRot.y, glm::vec3(0,1,0));
-                            instMat = glm::rotate(instMat, wmoRot.x, glm::vec3(1,0,0));
+                            const glm::mat4 instMat =
+                                rendering::placementModelMatrix(
+                                    wmoPos, wmoRot, wmoScale);
                             glm::mat4 invMat = glm::inverse(instMat);
                             glm::vec3 localPlayer = glm::vec3(invMat * glm::vec4(spawnRender, 1.0f));
                             LOG_DEBUG("  Player in WMO local: (", localPlayer.x, ", ", localPlayer.y, ", ", localPlayer.z, ")");
@@ -439,64 +438,109 @@ void WorldLoader::loadMapGeometry(uint32_t mapId, const std::string& mapName,
                             LOG_DEBUG("  Player inside MOHD bbox: ", inside ? "YES" : "NO");
                         }
 
-                        // Load doodads from the specified doodad set
+                        // Vanilla WMO doodads: Set_$DefaultGlobal (0) is
+                        // always present, plus the MODF-selected variant set.
+                        // MODR ties each MODD entry to WMO groups and therefore
+                        // to portal visibility.
                         auto* m2Renderer = renderer_->getM2Renderer();
-                        if (m2Renderer && !wmoModel.doodadSets.empty() && !wmoModel.doodads.empty()) {
-                            uint32_t setIdx = std::min(static_cast<uint32_t>(wdtInfo.doodadSet),
-                                                       static_cast<uint32_t>(wmoModel.doodadSets.size() - 1));
-                            const auto& doodadSet = wmoModel.doodadSets[setIdx];
+                        if (m2Renderer && !wmoModel.doodadSets.empty() &&
+                            !wmoModel.doodads.empty()) {
+                            std::vector<uint32_t> setsToLoad{0};
+                            const uint32_t selectedSet =
+                                std::min(static_cast<uint32_t>(wdtInfo.doodadSet),
+                                         static_cast<uint32_t>(
+                                             wmoModel.doodadSets.size() - 1));
+                            if (selectedSet != 0) setsToLoad.push_back(selectedSet);
+
+                            std::vector<std::vector<uint16_t>> doodadGroupRefs(
+                                wmoModel.doodads.size());
+                            for (uint16_t gi = 0; gi < wmoModel.groups.size(); ++gi) {
+                                for (uint16_t ref : wmoModel.groups[gi].doodadRefs) {
+                                    if (ref < doodadGroupRefs.size()) {
+                                        doodadGroupRefs[ref].push_back(gi);
+                                    }
+                                }
+                            }
 
                             showProgress("Loading instance doodads...", 0.75f);
-                            glm::mat4 wmoMatrix(1.0f);
-                            wmoMatrix = glm::translate(wmoMatrix, wmoPos);
-                            wmoMatrix = glm::rotate(wmoMatrix, wmoRot.z, glm::vec3(0, 0, 1));
-                            wmoMatrix = glm::rotate(wmoMatrix, wmoRot.y, glm::vec3(0, 1, 0));
-                            wmoMatrix = glm::rotate(wmoMatrix, wmoRot.x, glm::vec3(1, 0, 0));
+                            const glm::mat4 wmoMatrix =
+                                rendering::placementModelMatrix(
+                                    wmoPos, wmoRot, wmoScale);
 
                             uint32_t loadedDoodads = 0;
-                            for (uint32_t di = 0; di < doodadSet.count; di++) {
-                                uint32_t doodadIdx = doodadSet.startIndex + di;
-                                if (doodadIdx >= wmoModel.doodads.size()) break;
+                            std::unordered_set<uint32_t> loadedDoodadIndices;
+                            for (uint32_t setIdx : setsToLoad) {
+                                const auto& doodadSet = wmoModel.doodadSets[setIdx];
+                                for (uint32_t di = 0; di < doodadSet.count; ++di) {
+                                    const uint32_t doodadIdx =
+                                        doodadSet.startIndex + di;
+                                    if (doodadIdx >= wmoModel.doodads.size()) break;
+                                    if (!loadedDoodadIndices.insert(doodadIdx).second) {
+                                        continue;
+                                    }
 
-                                const auto& doodad = wmoModel.doodads[doodadIdx];
-                                auto nameIt = wmoModel.doodadNames.find(doodad.nameIndex);
-                                if (nameIt == wmoModel.doodadNames.end()) continue;
+                                    const auto& doodad =
+                                        wmoModel.doodads[doodadIdx];
+                                    auto nameIt =
+                                        wmoModel.doodadNames.find(doodad.nameIndex);
+                                    if (nameIt == wmoModel.doodadNames.end()) continue;
 
-                                std::string m2Path = nameIt->second;
-                                if (m2Path.empty()) continue;
+                                    std::string m2Path =
+                                        pipeline::modelPathToM2(nameIt->second);
+                                    if (m2Path.empty()) continue;
 
-                                m2Path = pipeline::modelPathToM2(m2Path);
+                                    std::vector<uint8_t> m2Data =
+                                        assetManager_->readFile(m2Path);
+                                    if (m2Data.empty()) continue;
 
-                                std::vector<uint8_t> m2Data = assetManager_->readFile(m2Path);
-                                if (m2Data.empty()) continue;
+                                    pipeline::M2Model m2Model =
+                                        pipeline::M2Loader::load(m2Data);
+                                    m2Model.name = m2Path;
+                                    if (!m2Model.isValid()) continue;
 
-                                pipeline::M2Model m2Model = pipeline::M2Loader::load(m2Data);
-                                m2Model.name = m2Path;
+                                    const glm::quat fixedRotation(
+                                        doodad.rotation.w, doodad.rotation.x,
+                                        doodad.rotation.y, doodad.rotation.z);
+                                    glm::mat4 doodadLocal(1.0f);
+                                    doodadLocal =
+                                        glm::translate(doodadLocal, doodad.position);
+                                    doodadLocal *= glm::mat4_cast(fixedRotation);
+                                    doodadLocal =
+                                        glm::scale(doodadLocal,
+                                                   glm::vec3(doodad.scale));
 
-                                std::string skinPath = pipeline::skinPathForM2(m2Path);
-                                std::vector<uint8_t> skinData = assetManager_->readFile(skinPath);
-                                if (!skinData.empty() && m2Model.version >= 264) {
-                                    pipeline::M2Loader::loadSkin(skinData, m2Model);
+                                    const glm::mat4 worldMatrix =
+                                        wmoMatrix * doodadLocal;
+                                    const glm::vec3 worldPos =
+                                        glm::vec3(worldMatrix[3]);
+
+                                    const uint32_t doodadModelId =
+                                        static_cast<uint32_t>(
+                                            std::hash<std::string>{}(m2Path));
+                                    if (!m2Renderer->loadModel(
+                                            m2Model, doodadModelId)) {
+                                        continue;
+                                    }
+                                    const uint32_t doodadInstId =
+                                        m2Renderer->createInstanceWithMatrix(
+                                            doodadModelId, worldMatrix, worldPos);
+                                    if (!doodadInstId) continue;
+
+                                    m2Renderer->setInstanceColor(
+                                        doodadInstId, doodad.color);
+                                    m2Renderer->setSkipWallCollision(
+                                        doodadInstId, true);
+                                    wmoRenderer->addDoodadToInstance(
+                                        instanceId, doodadInstId, doodadLocal,
+                                        doodadIdx,
+                                        doodadIdx < doodadGroupRefs.size()
+                                            ? doodadGroupRefs[doodadIdx]
+                                            : std::vector<uint16_t>{});
+                                    ++loadedDoodads;
                                 }
-                                if (!m2Model.isValid()) continue;
-
-                                glm::quat fixedRotation(doodad.rotation.w, doodad.rotation.x,
-                                                        doodad.rotation.y, doodad.rotation.z);
-                                glm::mat4 doodadLocal(1.0f);
-                                doodadLocal = glm::translate(doodadLocal, doodad.position);
-                                doodadLocal *= glm::mat4_cast(fixedRotation);
-                                doodadLocal = glm::scale(doodadLocal, glm::vec3(doodad.scale));
-
-                                glm::mat4 worldMatrix = wmoMatrix * doodadLocal;
-                                glm::vec3 worldPos = glm::vec3(worldMatrix[3]);
-
-                                uint32_t doodadModelId = static_cast<uint32_t>(std::hash<std::string>{}(m2Path));
-                                if (!m2Renderer->loadModel(m2Model, doodadModelId)) continue;
-                                uint32_t doodadInstId = m2Renderer->createInstanceWithMatrix(doodadModelId, worldMatrix, worldPos);
-                                if (doodadInstId) m2Renderer->setSkipWallCollision(doodadInstId, true);
-                                loadedDoodads++;
                             }
-                            LOG_INFO("Loaded ", loadedDoodads, " instance WMO doodads");
+                            LOG_INFO("Loaded ", loadedDoodads,
+                                     " instance WMO doodads");
                         }
                     } else {
                         LOG_WARNING("Failed to create instance WMO instance");
