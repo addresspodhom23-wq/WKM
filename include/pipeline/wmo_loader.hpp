@@ -22,16 +22,25 @@ namespace pipeline {
 
 // WMO Material
 struct WMOMaterial {
-    uint32_t flags;
-    uint32_t shader;
-    uint32_t blendMode;
-    uint32_t texture1;          // Diffuse texture index
-    uint32_t color1;
-    uint32_t texture2;          // Environment/detail texture
-    uint32_t color2;
-    uint32_t texture3;
-    uint32_t color3;
-    float runtime[4];           // Runtime data
+    // Exact Vanilla 1.12 MOMT record: 16 dwords / 64 bytes. Only texture1
+    // (+0x0c) and texture2 (+0x18) are authored MOTX offsets. The last two
+    // dwords are runtime texture handles written by the original client.
+    uint32_t flags = 0;             // +0x00
+    uint32_t shader = 0;            // +0x04
+    uint32_t blendMode = 0;         // +0x08
+    uint32_t texture1 = 0;          // +0x0c
+    uint32_t sidnColor = 0;         // +0x10
+    uint32_t frameSidnColor = 0;    // +0x14
+    uint32_t texture2 = 0;          // +0x18
+    uint32_t diffColor = 0;         // +0x1c
+    uint32_t groundType = 0;        // +0x20
+    uint32_t color2 = 0;            // +0x24
+    uint32_t flags2 = 0;            // +0x28
+    uint32_t raw2C = 0;             // +0x2c
+    uint32_t raw30 = 0;             // +0x30
+    uint32_t raw34 = 0;             // +0x34
+    uint32_t runtimeTexture1 = 0;   // +0x38
+    uint32_t runtimeTexture2 = 0;   // +0x3c
 };
 
 // WMO Group Info
