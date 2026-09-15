@@ -289,6 +289,7 @@ struct M2Instance {
     bool cachedIsValid = false;
     bool skipCollision = false;    // Fully non-collidable visual/effect instance
     bool skipWallCollision = false; // Keep authored floors, suppress only wall blocking
+    bool forcedHidden = false;      // Parent WMO portal/group visibility authority
     float cachedBoundRadius = 0.0f;
     glm::vec3 cachedCullCenter{0.0f};              // transformed visual-bounds center
     float cachedVisualRadius = 0.0f;               // transformed visual-bounds half diagonal
@@ -481,6 +482,10 @@ public:
     /// Light an instance while it is being pressed on. 0 clears it.
     void setInstanceHighlight(uint32_t instanceId, float amount);
     void setInstanceColor(uint32_t instanceId, const glm::vec4& color);
+    /// Authoritative owner visibility (WMO MODR/portal traversal). Unlike
+    /// distance/frustum culling this is semantic: hidden group doodads must not
+    /// render particles, ribbons or geometry.
+    void setInstanceVisible(uint32_t instanceId, bool visible);
     /// Take the light off whatever has it, whichever instance that was.
     void clearInstanceHighlights();
     /// Set the animation sequence by animation ID (e.g. anim::OPEN, anim::CLOSE).
