@@ -90,10 +90,14 @@ WDTInfo parseWDT(const std::vector<uint8_t>& data) {
                 // extents at 32-55
                 info.flags = readU16(chunkData, 56);
                 info.doodadSet = readU16(chunkData, 58);
+                info.nameSet = readU16(chunkData, 60);
+                info.scale = readU16(chunkData, 62);
+                if (info.scale == 0) info.scale = 1024;
                 LOG_DEBUG("WDT MODF placement: pos=(", info.position[0], ", ",
                          info.position[1], ", ", info.position[2], ") rot=(",
                          info.rotation[0], ", ", info.rotation[1], ", ",
-                         info.rotation[2], ") doodadSet=", info.doodadSet);
+                         info.rotation[2], ") doodadSet=", info.doodadSet,
+                         " nameSet=", info.nameSet, " scale=", info.scale);
             }
         }
 
