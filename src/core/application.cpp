@@ -2985,12 +2985,14 @@ void Application::syncRenderInstancesToEntities(float deltaTime) {
                     ? std::optional<glm::vec3>(posIt->second)
                     : std::nullopt;
 
-            // Ground-moving entities need client floor projection between server
-            // spline points. Use the floor nearest server Z so outdoor terrain
-            // above a tunnel cannot move the model into/onto the WMO shell.
+            // Vanilla keeps ground units in the walk/ground-settle path even
+            // after their spline reaches its endpoint. Keep projecting while the
+            // unit is grounded; previousRenderPos provides the continuity guard,
+            // so stopping no longer pops the model back to a slightly different
+            // server Z while bridges/tunnels still reject discontinuous floors.
             const bool groundCreature = !_creatureFlyingState.count(guid) &&
                                         !_creatureSwimmingState.count(guid);
-            if (entity->isActivelyMoving() && groundCreature) {
+            if (groundCreature) {
                 if (auto floorZ = movingEntityFloor(renderer.get(), renderPos,
                                                     previousRenderPos)) {
                     renderPos.z = *floorZ;
@@ -3187,7 +3189,7 @@ void Application::syncRenderInstancesToEntities(float deltaTime) {
             // WMO overlap regions (tunnels, buildings, bridges).
             const bool groundPlayer = !_pCreatureFlyingState.count(guid) &&
                                       !_pCreatureSwimmingState.count(guid);
-            if (entity->isActivelyMoving() && groundPlayer) {
+            if (groundPlayer) {
                 if (auto floorZ = movingEntityFloor(renderer.get(), renderPos,
                                                     previousMountPos)) {
                     renderPos.z = *floorZ;
