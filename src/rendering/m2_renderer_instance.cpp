@@ -68,6 +68,12 @@ void M2Renderer::setInstanceHighlight(uint32_t instanceId, float amount) {
     instances[idxIt->second].highlight = amount;
 }
 
+void M2Renderer::setInstanceColor(uint32_t instanceId, const glm::vec4& color) {
+    auto idxIt = instanceIndexById.find(instanceId);
+    if (idxIt == instanceIndexById.end()) return;
+    instances[idxIt->second].instanceColor = glm::clamp(color, glm::vec4(0.0f), glm::vec4(1.0f));
+}
+
 void M2Renderer::clearInstanceHighlights() {
     // A walk of every instance rather than a record of the lit one, because a
     // press can end with the instance gone - the object despawned, the tile
