@@ -225,7 +225,8 @@ public:
         LOW = 1,
         MEDIUM = 2,
         HIGH = 3,
-        ULTRA = 4
+        ULTRA = 4,
+        ORIGINAL_WOW = 5
     };
     GraphicsPreset currentGraphicsPreset = GraphicsPreset::CUSTOM;
     GraphicsPreset pendingGraphicsPreset = GraphicsPreset::CUSTOM;
