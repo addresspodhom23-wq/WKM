@@ -705,6 +705,18 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                     if (placement.doodadSet > 0 && placement.doodadSet < wmoModel.doodadSets.size()) {
                         setsToLoad.push_back(placement.doodadSet);
                     }
+                    // Reverse MODR: MODD index -> WMO group indices that own it.
+                    // This is what lets portal/group visibility control the M2
+                    // doodad later, instead of rendering every interior prop globally.
+                    std::vector<std::vector<uint16_t>> doodadGroupRefs(wmoModel.doodads.size());
+                    for (uint16_t gi = 0; gi < wmoModel.groups.size(); ++gi) {
+                        for (uint16_t doodadRef : wmoModel.groups[gi].doodadRefs) {
+                            if (doodadRef < doodadGroupRefs.size()) {
+                                doodadGroupRefs[doodadRef].push_back(gi);
+                            }
+                        }
+                    }
+
                     std::unordered_set<uint32_t> loadedDoodadIndices;
                     std::unordered_set<uint32_t> wmoPreparedModelIds;  // within-WMO model dedup
                     for (uint32_t setIdx : setsToLoad) {
@@ -816,7 +828,13 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         doodadReady.model = std::move(m2Model);
                         doodadReady.worldPosition = worldPos;
                         doodadReady.modelMatrix = worldMatrix;
+                        doodadReady.localTransform = doodadLocal;
                         doodadReady.color = doodad.color;
+                        doodadReady.parentWmoUniqueId = placement.uniqueId;
+                        doodadReady.doodadIndex = doodadIdx;
+                        if (doodadIdx < doodadGroupRefs.size()) {
+                            doodadReady.groupRefs = doodadGroupRefs[doodadIdx];
+                        }
                         pending->wmoDoodads.push_back(std::move(doodadReady));
                     }
                     }
@@ -1147,6 +1165,7 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                     if (wmoReady.uniqueId != 0) {
                         placedWmoIds.insert(wmoReady.uniqueId);
                         ft.tileWmoUniqueIds.push_back(wmoReady.uniqueId);
+                        ft.wmoInstanceByUniqueId[wmoReady.uniqueId] = wmoInstId;
                     }
                 }
                 // Load WMO liquids incrementally (canals, pools, etc.)
@@ -1218,6 +1237,17 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                     // carry the only authored floor for their walkable ramps.
                     m2Renderer->setSkipWallCollision(wmoDoodadInstId, true);
                     ft.m2InstanceIds.push_back(wmoDoodadInstId);
+
+                    if (wmoRenderer && doodad.parentWmoUniqueId != 0) {
+                        auto parentIt =
+                            ft.wmoInstanceByUniqueId.find(doodad.parentWmoUniqueId);
+                        if (parentIt != ft.wmoInstanceByUniqueId.end()) {
+                            wmoRenderer->addDoodadToInstance(
+                                parentIt->second, wmoDoodadInstId,
+                                doodad.localTransform, doodad.doodadIndex,
+                                doodad.groupRefs);
+                        }
+                    }
                 }
                 ft.wmoDoodadIndex++;
                 uploaded++;
