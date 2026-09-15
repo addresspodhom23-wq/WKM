@@ -26,6 +26,11 @@ jobs:
       with:
         submodules: true
 
+    - name: Install native test headers
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libglm-dev
+
     - name: Test vegetation collision sweep
       run: |
         g++ -std=c++20 -Wall -Wextra -Werror -Iinclude \
