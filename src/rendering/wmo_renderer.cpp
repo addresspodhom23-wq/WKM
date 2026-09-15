@@ -4036,6 +4036,91 @@ bool WMORenderer::withinWorldBounds(const WMOInstance& instance,
            glZ <= instance.worldBoundsMax.z + zMarginUp;
 }
 
+uint32_t WMORenderer::gatherVanillaLights(
+        const glm::vec3& cameraPos,
+        glm::vec4* outPosRadius,
+        glm::vec4* outColorIntensity,
+        uint32_t maxLights) const {
+    if (!outPosRadius || !outColorIntensity || maxLights == 0) return 0;
+
+    struct Candidate {
+        float distSq;
+        glm::vec4 posRadius;
+        glm::vec4 colorIntensity;
+    };
+    std::vector<Candidate> candidates;
+
+    for (const auto& instance : instances) {
+        if (!withinWorldBounds(instance, cameraPos.x, cameraPos.y, cameraPos.z,
+                               2.0f, 2.0f)) {
+            continue;
+        }
+
+        auto modelIt = loadedModels.find(instance.modelId);
+        if (modelIt == loadedModels.end()) continue;
+        const ModelData& model = modelIt->second;
+        if (model.lights.empty()) continue;
+
+        const glm::vec3 localCamera =
+            glm::vec3(instance.invModelMatrix * glm::vec4(cameraPos, 1.0f));
+        const int groupIdx = findContainingGroup(model, localCamera);
+        if (groupIdx < 0 || static_cast<size_t>(groupIdx) >= model.groups.size()) {
+            continue;
+        }
+
+        const GroupResources& group = model.groups[static_cast<size_t>(groupIdx)];
+        const float worldScale = std::max(0.001f, std::abs(instance.scale));
+        for (uint16_t lightRef : group.lightRefs) {
+            if (static_cast<size_t>(lightRef) >= model.lights.size()) continue;
+            const pipeline::WMOLight& light = model.lights[lightRef];
+
+            // MOLT root lights used by Vanilla doodads/characters are normally
+            // omni/spot lights. Directional/ambient records do not fit the
+            // point-light representation used by this UBO and are intentionally
+            // left to the global world-light path.
+            if (light.lightType > 1) continue;
+
+            const glm::vec3 worldPos = glm::vec3(
+                instance.modelMatrix * glm::vec4(light.position, 1.0f));
+            float radius = light.attenuationEnd * worldScale;
+            if (!light.useAttenuation || radius <= 0.001f) {
+                // Authored non-attenuating local lights are rare; cap them at
+                // the WMO's own scale-sized neighborhood rather than turning a
+                // room lamp into a zone-wide light.
+                radius = 80.0f * worldScale;
+            }
+
+            const glm::vec3 delta = worldPos - cameraPos;
+            const float distSq = glm::dot(delta, delta);
+            const float influence = radius + 20.0f;
+            if (distSq > influence * influence) continue;
+
+            const float intensity = std::max(0.0f, light.intensity);
+            candidates.push_back({
+                .distSq = distSq,
+                .posRadius = glm::vec4(worldPos, radius),
+                .colorIntensity = glm::vec4(glm::vec3(light.color),
+                                            intensity * light.color.a)
+            });
+        }
+    }
+
+    const uint32_t count = std::min<uint32_t>(
+        maxLights, static_cast<uint32_t>(candidates.size()));
+    if (count == 0) return 0;
+
+    std::partial_sort(candidates.begin(), candidates.begin() + count,
+                      candidates.end(),
+                      [](const Candidate& a, const Candidate& b) {
+                          return a.distSq < b.distSq;
+                      });
+    for (uint32_t i = 0; i < count; ++i) {
+        outPosRadius[i] = candidates[i].posRadius;
+        outColorIntensity[i] = candidates[i].colorIntensity;
+    }
+    return count;
+}
+
 uint32_t WMORenderer::gatherLavaLights(const glm::vec3& cameraPos,
                                        glm::vec4* outPosRadius,
                                        glm::vec4* outColorIntensity,
