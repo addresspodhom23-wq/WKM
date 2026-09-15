@@ -554,6 +554,17 @@ private:
         std::vector<uint8_t> triMopyFlags;
         std::vector<uint8_t> triMopyMaterialIds;
 
+        // Original WMO BSP collision metadata. The runtime still uses the 2D
+        // spatial grid for speed, but when MOBN/MOBR exist the grid is built
+        // only from faces referenced by the authored BSP leaves.
+        std::vector<pipeline::WMOBspNode> bspNodes;
+        std::vector<uint16_t> bspFaceIndices;
+        std::vector<uint8_t> bspCollisionFaceMask;
+
+        // Group-local root-table references (Vanilla MOLR/MODR).
+        std::vector<uint16_t> lightRefs;
+        std::vector<uint16_t> doodadRefs;
+
         // Scratch bitset for deduplicating triangle queries (sized to numTriangles)
         mutable std::vector<uint8_t> triVisited;
 
@@ -622,6 +633,10 @@ private:
 
         // Material flags (materialId -> flags; 0x01 = unlit)
         std::vector<uint32_t> materialFlags;
+
+        // Exact root WMO data needed by Vanilla interior behaviour.
+        std::vector<pipeline::WMOLight> lights;
+        std::vector<pipeline::WMOFog> fogs;
 
         // Portal visibility data
         std::vector<PortalData> portals;
