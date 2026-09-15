@@ -44,6 +44,12 @@ jobs:
           tests/test_wow112_placement_contract.cpp -o /tmp/test-wow112-placement
         /tmp/test-wow112-placement
 
+    - name: Test WMO shelter weather gate
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror \
+          tests/test_weather_shelter_contract.cpp -o /tmp/test-weather-shelter
+        /tmp/test-weather-shelter
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:

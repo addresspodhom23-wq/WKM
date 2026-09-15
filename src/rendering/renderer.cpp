@@ -1602,6 +1602,13 @@ void Renderer::update(float deltaTime) {
     }
     playerIndoors_ = insideWmo;
 
+    // Shelter is a world/collision fact, not a lighting feature. Keep the
+    // precipitation switch outside LightingManager so a missing/late lighting
+    // object can never leave weather enabled under a WMO roof.
+    if (weather) {
+        weather->setEnabled(!playerIndoors_);
+    }
+
     // Update lighting system
     if (lightingManager) {
         const auto* gh = core::Application::getInstance().getGameHandler();
@@ -1635,7 +1642,6 @@ void Renderer::update(float deltaTime) {
                 // No server weather - use zone-based weather configuration
                 weather->updateZoneWeather(getCurrentZoneId(), deltaTime);
             }
-            weather->setEnabled(!insideWmo);
 
             // Lightning flash disabled
             if (lightning) {
@@ -1644,7 +1650,6 @@ void Renderer::update(float deltaTime) {
         } else if (weather) {
             // No game handler (single-player without network) - zone weather only
             weather->updateZoneWeather(getCurrentZoneId(), deltaTime);
-            weather->setEnabled(!insideWmo);
         }
     }
 
@@ -1726,8 +1731,10 @@ void Renderer::update(float deltaTime) {
             camera->getProjectionMatrix() * camera->getViewMatrix());
     }
 
-    // Update weather particles
-    if (weather && camera) {
+    // Update precipitation only outdoors. On leaving a building the existing
+    // pool is resumed/repositioned by Weather::update; indoors no rain state
+    // advances and, more importantly, no new visible positions are produced.
+    if (weather && camera && !playerIndoors_) {
         weather->update(*camera, deltaTime);
     }
 
@@ -2627,7 +2634,12 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
                 waterRenderer->setRenderExtent(activeRenderExtent_);
                 waterRenderer->render(cmd, perFrameSet, *camera, globalTime, false, frameIdx);
             }
-            if (weather && camera) weather->render(cmd, perFrameSet);
+            // Never even record a precipitation draw while sheltered.
+            // This is intentionally independent of Weather::enabled: the WMO
+            // containment result is the authority for the current frame.
+            if (weather && camera && !playerIndoors_) {
+                weather->render(cmd, perFrameSet);
+            }
             if (lightning && camera && lightning->isEnabled()) lightning->render(cmd, perFrameSet);
             if (swimEffects && camera && !swimEffectsDrawWithWater_) {
                 swimEffects->render(cmd, perFrameSet);
@@ -2790,7 +2802,9 @@ void Renderer::renderWorld(game::World* world, game::GameHandler* gameHandler) {
             waterRenderer->render(currentCmd, perFrameSet, *camera, globalTime, false, frameIdx);
             if (vkCtx) vkCtx->gpuMark(currentCmd, "water");
         }
-        if (weather && camera) weather->render(currentCmd, perFrameSet);
+        if (weather && camera && !playerIndoors_) {
+            weather->render(currentCmd, perFrameSet);
+        }
         if (lightning && camera && lightning->isEnabled()) lightning->render(currentCmd, perFrameSet);
         if (swimEffects && camera && !swimEffectsDrawWithWater_) {
             swimEffects->render(currentCmd, perFrameSet);
