@@ -81,6 +81,58 @@ glm::vec4 unpackBGRA(uint32_t bgra) {
         static_cast<float>((bgra >> 24) & 0xFF) / 255.0f);
 }
 
+uint16_t toVanillaWmoLiquidType(uint32_t value, uint32_t groupFlags) {
+    switch (value & 3u) {
+        case 0: return (groupFlags & 0x80000u) ? 14u : 13u; // WMO ocean/water
+        case 1: return 14u;
+        case 2: return 19u; // WMO magma
+        case 3: return 20u; // WMO slime
+        default: return 0u;
+    }
+}
+
+uint16_t resolveVanillaWmoLiquidType(uint16_t rootFlags,
+                                     uint32_t groupFlags,
+                                     uint32_t groupLiquidType,
+                                     const std::vector<uint8_t>& tiles) {
+    constexpr uint16_t USE_LIQUID_TYPE_DBC_ID = 0x4;
+    constexpr uint32_t FIRST_NON_BASIC = 21;
+    constexpr uint32_t END_BASIC = 20;
+    constexpr uint32_t GREEN_LAVA = 15;
+
+    uint16_t result = 0;
+    if ((rootFlags & USE_LIQUID_TYPE_DBC_ID) != 0) {
+        if (groupLiquidType != 0 && groupLiquidType < FIRST_NON_BASIC) {
+            result = toVanillaWmoLiquidType(groupLiquidType - 1u, groupFlags);
+        } else {
+            result = static_cast<uint16_t>(
+                std::min<uint32_t>(groupLiquidType, 0xFFFFu));
+        }
+    } else {
+        if (groupLiquidType == GREEN_LAVA) {
+            result = 0;
+        } else if (groupLiquidType < END_BASIC) {
+            result = toVanillaWmoLiquidType(groupLiquidType, groupFlags);
+        } else {
+            result = static_cast<uint16_t>(
+                std::min<uint32_t>(groupLiquidType + 1u, 0xFFFFu));
+        }
+    }
+
+    // Some legacy/custom groups carry a zero/special group value but have the
+    // actual basic class in SMOLTile. Recover it exactly from the first visible
+    // tile rather than guessing "water".
+    if (result == 0) {
+        for (uint8_t tile : tiles) {
+            const uint8_t tileType = tile & 0x3Fu;
+            if (tileType == 0x0Fu) continue;
+            result = toVanillaWmoLiquidType(tileType, groupFlags);
+            break;
+        }
+    }
+    return result;
+}
+
 } // anonymous namespace
 
 WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
@@ -143,10 +195,13 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 model.boundingBoxMax.y = read<float>(wmoData, offset);
                 model.boundingBoxMax.z = read<float>(wmoData, offset);
 
-                // flags and numLod (uint16 each) - skip for now
-                offset += 4;
+                model.headerFlags = read<uint16_t>(wmoData, offset);
+                model.numLod = read<uint16_t>(wmoData, offset);
 
-                core::Logger::getInstance().debug("WMO header: nTextures=", model.nTextures, " nGroups=", model.nGroups);
+                core::Logger::getInstance().debug(
+                    "WMO header: nTextures=", model.nTextures,
+                    " nGroups=", model.nGroups,
+                    " flags=0x", std::hex, model.headerFlags, std::dec);
                 break;
             }
 
@@ -684,15 +739,13 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         group.bspFaceIndices.push_back(read<uint16_t>(groupData, mogpOffset));
                     }
                 }
-                else if (subChunkId == MLIQ) { // MLIQ - WMO liquid data
-                    // Basic WotLK layout:
-                    // uint32 xVerts, yVerts, xTiles, yTiles
-                    // float  baseX, baseY, baseZ
-                    // uint16 materialId
-                    // (optional pad/unknown bytes)
-                    // followed by vertex/tile payload
+                else if (subChunkId == MLIQ) {
+                    // Vanilla MLIQ is strict:
+                    // 30-byte header, xVerts*yVerts records of exactly 8 bytes,
+                    // then one byte per tile. No alternate "plain float" layout.
                     uint32_t parseOffset = mogpOffset;
-                    if (parseOffset + 30 <= subChunkEnd) {
+                    constexpr uint32_t kHeaderBytes = 30;
+                    if (parseOffset + kHeaderBytes <= subChunkEnd) {
                         group.liquid.xVerts = read<uint32_t>(groupData, parseOffset);
                         group.liquid.yVerts = read<uint32_t>(groupData, parseOffset);
                         group.liquid.xTiles = read<uint32_t>(groupData, parseOffset);
@@ -702,45 +755,53 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         group.liquid.basePosition.z = read<float>(groupData, parseOffset);
                         group.liquid.materialId = read<uint16_t>(groupData, parseOffset);
 
-                        // Keep parser resilient across minor format variants:
-                        // prefer explicit per-vertex floats, otherwise fall back to flat.
                         const size_t vertexCount =
-                            static_cast<size_t>(group.liquid.xVerts) * static_cast<size_t>(group.liquid.yVerts);
+                            static_cast<size_t>(group.liquid.xVerts) *
+                            static_cast<size_t>(group.liquid.yVerts);
                         const size_t tileCount =
-                            static_cast<size_t>(group.liquid.xTiles) * static_cast<size_t>(group.liquid.yTiles);
-                        const size_t bytesRemaining = (subChunkEnd > parseOffset) ? (subChunkEnd - parseOffset) : 0;
+                            static_cast<size_t>(group.liquid.xTiles) *
+                            static_cast<size_t>(group.liquid.yTiles);
+                        const uint64_t required =
+                            static_cast<uint64_t>(parseOffset) +
+                            static_cast<uint64_t>(vertexCount) * 8u +
+                            static_cast<uint64_t>(tileCount);
 
-                        group.liquid.heights.clear();
-                        group.liquid.flags.clear();
+                        const bool saneDims =
+                            group.liquid.xVerts >= 2 && group.liquid.yVerts >= 2 &&
+                            group.liquid.xTiles + 1 == group.liquid.xVerts &&
+                            group.liquid.yTiles + 1 == group.liquid.yVerts &&
+                            group.liquid.xVerts <= 256 && group.liquid.yVerts <= 256;
 
-                        // MLIQ vertex data: each vertex is 8 bytes -
-                        // 4 bytes flow/unknown data + 4 bytes float height.
-                        const size_t VERTEX_STRIDE = 8; // bytes per vertex
-                        if (vertexCount > 0 && bytesRemaining >= vertexCount * VERTEX_STRIDE) {
+                        if (saneDims && required <= subChunkEnd) {
+                            group.liquid.vertices.resize(vertexCount);
                             group.liquid.heights.resize(vertexCount);
-                            for (size_t i = 0; i < vertexCount; i++) {
-                                parseOffset += 4; // skip flow/unknown data
-                                group.liquid.heights[i] = read<float>(groupData, parseOffset);
+                            for (size_t i = 0; i < vertexCount; ++i) {
+                                auto& v = group.liquid.vertices[i];
+                                v.flow1 = read<uint8_t>(groupData, parseOffset);
+                                v.flow2 = read<uint8_t>(groupData, parseOffset);
+                                v.flow1Pct = read<uint8_t>(groupData, parseOffset);
+                                v.filler = read<uint8_t>(groupData, parseOffset);
+                                v.height = read<float>(groupData, parseOffset);
+                                group.liquid.heights[i] = v.height;
                             }
-                        } else if (vertexCount > 0 && bytesRemaining >= vertexCount * sizeof(float)) {
-                            // Fallback: try reading as plain floats if stride doesn't fit
-                            group.liquid.heights.resize(vertexCount);
-                            for (size_t i = 0; i < vertexCount; i++) {
-                                group.liquid.heights[i] = read<float>(groupData, parseOffset);
-                            }
-                        } else if (vertexCount > 0) {
-                            group.liquid.heights.resize(vertexCount, group.liquid.basePosition.z);
-                        }
 
-                        if (tileCount > 0 && parseOffset + tileCount <= subChunkEnd) {
                             group.liquid.flags.resize(tileCount);
-                            std::memcpy(group.liquid.flags.data(), &groupData[parseOffset], tileCount);
-                        } else if (tileCount > 0) {
-                            group.liquid.flags.resize(tileCount, 0);
-                        }
+                            for (size_t i = 0; i < tileCount; ++i) {
+                                group.liquid.flags[i] =
+                                    read<uint8_t>(groupData, parseOffset);
+                            }
 
-                        if (group.liquid.materialId == 0) {
-                            group.liquid.materialId = static_cast<uint16_t>(group.liquidType);
+                            group.liquid.liquidTypeId =
+                                resolveVanillaWmoLiquidType(
+                                    model.headerFlags, group.flags,
+                                    group.liquidType, group.liquid.flags);
+                        } else {
+                            core::Logger::getInstance().warning(
+                                "Invalid Vanilla MLIQ layout: verts=",
+                                group.liquid.xVerts, "x", group.liquid.yVerts,
+                                " tiles=", group.liquid.xTiles, "x",
+                                group.liquid.yTiles, " bytes=", subChunkSize);
+                            group.liquid = WMOLiquid{};
                         }
                     }
                 }
