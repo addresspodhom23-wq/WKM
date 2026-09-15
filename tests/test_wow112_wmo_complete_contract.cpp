@@ -38,6 +38,13 @@ int main() {
     assert(loaderH.find("texture3") == std::string::npos);
     assert(wmo.find("mat.texture3") == std::string::npos);
 
+    // Retail 1.12 clamps a final WMO chunk to EOF instead of abandoning the
+    // rest of the file when the declared size runs slightly long.
+    assert(loader.find("WMO chunk extends beyond EOF; clamping") != std::string::npos);
+    assert(loader.find("WMO group chunk extends beyond EOF; clamping") != std::string::npos);
+    assert(loader.find("std::min<uint64_t>(declaredEnd, wmoData.size())") != std::string::npos);
+    assert(loader.find("std::min<uint64_t>(declaredEnd, groupData.size())") != std::string::npos);
+
     // Exact 68-byte Vanilla MOGP header.
     assert(loader.find("group.batchCountA = read<uint16_t>") != std::string::npos);
     assert(loader.find("group.batchCountD = read<uint16_t>") != std::string::npos);
