@@ -667,11 +667,12 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                     group.bspNodes.reserve(group.bspNodes.size() + count);
                     for (uint32_t i = 0; i < count && mogpOffset + kBspNodeSize <= subChunkEnd; ++i) {
                         WMOBspNode node;
-                        node.flags = read<uint16_t>(groupData, mogpOffset);
+                        node.planeType = read<uint16_t>(groupData, mogpOffset);
                         node.negativeChild = read<int16_t>(groupData, mogpOffset);
                         node.positiveChild = read<int16_t>(groupData, mogpOffset);
                         node.faceCount = read<uint16_t>(groupData, mogpOffset);
-                        node.firstFace = read<uint32_t>(groupData, mogpOffset);
+                        node.firstFace = read<uint16_t>(groupData, mogpOffset);
+                        node.unknown = read<int16_t>(groupData, mogpOffset);
                         node.planeDistance = read<float>(groupData, mogpOffset);
                         group.bspNodes.push_back(node);
                     }
