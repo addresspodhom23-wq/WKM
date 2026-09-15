@@ -47,6 +47,7 @@ layout(location = 5) in float vFadeAlpha;
 layout(location = 6) flat in int vSkyMode;
 layout(location = 7) flat in float vHighlight;
 layout(location = 8) flat in int vClassicVegetation;
+layout(location = 9) flat in vec4 vInstanceColor;
 
 layout(location = 0) out vec4 outColor;
 
@@ -131,6 +132,16 @@ void main() {
     }
 
     const bool vanillaRendering = shadowParams.w > 0.5;
+
+    // Vanilla WMO doodads carry a packed MODD colour per instance. Ordinary
+    // ADT/world M2 instances upload white, so this is a no-op for them.
+    // The classic client applies the authored colour to opaque/alpha-key
+    // geometry; transparent effect layers keep their own material colour.
+    if (vanillaRendering && blendMode <= 1) {
+        texColor.rgb *= vInstanceColor.rgb;
+        texColor.a *= vInstanceColor.a;
+    }
+
     bool classicVegetation = vClassicVegetation != 0;
     bool isFoliage = (alphaTest == 2);
 
