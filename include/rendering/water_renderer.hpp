@@ -45,6 +45,8 @@ struct WaterSurface {
     uint8_t height = 8;
 
     std::vector<float> heights;
+    std::vector<glm::vec3> worldVertices;  // exact WMO MLIQ positions when present
+    std::vector<glm::vec2> authoredTexCoords; // SMOMVert s/t for magma/slime
     std::vector<uint8_t> mask;
 
     // Vulkan render data
@@ -202,7 +204,7 @@ private:
     VkDescriptorSetLayout classicSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool classicPool_ = VK_NULL_HANDLE;
     ClassicWaterFrame classicFallback_;
-    std::array<std::vector<ClassicWaterFrame>, 2> classicFrames_;
+    std::array<std::vector<ClassicWaterFrame>, 4> classicFrames_;
 #ifdef __ANDROID__
     bool classicWater_ = true;
 #else
