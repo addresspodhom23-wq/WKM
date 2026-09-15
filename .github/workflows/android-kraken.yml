@@ -56,6 +56,18 @@ jobs:
           tests/test_vanilla_renderer_contract.cpp -o /tmp/test-vanilla-renderer
         /tmp/test-vanilla-renderer
 
+    - name: Test Vanilla MCSH decode
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror -Iinclude \
+          tests/test_wow112_mcsh.cpp -o /tmp/test-wow112-mcsh
+        /tmp/test-wow112-mcsh
+
+    - name: Test MCSH Android renderer wiring
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror \
+          tests/test_mcsh_renderer_contract.cpp -o /tmp/test-mcsh-renderer
+        /tmp/test-mcsh-renderer
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
