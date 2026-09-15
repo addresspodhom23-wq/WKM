@@ -22,6 +22,7 @@ constexpr uint32_t MODS = 0x4D4F4453;  // Doodad sets
 constexpr uint32_t MOPV = 0x4D4F5056;  // Portal vertices
 constexpr uint32_t MOPT = 0x4D4F5054;  // Portal info
 constexpr uint32_t MOPR = 0x4D4F5052;  // Portal references
+constexpr uint32_t MFOG = 0x4D464F47;  // Fog volumes
 
 // WMO group chunk identifiers
 constexpr uint32_t MOGP = 0x4D4F4750;  // Group header
@@ -31,6 +32,10 @@ constexpr uint32_t MOCV = 0x4D4F4356;  // Vertex colors
 constexpr uint32_t MONR = 0x4D4F4E52;  // Normals
 constexpr uint32_t MOTV = 0x4D4F5456;  // Texture coords
 constexpr uint32_t MLIQ = 0x4D4C4951;  // Liquid
+constexpr uint32_t MOLR = 0x4D4F4C52;  // Group light references
+constexpr uint32_t MODR = 0x4D4F4452;  // Group doodad references
+constexpr uint32_t MOBN = 0x4D4F424E;  // Collision BSP nodes
+constexpr uint32_t MOBR = 0x4D4F4252;  // Collision BSP face refs
 
 // Read utilities
 template<typename T>
@@ -66,6 +71,14 @@ std::string readString(const std::vector<uint8_t>& data, uint32_t offset) {
         result += static_cast<char>(data[offset++]);
     }
     return result;
+}
+
+glm::vec4 unpackBGRA(uint32_t bgra) {
+    return glm::vec4(
+        static_cast<float>((bgra >> 16) & 0xFF) / 255.0f,
+        static_cast<float>((bgra >>  8) & 0xFF) / 255.0f,
+        static_cast<float>((bgra >>  0) & 0xFF) / 255.0f,
+        static_cast<float>((bgra >> 24) & 0xFF) / 255.0f);
 }
 
 } // anonymous namespace
@@ -238,33 +251,28 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOLT: {
-                // Lights
-                uint32_t nLights = chunkSize / 48;  // Approximate size
-                for (uint32_t i = 0; i < nLights && offset < chunkEnd; i++) {
+                // Vanilla SMOLight is exactly 48 bytes:
+                // 4 flag bytes, packed BGRA, vec3 position, intensity,
+                // attenuation start/end, then 4 unknown floats.
+                constexpr uint32_t kLightSize = 48;
+                const uint32_t nLights = chunkSize / kLightSize;
+                for (uint32_t i = 0; i < nLights && offset + kLightSize <= chunkEnd; ++i) {
                     WMOLight light;
-                    light.type = read<uint32_t>(wmoData, offset);
+                    light.type = read<uint8_t>(wmoData, offset);
                     light.useAttenuation = read<uint8_t>(wmoData, offset);
                     light.pad[0] = read<uint8_t>(wmoData, offset);
                     light.pad[1] = read<uint8_t>(wmoData, offset);
-                    light.pad[2] = read<uint8_t>(wmoData, offset);
-
-                    light.color.r = read<float>(wmoData, offset);
-                    light.color.g = read<float>(wmoData, offset);
-                    light.color.b = read<float>(wmoData, offset);
-                    light.color.a = read<float>(wmoData, offset);
+                    light.color = unpackBGRA(read<uint32_t>(wmoData, offset));
 
                     light.position.x = read<float>(wmoData, offset);
                     light.position.y = read<float>(wmoData, offset);
                     light.position.z = read<float>(wmoData, offset);
-
                     light.intensity = read<float>(wmoData, offset);
                     light.attenuationStart = read<float>(wmoData, offset);
                     light.attenuationEnd = read<float>(wmoData, offset);
-
                     for (float& value : light.unknown) {
                         value = read<float>(wmoData, offset);
                     }
-
                     model.lights.push_back(light);
                 }
                 core::Logger::getInstance().debug("WMO lights: ", model.lights.size());
@@ -356,18 +364,17 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOPT: {
-                // Portal info
-                uint32_t nPortals = chunkSize / 20;  // Each portal reference is 20 bytes
-                for (uint32_t i = 0; i < nPortals; i++) {
+                // Vanilla SMOPortal: uint16 base, uint16 count, C4Plane.
+                constexpr uint32_t kPortalSize = 20;
+                const uint32_t nPortals = chunkSize / kPortalSize;
+                for (uint32_t i = 0; i < nPortals && offset + kPortalSize <= chunkEnd; ++i) {
                     WMOPortal portal;
                     portal.startVertex = read<uint16_t>(wmoData, offset);
                     portal.vertexCount = read<uint16_t>(wmoData, offset);
-                    portal.planeIndex = read<uint16_t>(wmoData, offset);
-                    portal.padding = read<uint16_t>(wmoData, offset);
-
-                    // Skip additional data (12 bytes)
-                    offset += 12;
-
+                    portal.plane.x = read<float>(wmoData, offset);
+                    portal.plane.y = read<float>(wmoData, offset);
+                    portal.plane.z = read<float>(wmoData, offset);
+                    portal.plane.w = read<float>(wmoData, offset);
                     model.portals.push_back(portal);
                 }
                 core::Logger::getInstance().debug("WMO portals: ", model.portals.size());
@@ -386,6 +393,30 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                     model.portalRefs.push_back(ref);
                 }
                 core::Logger::getInstance().debug("WMO portal refs: ", model.portalRefs.size());
+                break;
+            }
+
+            case MFOG: {
+                // Vanilla SMOFog is exactly 48 bytes.
+                constexpr uint32_t kFogSize = 48;
+                const uint32_t nFogs = chunkSize / kFogSize;
+                for (uint32_t i = 0; i < nFogs && offset + kFogSize <= chunkEnd; ++i) {
+                    WMOFog fog;
+                    fog.flags = read<uint32_t>(wmoData, offset);
+                    fog.position.x = read<float>(wmoData, offset);
+                    fog.position.y = read<float>(wmoData, offset);
+                    fog.position.z = read<float>(wmoData, offset);
+                    fog.smallRadius = read<float>(wmoData, offset);
+                    fog.largeRadius = read<float>(wmoData, offset);
+                    fog.endDist = read<float>(wmoData, offset);
+                    fog.startFactor = read<float>(wmoData, offset);
+                    fog.color1 = unpackBGRA(read<uint32_t>(wmoData, offset));
+                    fog.endDist2 = read<float>(wmoData, offset);
+                    fog.startFactor2 = read<float>(wmoData, offset);
+                    fog.color2 = unpackBGRA(read<uint32_t>(wmoData, offset));
+                    model.fogs.push_back(fog);
+                }
+                core::Logger::getInstance().debug("WMO fog volumes: ", model.fogs.size());
                 break;
             }
 
@@ -610,6 +641,42 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                                 " count=", batch.indexCount, " verts=[", batch.startVertex, "-",
                                 batch.lastVertex, "] mat=", static_cast<int>(batch.materialId), " flags=", static_cast<int>(batch.flags));
                         }
+                    }
+                }
+                else if (subChunkId == MOLR) {
+                    const uint32_t count = subChunkSize / sizeof(uint16_t);
+                    group.lightRefs.reserve(group.lightRefs.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.lightRefs.push_back(read<uint16_t>(groupData, mogpOffset));
+                    }
+                }
+                else if (subChunkId == MODR) {
+                    const uint32_t count = subChunkSize / sizeof(uint16_t);
+                    group.doodadRefs.reserve(group.doodadRefs.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.doodadRefs.push_back(read<uint16_t>(groupData, mogpOffset));
+                    }
+                }
+                else if (subChunkId == MOBN) {
+                    constexpr uint32_t kBspNodeSize = 16;
+                    const uint32_t count = subChunkSize / kBspNodeSize;
+                    group.bspNodes.reserve(group.bspNodes.size() + count);
+                    for (uint32_t i = 0; i < count && mogpOffset + kBspNodeSize <= subChunkEnd; ++i) {
+                        WMOBspNode node;
+                        node.flags = read<uint16_t>(groupData, mogpOffset);
+                        node.negativeChild = read<int16_t>(groupData, mogpOffset);
+                        node.positiveChild = read<int16_t>(groupData, mogpOffset);
+                        node.faceCount = read<uint16_t>(groupData, mogpOffset);
+                        node.firstFace = read<uint32_t>(groupData, mogpOffset);
+                        node.planeDistance = read<float>(groupData, mogpOffset);
+                        group.bspNodes.push_back(node);
+                    }
+                }
+                else if (subChunkId == MOBR) {
+                    const uint32_t count = subChunkSize / sizeof(uint16_t);
+                    group.bspFaceIndices.reserve(group.bspFaceIndices.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.bspFaceIndices.push_back(read<uint16_t>(groupData, mogpOffset));
                     }
                 }
                 else if (subChunkId == MLIQ) { // MLIQ - WMO liquid data
