@@ -110,6 +110,13 @@ ChunkMesh TerrainMeshGenerator::generateChunkMesh(const MapChunk& chunk, int chu
         }
     }
 
+    // MCSH shares the MCAL texture coordinate space in the 1.12
+    // client. Carry the packed bytes unchanged to the renderer.
+    if (chunk.hasBakedShadow()) {
+        mesh.bakedShadow = chunk.bakedShadow;
+        mesh.hasBakedShadow = true;
+    }
+
     // Copy texture layers
     for (size_t layerIdx = 0; layerIdx < chunk.layers.size(); layerIdx++) {
         const auto& layer = chunk.layers[layerIdx];
