@@ -1424,6 +1424,17 @@ void AuthScreen::applyPresetToState(LoginGraphicsState& s, int preset) {
     s.grassHeight    = p.grassHeight;
     s.grassDistance  = p.grassDistance;
 
+    if (preset == 5) {
+        // The Original WoW profile is intentionally more than another quality
+        // rung. These are 1.12-style renderer choices that the login sheet also
+        // owns, so selecting it here must save the same picture as selecting it
+        // after entering the world.
+        s.fogStrength  = 1.0f;
+        s.fogSkyBlend  = 0.0f;
+        s.sharpStars   = false;
+        s.upscalingMode = 0;
+    }
+
     // Not in the table because the in-game preset has no opinion about them
     // either: upscaling and water refraction are the player's, and brightness,
     // vsync and fullscreen are not quality settings. A preset that reset them
@@ -1599,7 +1610,7 @@ void AuthScreen::renderLoginSettingsSheet(float screenW, float screenH) {
     {
         ui_.text(col.at(), "Качество", px(kLabel), theme.inkSoft);
         col.gap(labelRow);
-        const std::vector<std::string> names = {"Своё", "Низкое", "Среднее", "Высокое", "Максимум"};
+        const std::vector<std::string> names = {"Своё", "Низкое", "Среднее", "Высокое", "Максимум", "Original WoW 1.12"};
         int preset = std::clamp(loginGfx_.preset, 0, static_cast<int>(names.size()) - 1);
         const auto [pa, pb] = col.cell(0.0f, px(220), px(kControl));
         if (ui_.dropdown("gfx.preset", pa, pb, names[static_cast<size_t>(preset)], names,
