@@ -80,7 +80,7 @@ constexpr GraphicsPresetValues kGraphicsPresets[] = {
     /* Medium */ {.viewDistance = 1000.0f, .shadows = true,  .shadowDistance = 200.0f, .antiAliasing = 1, .fxaa = false, .normalMapping = true,  .normalMapStrength = 0.6f, .parallax = true,  .parallaxQuality = 0,  .groundClutter = 60,  .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
     /* High   */ {.viewDistance = 1600.0f, .shadows = true,  .shadowDistance = 350.0f, .antiAliasing = 2, .fxaa = false, .normalMapping = true,  .normalMapStrength = 0.8f, .parallax = true,  .parallaxQuality = 1, .groundClutter = 100, .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
     /* Ultra  */ {.viewDistance = 2400.0f, .shadows = true,  .shadowDistance = 500.0f, .antiAliasing = 3, .fxaa = false, .normalMapping = true,  .normalMapStrength = 1.2f, .parallax = true,  .parallaxQuality = 2, .groundClutter = 150, .grass = true,  .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
-    /* Original WoW */ {.viewDistance = 1050.0f, .shadows = true, .shadowDistance = 160.0f, .antiAliasing = 0, .fxaa = false, .normalMapping = false, .normalMapStrength = 0.6f, .parallax = false, .parallaxQuality = 0, .groundClutter = 56, .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 130},
+    /* Original WoW 1.12 */ {.viewDistance = 777.0f, .shadows = true, .shadowDistance = 100.0f, .antiAliasing = 0, .fxaa = false, .normalMapping = false, .normalMapStrength = 0.6f, .parallax = false, .parallaxQuality = 0, .groundClutter = 100, .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 170},
 };
 
 /// The number of presets, not counting Custom - which is not a set of values
