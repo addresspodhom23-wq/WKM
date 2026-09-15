@@ -1905,7 +1905,8 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                                        sizeof(glm::vec4), &pushedCloth);
                 }
 
-                // Issue draw calls for each range in this merged batch
+                // Packed WMO groups now normally contain exactly one range here:
+                // authored same-material ranges were joined when the GPU EBO was built.
                 for (const auto& dr : mb.draws) {
                     if (dr.indexCount == 0) continue;
                     vkCmdDrawIndexed(cmd, dr.indexCount, 1, dr.firstIndex, 0, 0);
