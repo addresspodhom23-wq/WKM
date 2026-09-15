@@ -1248,13 +1248,13 @@ void WMORenderer::setInstanceTransform(uint32_t instanceId, const glm::mat4& tra
     rebuildSpatialIndex();
 }
 
-void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform) {
+void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId,
+                                         const glm::mat4& localTransform,
+                                         uint32_t doodadIndex,
+                                         std::vector<uint16_t> groupRefs) {
     auto it = std::find_if(instances.begin(), instances.end(),
                           [instanceId](const WMOInstance& inst) { return inst.id == instanceId; });
     if (it == instances.end()) {
-        // Nothing to parent to. The M2 was already created, so silently dropping
-        // it here leaves it stranded at the origin, drawn nowhere and owned by
-        // no one - invisible in a way that looks exactly like a load failure.
         core::Logger::getInstance().warning(
             "WMO doodad has no parent instance ", instanceId,
             " - M2 instance ", m2InstanceId, " left at the origin");
@@ -1263,7 +1263,9 @@ void WMORenderer::addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId
     WMOInstance::DoodadInfo doodad;
     doodad.m2InstanceId = m2InstanceId;
     doodad.localTransform = localTransform;
-    it->doodads.push_back(doodad);
+    doodad.doodadIndex = doodadIndex;
+    doodad.groupRefs = std::move(groupRefs);
+    it->doodads.push_back(std::move(doodad));
 
     // Place it immediately rather than waiting for the parent's next transform
     // push, so it is never drawn at the origin for a frame and never sits there
@@ -1621,6 +1623,50 @@ void WMORenderer::prepareRender() {
         }
     }
 }
+
+void WMORenderer::updateDoodadVisibility(const Camera& camera,
+                                         const glm::vec3& viewerPos) {
+    if (!m2Renderer_ || instances.empty()) return;
+
+    Frustum frustum;
+    frustum.extractFromMatrix(camera.getProjectionMatrix() * camera.getViewMatrix());
+    const glm::vec3 camPos = camera.getPosition();
+
+    std::unordered_set<uint32_t> visibleGroups;
+    for (const auto& instance : instances) {
+        if (instance.doodads.empty()) continue;
+
+        auto modelIt = loadedModels.find(instance.modelId);
+        if (modelIt == loadedModels.end()) continue;
+        const ModelData& model = modelIt->second;
+
+        visibleGroups.clear();
+        if (!model.portals.empty() && !model.portalRefs.empty()) {
+            const glm::vec3 localCam =
+                glm::vec3(instance.invModelMatrix * glm::vec4(camPos, 1.0f));
+            const glm::vec3 localViewer =
+                glm::vec3(instance.invModelMatrix * glm::vec4(viewerPos, 1.0f));
+            getVisibleGroupsViaPortals(model, localCam, localViewer, frustum,
+                                       instance.modelMatrix, visibleGroups);
+        } else {
+            for (size_t gi = 0; gi < model.groups.size(); ++gi) {
+                visibleGroups.insert(static_cast<uint32_t>(gi));
+            }
+        }
+
+        for (const auto& doodad : instance.doodads) {
+            bool visible = doodad.groupRefs.empty();
+            for (uint16_t groupRef : doodad.groupRefs) {
+                if (visibleGroups.find(groupRef) != visibleGroups.end()) {
+                    visible = true;
+                    break;
+                }
+            }
+            m2Renderer_->setInstanceVisible(doodad.m2InstanceId, visible);
+        }
+    }
+}
+
 
 void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const Camera& camera,
                          const glm::vec3* viewerPos) {
