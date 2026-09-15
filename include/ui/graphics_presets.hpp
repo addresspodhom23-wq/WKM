@@ -17,7 +17,7 @@
 namespace wowee {
 namespace ui {
 
-/// What each quality preset means, in the order Low, Medium, High, Ultra.
+/// What each quality preset means, in the order Low, Medium, High, Ultra, Original WoW.
 ///
 /// That order is what the config file holds. graphics_preset is written as an
 /// index - 0 for Custom, then one per row here - so a preset added at the front
@@ -80,6 +80,7 @@ constexpr GraphicsPresetValues kGraphicsPresets[] = {
     /* Medium */ {.viewDistance = 1000.0f, .shadows = true,  .shadowDistance = 200.0f, .antiAliasing = 1, .fxaa = false, .normalMapping = true,  .normalMapStrength = 0.6f, .parallax = true,  .parallaxQuality = 0,  .groundClutter = 60,  .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
     /* High   */ {.viewDistance = 1600.0f, .shadows = true,  .shadowDistance = 350.0f, .antiAliasing = 2, .fxaa = false, .normalMapping = true,  .normalMapStrength = 0.8f, .parallax = true,  .parallaxQuality = 1, .groundClutter = 100, .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
     /* Ultra  */ {.viewDistance = 2400.0f, .shadows = true,  .shadowDistance = 500.0f, .antiAliasing = 3, .fxaa = false, .normalMapping = true,  .normalMapStrength = 1.2f, .parallax = true,  .parallaxQuality = 2, .groundClutter = 150, .grass = true,  .grassDensity = 70, .grassHeight = 50, .grassDistance = 215},
+    /* Original WoW */ {.viewDistance = 1050.0f, .shadows = true, .shadowDistance = 160.0f, .antiAliasing = 0, .fxaa = false, .normalMapping = false, .normalMapStrength = 0.6f, .parallax = false, .parallaxQuality = 0, .groundClutter = 56, .grass = false, .grassDensity = 70, .grassHeight = 50, .grassDistance = 130},
 };
 
 /// The number of presets, not counting Custom - which is not a set of values
