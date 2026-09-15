@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include "rendering/capsule_sweep.hpp"
 #include "rendering/m2_renderer.hpp"
 #include "rendering/m2_renderer_internal.h"
 #include "rendering/m2_model_classifier.hpp"
@@ -981,6 +982,49 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
         if (instance.skipCollision || instance.skipWallCollision) continue;
         if (instance.scale <= 0.001f) continue;
 
+        // Vegetation with authored collision uses a swept player capsule.
+        // The old size-based trunk flag excluded narrow trees, and soft pushes
+        // were smaller than a running step. Do not use the canopy's visual box.
+        if (authoredCollision && (model.isFoliageLike || model.collisionTreeTrunk)) {
+            const glm::vec3 localFrom(instance.invModelMatrix * glm::vec4(from, 1.0f));
+            const glm::vec3 localTo(instance.invModelMatrix * glm::vec4(adjustedPos, 1.0f));
+            const float reach = (2.0f + playerRadius) / instance.scale;
+            model.collision.getWallTrisInRange(
+                std::min(localFrom.x, localTo.x) - reach,
+                std::min(localFrom.y, localTo.y) - reach,
+                std::max(localFrom.x, localTo.x) + reach,
+                std::max(localFrom.y, localTo.y) + reach,
+                tl_m2_collisionTriScratch);
+            const float radius = std::clamp(playerRadius, 0.01f, 1.0f);
+            const glm::vec3 bottom = from + glm::vec3(0, 0, radius);
+            const glm::vec3 top = from + glm::vec3(0, 0, 2.0f - radius);
+            const glm::vec3 movement = adjustedPos - from;
+            float safe = 1.0f;
+            for (uint32_t ti : tl_m2_collisionTriScratch) {
+                if (ti >= model.collision.triCount) continue;
+                const auto& indices = model.collision.indices;
+                const auto& vertices = model.collision.vertices;
+                const glm::vec3 a(instance.modelMatrix * glm::vec4(vertices[indices[ti*3]], 1));
+                const glm::vec3 b(instance.modelMatrix * glm::vec4(vertices[indices[ti*3+1]], 1));
+                const glm::vec3 c(instance.modelMatrix * glm::vec4(vertices[indices[ti*3+2]], 1));
+                safe = std::min(safe, capsule_sweep::safeFraction(bottom, top,
+                    movement, radius, a, b, c));
+                if (safe == 0.0f) break;
+            }
+            if (safe < 1.0f) {
+                const glm::vec3 stopped = from + movement * safe;
+                adjustedPos.x = stopped.x;
+                adjustedPos.y = stopped.y;
+                collided = true;
+                static std::set<std::string> reportedSweptModels;
+                if (reportedSweptModels.insert(model.name).second) {
+                    LOG_WARNING("Collision: swept capsule blocked by '", model.name,
+                                "' (authored vegetation mesh)");
+                }
+            }
+            continue;
+        }
+
         // --- Mesh-based wall collision: closest-point push ---
         if (model.collision.valid()) {
             glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
@@ -997,7 +1041,6 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
             constexpr float PLAYER_HEIGHT = 2.0f;
             constexpr float MAX_TOTAL_PUSH = 0.02f; // Cap total push per instance
             bool pushed = false;
-            bool treeBlocked = false;
             float totalPushX = 0.0f, totalPushY = 0.0f;
 
             for (uint32_t ti : tl_m2_collisionTriScratch) {
@@ -1023,21 +1066,6 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
                 glm::vec3 closest = closestPointOnTriangle(localPos, v0, v1, v2);
                 glm::vec3 diff = localPos - closest;
                 float distXY = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-
-                // Trees are solid, not soft push volumes. Preserve the last
-                // position when moving deeper into contact, but allow escape
-                // from an overlap (e.g. after spawning beside a trunk).
-                if (model.collisionTreeTrunk && distXY < localRadius) {
-                    const glm::vec3 previousClosest =
-                        closestPointOnTriangle(localFrom, v0, v1, v2);
-                    const glm::vec2 previousDelta(localFrom.x - previousClosest.x,
-                                                  localFrom.y - previousClosest.y);
-                    const float previousDistance = glm::length(previousDelta);
-                    if (distXY < previousDistance - 1e-5f) {
-                        treeBlocked = true;
-                        break;
-                    }
-                }
 
                 if (distXY < localRadius && distXY > 1e-4f) {
                     // Gentle push - very small fraction of penetration
@@ -1065,13 +1093,6 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
                         pushed = true;
                     }
                 }
-            }
-
-            if (treeBlocked) {
-                adjustedPos.x = from.x;
-                adjustedPos.y = from.y;
-                collided = true;
-                continue;
             }
 
             if (pushed) {
@@ -1371,3 +1392,4 @@ void M2Renderer::collectGrassClearings(float minX, float minY, float maxX, float
 
 } // namespace rendering
 } // namespace wowee
+

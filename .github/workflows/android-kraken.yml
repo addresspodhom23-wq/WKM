@@ -26,6 +26,12 @@ jobs:
       with:
         submodules: true
 
+    - name: Test vegetation collision sweep
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror -Iinclude \
+          tests/test_vegetation_sweep.cpp -o /tmp/test-vegetation-sweep
+        /tmp/test-vegetation-sweep
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
