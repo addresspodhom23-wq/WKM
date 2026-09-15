@@ -157,7 +157,10 @@ public:
      * @param m2InstanceId M2 instance ID of the doodad
      * @param localTransform Local transform relative to WMO origin
      */
-    void addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId, const glm::mat4& localTransform);
+    void addDoodadToInstance(uint32_t instanceId, uint32_t m2InstanceId,
+                             const glm::mat4& localTransform,
+                             uint32_t doodadIndex = 0,
+                             std::vector<uint16_t> groupRefs = {});
 
     // Forward declare DoodadTemplate for public API
     struct DoodadTemplate {
@@ -205,6 +208,12 @@ public:
      */
     /** Pre-update mutable state (frame ID, material UBOs) on main thread before parallel render. */
     void prepareRender();
+
+    /// Main-thread visibility bridge for WMO-owned M2 doodads. Uses the same
+    /// authored portal/group graph as WMO geometry and MODR group references,
+    /// then pushes semantic visibility into M2Renderer before its cull pass.
+    void updateDoodadVisibility(const Camera& camera,
+                                const glm::vec3& viewerPos);
     /// viewerPos is the character; portal culling seeds from it as well as from
     /// the camera, because at a doorway the two stand in different groups and
     /// neither alone is reliably the right place to start.
@@ -699,6 +708,8 @@ private:
         struct DoodadInfo {
             uint32_t m2InstanceId;       // ID of the M2 instance
             glm::mat4 localTransform;    // Local transform relative to WMO origin
+            uint32_t doodadIndex = 0;    // MODD index
+            std::vector<uint16_t> groupRefs; // MODR groups owning this doodad
         };
         std::vector<DoodadInfo> doodads;
 
