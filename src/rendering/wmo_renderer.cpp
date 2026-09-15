@@ -531,9 +531,8 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         uint32_t texIndex = 0;  // Default to first texture
         const uint32_t t1 = resolveTextureIndex(mat.texture1);
         const uint32_t t2 = resolveTextureIndex(mat.texture2);
-        const uint32_t t3 = resolveTextureIndex(mat.texture3);
 
-        // Prefer first valid non-empty texture among texture1/2/3.
+        // Vanilla 1.12 authors exactly two texture offsets in MOMT.
         auto pickValid = [&](uint32_t idx) -> bool {
             if (idx == std::numeric_limits<uint32_t>::max()) return false;
             if (idx >= model.textures.size()) return false;
@@ -542,16 +541,13 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
             return true;
         };
         if (!pickValid(t1)) {
-            if (!pickValid(t2)) {
-                pickValid(t3);
-            }
+            pickValid(t2);
         }
 
         if (matLogCount < 20) {
             core::Logger::getInstance().debug("  Material ", i,
                 ": tex1=", mat.texture1, "->", t1,
                 " tex2=", mat.texture2, "->", t2,
-                " tex3=", mat.texture3, "->", t3,
                 " chosen=", texIndex);
             matLogCount++;
         }
