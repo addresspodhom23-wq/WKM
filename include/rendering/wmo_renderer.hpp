@@ -401,7 +401,13 @@ public:
     bool queryVanillaFog(const glm::vec3& worldPos, bool underwater,
                          VanillaFogSample& out) const;
 
-    /** Gather local orange point lights derived from visible lava materials. */
+    /** Gather authored Vanilla MOLT lights referenced by the camera's WMO group (MOLR). */
+    uint32_t gatherVanillaLights(const glm::vec3& cameraPos,
+                                 glm::vec4* outPosRadius,
+                                 glm::vec4* outColorIntensity,
+                                 uint32_t maxLights) const;
+
+    /** Gather local orange point lights derived from Kraken lava materials. */
     uint32_t gatherLavaLights(const glm::vec3& cameraPos,
                               glm::vec4* outPosRadius,
                               glm::vec4* outColorIntensity,
