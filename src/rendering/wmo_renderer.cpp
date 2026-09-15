@@ -2019,6 +2019,10 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     }
 
     resources.groupFlags = groupFlags;
+    for (int i = 0; i < 4; ++i) {
+        resources.fogIndices[i] =
+            static_cast<uint8_t>(std::min<uint32_t>(group.fogIndices[i], 0xFFu));
+    }
 
     resources.vertexCount = group.vertices.size();
     resources.indexCount = group.indices.size();
@@ -4087,6 +4091,52 @@ bool WMORenderer::isInsideWMO(float glX, float glY, float glZ, uint32_t* outMode
 
 bool WMORenderer::isInsideInteriorWMO(float glX, float glY, float glZ) const {
     return isInsideWMOGroups(glX, glY, glZ, /*interiorOnly=*/true, nullptr);
+}
+
+bool WMORenderer::queryVanillaFog(const glm::vec3& worldPos,
+                                  VanillaFogSample& out) const {
+    for (const auto& instance : instances) {
+        if (!withinWorldBounds(instance, worldPos.x, worldPos.y, worldPos.z,
+                               2.0f, 2.0f)) {
+            continue;
+        }
+
+        auto modelIt = loadedModels.find(instance.modelId);
+        if (modelIt == loadedModels.end()) continue;
+        const ModelData& model = modelIt->second;
+        if (model.fogs.empty()) continue;
+
+        const glm::vec3 localPos =
+            glm::vec3(instance.invModelMatrix * glm::vec4(worldPos, 1.0f));
+        const int groupIdx = findContainingGroup(model, localPos);
+        if (groupIdx < 0 || static_cast<size_t>(groupIdx) >= model.groups.size()) {
+            continue;
+        }
+
+        const GroupResources& group = model.groups[static_cast<size_t>(groupIdx)];
+        for (uint8_t fogIndex : group.fogIndices) {
+            if (fogIndex == 0xFF ||
+                static_cast<size_t>(fogIndex) >= model.fogs.size()) {
+                continue;
+            }
+
+            const pipeline::WMOFog& fog = model.fogs[fogIndex];
+            const float localDistance = glm::length(localPos - fog.position);
+            const bool infiniteRadius = (fog.flags & 0x1u) != 0;
+            if (!infiniteRadius && fog.largeRadius > 0.0f &&
+                localDistance > fog.largeRadius) {
+                continue;
+            }
+
+            const float worldScale = std::max(0.001f, std::abs(instance.scale));
+            out.end = std::max(0.0f, fog.endDist * worldScale);
+            out.start = glm::clamp(fog.startFactor, 0.0f, 1.0f) * out.end;
+            out.color = glm::vec3(fog.color1);
+            out.underwater = false;
+            return out.end > 0.0f;
+        }
+    }
+    return false;
 }
 
 float WMORenderer::raycastBoundingBoxes(const glm::vec3& origin, const glm::vec3& direction, float maxDistance) const {
