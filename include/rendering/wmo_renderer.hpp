@@ -51,6 +51,13 @@ public:
     WMORenderer();
     ~WMORenderer();
 
+    struct VanillaFogSample {
+        glm::vec3 color{0.0f};
+        float start = 0.0f;
+        float end = 0.0f;
+        bool underwater = false;
+    };
+
     /**
      * Initialize renderer (Vulkan)
      * @param ctx Vulkan context
@@ -379,6 +386,10 @@ public:
      */
     bool isInsideInteriorWMO(float glX, float glY, float glZ) const;
 
+    /// Resolve the Vanilla MFOG volume referenced by the containing WMO group.
+    /// Returns false when no group/fog applies, leaving zone fog untouched.
+    bool queryVanillaFog(const glm::vec3& worldPos, VanillaFogSample& out) const;
+
     /** Gather local orange point lights derived from visible lava materials. */
     uint32_t gatherLavaLights(const glm::vec3& cameraPos,
                               glm::vec4* outPosRadius,
@@ -476,6 +487,7 @@ private:
         glm::vec3 boundingBoxMax;
 
         uint32_t groupFlags = 0;
+        uint8_t fogIndices[4] = {0xFF, 0xFF, 0xFF, 0xFF};
         bool allUntextured = false;  // True if ALL batches use fallback white texture (collision/placeholder group)
         bool isLOD = false;          // Distance-only group (skip when camera is close)
 
