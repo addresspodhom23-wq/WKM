@@ -7,6 +7,9 @@
 
 using namespace wowee::pipeline;
 
+static_assert(sizeof(decltype(M2Batch{}.flags)) == sizeof(uint16_t),
+              "Vanilla texUnit flags must preserve all 16 on-disk bits");
+
 TEST_CASE("Animated glow centers follow their skinned bones", "[m2][lights]") {
     wowee::rendering::M2Instance instance;
     instance.modelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(10.0f, 0.0f, 0.0f));
