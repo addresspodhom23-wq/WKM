@@ -650,7 +650,6 @@ private:
         // Exact root WMO data needed by Vanilla interior behaviour.
         std::vector<pipeline::WMOLight> lights;
         std::vector<pipeline::WMOFog> fogs;
-        std::vector<glm::vec4> convexVolumePlanes;
 
         // Portal visibility data
         std::vector<PortalData> portals;
