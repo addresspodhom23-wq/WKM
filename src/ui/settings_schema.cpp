@@ -33,11 +33,13 @@ constexpr SettingDesc kSchema[] = {
     // them. Both panels show the label as the title and these lines under it,
     // and the interface's panel adds the reason when a control is greyed, so
     // no line here needs to say what it depends on.
-    {"graphicspreset", "Quality preset", SettingKind::Enum, 0, 4, 1, "Graphics", "Quality",
+    {"graphicspreset", "Quality preset", SettingKind::Enum, 0, 5, 1, "Graphics", "Quality",
      "Sets every graphics option at once: view distance, shadows,\n"
      "anti-aliasing, surface detail, ground clutter and grass.\n"
+     "Original WoW removes added renderer effects and uses conservative\n"
+     "3.3.5-era world-detail values as a mobile baseline.\n"
      "Change any one of them afterwards and this reads Custom.",
-     "Custom|Low|Medium|High|Ultra", 0},
+     "Custom|Low|Medium|High|Ultra|Original WoW", 0},
     // No shadows row, because turning them off crashes the client.
     //
     // With the casters skipped the shadow pass still begins, clears and
