@@ -233,7 +233,7 @@ private:
     /// known failure is already held by a check. That is a trade worth
     /// declining until something here drifts that the checks do not catch.
     struct LoginGraphicsState {
-        int  preset          = 2;   // 0=Custom 1=Low 2=Medium 3=High 4=Ultra
+        int  preset          = 2;   // 0=Custom 1=Low 2=Medium 3=High 4=Ultra 5=Original WoW 1.12
         bool shadows         = true;
         float shadowDistance = 300.0f;
         float viewDistance   = kDefaultViewDistance;
