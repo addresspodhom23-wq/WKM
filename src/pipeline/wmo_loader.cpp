@@ -152,16 +152,21 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
         uint32_t chunkId = read<uint32_t>(wmoData, offset);
         uint32_t chunkSize = read<uint32_t>(wmoData, offset);
 
-        // 64-bit, for the reason readArray gives above: offset and chunkSize
-        // are both uint32 and both come from the file, so the sum wraps and a
-        // crafted chunkSize walks the loop past the end of the buffer.
-        if (static_cast<uint64_t>(offset) + chunkSize > wmoData.size()) {
-            core::Logger::getInstance().warning("Chunk extends beyond file");
-            break;
+        // Vanilla 1.12 tolerates a final root chunk whose declared end runs
+        // slightly past EOF. Use 64-bit arithmetic to avoid wraparound, clamp
+        // to the bytes that actually exist, and make every parser below see
+        // the effective size rather than the untrusted declared size.
+        const uint32_t chunkStart = offset;
+        const uint64_t declaredEnd =
+            static_cast<uint64_t>(chunkStart) + chunkSize;
+        const uint32_t chunkEnd = static_cast<uint32_t>(
+            std::min<uint64_t>(declaredEnd, wmoData.size()));
+        if (declaredEnd > wmoData.size()) {
+            core::Logger::getInstance().warning(
+                "WMO chunk extends beyond EOF; clamping declared end ",
+                declaredEnd, " to ", wmoData.size());
         }
-
-        uint32_t chunkStart = offset;
-        uint32_t chunkEnd = offset + chunkSize;
+        chunkSize = chunkEnd - chunkStart;
 
         switch (chunkId) {
             case MVER: {
@@ -513,14 +518,20 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
     uint32_t offset = 0;
 
     // Parse chunks in group file
-    while (offset + 8 < groupData.size()) {
+    while (offset + 8 <= groupData.size()) {
         uint32_t chunkId = read<uint32_t>(groupData, offset);
         uint32_t chunkSize = read<uint32_t>(groupData, offset);
-        uint32_t chunkEnd = offset + chunkSize;
-
-        if (chunkEnd > groupData.size()) {
-            break;
+        const uint32_t chunkStart = offset;
+        const uint64_t declaredEnd =
+            static_cast<uint64_t>(chunkStart) + chunkSize;
+        const uint32_t chunkEnd = static_cast<uint32_t>(
+            std::min<uint64_t>(declaredEnd, groupData.size()));
+        if (declaredEnd > groupData.size()) {
+            core::Logger::getInstance().warning(
+                "WMO group chunk extends beyond EOF; clamping declared end ",
+                declaredEnd, " to ", groupData.size());
         }
+        chunkSize = chunkEnd - chunkStart;
 
         if (chunkId == MVER) {
             // Version - skip
