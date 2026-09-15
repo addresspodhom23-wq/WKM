@@ -160,6 +160,7 @@ vec2 parallaxOcclusionMap(vec2 uv, vec3 viewDirTS, float lodFactor) {
 }
 
 void main() {
+    const bool vanillaRendering = shadowParams.w > 0.5;
     float lodFactor = computeLodFactor();
     // Gradients of the authored UV, taken here where every pixel of the quad
     // still agrees on them. Parallax moves the UV by a different amount per
@@ -187,7 +188,7 @@ void main() {
     vec3 N = vertexNormal;
     mat3 TBN = mat3(T, B, N);
 
-    if (enablePOM != 0 && heightMapVariance > 0.001 && lodFactor < 0.99) {
+    if (!vanillaRendering && enablePOM != 0 && heightMapVariance > 0.001 && lodFactor < 0.99) {
         mat3 TBN_inv = transpose(TBN);
         vec3 viewDirWorld = normalize(viewPos.xyz - FragPos);
         vec3 viewDirTS = TBN_inv * viewDirWorld;
@@ -199,7 +200,7 @@ void main() {
 
     // Compute normal (with normal mapping if enabled)
     vec3 norm = vertexNormal;
-    if (enableNormalMap != 0 && lodFactor < 0.99 && normalMapStrength > 0.001) {
+    if (!vanillaRendering && enableNormalMap != 0 && lodFactor < 0.99 && normalMapStrength > 0.001) {
         vec3 mapNormal = textureGrad(uNormalHeightMap, finalUV, uvDx, uvDy).rgb * 2.0 - 1.0;
         mapNormal = normalize(mapNormal);
         vec3 worldNormal = normalize(TBN * mapNormal);
@@ -216,7 +217,7 @@ void main() {
     // shadow (30%) so they get subtle light/shadow variation without the full
     // outdoor darkening that makes them look wrong.
     float shadow = 1.0;
-    if (shadowParams.x > 0.5) {
+    if (!vanillaRendering && shadowParams.x > 0.5) {
         vec3 ldir = normalize(-lightDir.xyz);
         float normalOffset = shadowTexel() * 2.0 * (1.0 - abs(dot(norm, ldir)));
         vec3 biasedPos = FragPos + norm * normalOffset;
@@ -232,7 +233,23 @@ void main() {
         shadow = mix(1.0, shadow, shadowParams.y);
     }
 
-    if (emissive == 1) {
+    if (vanillaRendering) {
+        if (isInterior != 0) {
+            // Retail 1.12 interior lighting is the authored MOCV vertex colour.
+            // MOHD ambient is not a lighting floor in the original draw path.
+            result = texColor.rgb * VertColor.rgb;
+        } else if (unlit != 0) {
+            result = texColor.rgb;
+        } else {
+            vec3 ldir = normalize(-lightDir.xyz);
+            float diff = max(dot(norm, ldir), 0.0);
+            result = texColor.rgb *
+                     (ambientColor.rgb + lightColor.rgb * diff);
+            // Preserve authored vertex tint/occlusion exactly; no artificial
+            // 0.25 brightness floor.
+            result *= VertColor.rgb;
+        }
+    } else if (emissive == 1) {
         // Authored luminous glass must remain bright in direct sun and shadow.
         // A small warm bias keeps low-valued texels from reading as dark glass.
         vec3 glass = texColor.rgb * 2.0 + vec3(0.16, 0.07, 0.015);
@@ -329,7 +346,7 @@ void main() {
         result *= max(VertColor.rgb, vec3(0.25));
     }
 
-    if (isWindow == 0 && isLava == 0)
+    if (!vanillaRendering && isWindow == 0 && isLava == 0)
         result += localLightContribution(FragPos, norm, texColor.rgb);
 
     float dist = length(viewPos.xyz - FragPos);
@@ -339,7 +356,7 @@ void main() {
     float alpha = texColor.a;
 
     // Window glass: opaque but simulates dark tinted glass with reflections.
-    if (isWindow != 0) {
+    if (!vanillaRendering && isWindow != 0) {
         vec3 viewDir = normalize(viewPos.xyz - FragPos);
         float NdotV = abs(dot(norm, viewDir));
         float fresnel = 0.08 + 0.92 * pow(1.0 - NdotV, 4.0);

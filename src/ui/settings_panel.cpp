@@ -843,6 +843,12 @@ bool isGraphicsPresetKey(const std::string& key) {
 }  // namespace
 
 void SettingsPanel::applyLoadedSettings() {
+    // Select the material path before individual side effects are applied, so a
+    // saved Original WoW profile starts in Vanilla mode on the very first frame.
+    if (services_.renderer) {
+        services_.renderer->setClassicRendering(
+            pendingGraphicsPreset == GraphicsPreset::ORIGINAL_WOW);
+    }
     // Everything the config file just filled in, handed to the thing it
     // affects. Same route the sliders and the presets take.
     for (const char* key : kGraphicsApplyKeys) applySettingSideEffects(key);
@@ -888,6 +894,14 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
             pendingLensFlare             = 0.0f; // no Kraken-added flare
             pendingFrameCap              = 0;   // unlimited; do not hide performance
         }
+        // The Original profile also selects a different material/lighting path:
+        // one that keeps authored Vanilla colours/normals and does not add
+        // Kraken's modern bump/specular/glass treatment.
+        if (services_.renderer) {
+            services_.renderer->setClassicRendering(
+                preset == GraphicsPreset::ORIGINAL_WOW);
+        }
+
         // Each one goes to the thing it affects through the one function that
         // knows where that is, rather than through a second copy of the same
         // renderer calls written out here.
@@ -942,10 +956,16 @@ void SettingsPanel::updateGraphicsPresetFromCurrentSettings() {
               pendingFrameCap == 0));
         if (matches) {
             pendingGraphicsPreset = static_cast<GraphicsPreset>(i + 1);
+            if (services_.renderer) {
+                services_.renderer->setClassicRendering(i == 4);
+            }
             return;
         }
     }
     pendingGraphicsPreset = GraphicsPreset::CUSTOM;
+    if (services_.renderer) {
+        services_.renderer->setClassicRendering(false);
+    }
 }
 
 std::string SettingsPanel::getSettingsPath() {

@@ -125,8 +125,11 @@ void main() {
         finalColor = mix(finalColor, texture(uLayer3Texture, TexCoord), a3);
     }
 
+    const bool vanillaRendering = shadowParams.w > 0.5;
     vec3 norm = normalize(Normal);
 
+    // Derivative bump is a Kraken extension. Vanilla 1.12 lights the authored
+    // world vertex normals; keep that exact path for Original WoW.
     // Derivative-based normal mapping: perturb vertex normal using texture detail.
     // Fade out with distance and near chunk edges (dFdx/dFdy are invalid across
     // chunk draw-call boundaries, producing visible seams if not faded).
@@ -134,7 +137,7 @@ void main() {
     float bumpFade = 1.0 - smoothstep(50.0, 125.0, fragDist);
     float edgeDist = min(min(LayerUV.x, 1.0 - LayerUV.x), min(LayerUV.y, 1.0 - LayerUV.y));
     bumpFade *= smoothstep(0.0, 0.06, edgeDist);
-    if (bumpFade > 0.001) {
+    if (!vanillaRendering && bumpFade > 0.001) {
         float lum = dot(finalColor.rgb, vec3(0.299, 0.587, 0.114));
         float dLdx = dFdx(lum);
         float dLdy = dFdy(lum);
@@ -158,7 +161,7 @@ void main() {
     vec3 diffuse = diff * lightColor.rgb * finalColor.rgb;
 
     float shadow = 1.0;
-    if (shadowParams.x > 0.5) {
+    if (!vanillaRendering && shadowParams.x > 0.5) {
         vec3 ldir = normalize(-lightDir.xyz);
         float normalOffset = shadowTexel() * 2.0 * (1.0 - abs(dot(norm, ldir)));
         vec3 biasedPos = FragPos + norm * normalOffset;
@@ -173,7 +176,9 @@ void main() {
     }
 
     vec3 result = ambient + shadow * diffuse;
-    result += localLightContribution(FragPos, norm, finalColor.rgb);
+    if (!vanillaRendering) {
+        result += localLightContribution(FragPos, norm, finalColor.rgb);
+    }
 
     float fogFactor = clamp((fogParams.y - fragDist) / (fogParams.y - fogParams.x), 0.0, 1.0);
     result = mix(fogColor.rgb, result, fogFactor);

@@ -467,8 +467,11 @@ void Renderer::updatePerFrameUBO() {
     float shadowBias = glm::clamp(0.8f * (shadowDistance_ / 300.0f), 0.0f, 1.0f);
     // z carries one texel of the shadow map. The shaders used to hold that as
     // a constant for 4096, and the map is 512 to 4096 by the quality level.
-    currentFrameData.shadowParams = glm::vec4(shadowsEnabled ? 1.0f : 0.0f, shadowBias,
-                                              1.0f / static_cast<float>(SHADOW_MAP_SIZE), 0.0f);
+    currentFrameData.shadowParams = glm::vec4(
+        shadowsEnabled ? 1.0f : 0.0f,
+        shadowBias,
+        1.0f / static_cast<float>(SHADOW_MAP_SIZE),
+        classicRendering_ ? 1.0f : 0.0f);
 
     for (uint32_t i = 0; i < MAX_LOCAL_LIGHTS; ++i) {
         currentFrameData.localLightPosRadius[i] = glm::vec4(0.0f);

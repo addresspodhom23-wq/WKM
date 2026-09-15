@@ -130,6 +130,7 @@ void main() {
         return;
     }
 
+    const bool vanillaRendering = shadowParams.w > 0.5;
     bool classicVegetation = vClassicVegetation != 0;
     bool isFoliage = (alphaTest == 2);
 
@@ -137,7 +138,7 @@ void main() {
     // At low alpha the original RGB is untrustworthy - replace with the
     // averaged color from nearby opaque texels (high mip).  The lower
     // the alpha the more we distrust the original color.
-    if (!classicVegetation && alphaTest != 0 && texColor.a > 0.01 && texColor.a < 1.0) {
+    if (!classicVegetation && !vanillaRendering && alphaTest != 0 && texColor.a > 0.01 && texColor.a < 1.0) {
         vec3 mipColor = textureLod(uTexture, TexCoord, 4.0).rgb;
         // trust = 0 at alpha 0, trust = 1 at alpha ~0.9
         float trust = smoothstep(0.0, 0.9, texColor.a);
@@ -155,7 +156,7 @@ void main() {
     // Mip-alpha preservation: alpha mips average downward, thinning distant
     // canopies to skeletons. Boost alpha with mip level so perceived leaf
     // density stays constant with distance.
-    if (isFoliage && !classicVegetation && hasTexture != 0) {
+    if (isFoliage && !classicVegetation && !vanillaRendering && hasTexture != 0) {
         float mip = textureQueryLod(uTexture, TexCoord).x;
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
@@ -181,7 +182,7 @@ void main() {
     if (blendMode == 1 && texColor.a < 0.004) discard;
 
     // Per-instance color variation (foliage only)
-    if (isFoliage && !classicVegetation) {
+    if (isFoliage && !classicVegetation && !vanillaRendering) {
         float hash = fract(sin(dot(InstanceOrigin.xy, vec2(127.1, 311.7))) * 43758.5453);
         float hueShiftR = 1.0 + (hash - 0.5) * 0.16;       // ±8% red
         float hueShiftB = 1.0 + (fract(hash * 7.13) - 0.5) * 0.16; // ±8% blue
@@ -205,7 +206,17 @@ void main() {
         float diff = foliageTwoSided ? abs(nDotL) : max(nDotL, 0.0);
 
     vec3 result;
-    if (classicVegetation && unlit == 0) {
+    if (vanillaRendering) {
+        // Vanilla 1.12: authored normals + one shared ambient/directional world
+        // light. No Kraken specular, shadow-map, SSS, AO or emissive colour
+        // boosts are layered on top of the M2 material.
+        if (unlit != 0) {
+            result = texColor.rgb;
+        } else {
+            result = texColor.rgb *
+                     (ambientColor.rgb + lightColor.rgb * diff);
+        }
+    } else if (classicVegetation && unlit == 0) {
         // Mobile classic vegetation keeps the artist-painted light and shade in
         // the texture instead of deriving broad dark bands from flat leaf-card
         // normals. Keep the zone/day-night colours, but make their direct-light
@@ -216,10 +227,6 @@ void main() {
     } else if (unlit != 0) {
         result = texColor.rgb * emissiveBoost;
         if (emissiveBoost > 1.0) {
-            // Weighted by the texel's own brightness. Added flat it lit the
-            // whole quad, and a glow card is black everywhere but its middle,
-            // so the card's rectangle appeared as an orange panel hanging on
-            // whatever was behind the fire. Black has nothing to boost.
             float emissiveWeight =
                 dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
             result += vec3(0.32, 0.14, 0.025) * (emissiveBoost - 1.0) *
@@ -250,7 +257,6 @@ void main() {
             shadow = mix(1.0, shadow, shadowParams.y);
         }
 
-        // Leaf subsurface scattering (foliage only) - uses stable normal, no FragPos dependency
         vec3 sss = vec3(0.0);
         if (isFoliage && !classicVegetation) {
             float backLit = max(-nDotL, 0.0);
@@ -259,9 +265,6 @@ void main() {
             sss = sssAmount * vec3(1.0, 0.9, 0.5) * lightColor.rgb;
         }
 
-        // Sky-bounce ambient for foliage: upward-facing leaves catch more
-        // ambient than the canopy underside, giving the crown depth instead
-        // of a uniformly-lit blob.
         vec3 ambientTerm = ambientColor.rgb;
         if (isFoliage && !classicVegetation) {
             ambientTerm *= 0.82 + 0.30 * clamp(norm.z, 0.0, 1.0);
@@ -282,7 +285,8 @@ void main() {
         result *= aoFactor;
     }
 
-    if (unlit == 0) result += localLightContribution(FragPos, norm, texColor.rgb);
+    if (unlit == 0 && !vanillaRendering)
+        result += localLightContribution(FragPos, norm, texColor.rgb);
 
     float dist = length(viewPos.xyz - FragPos);
     float fogFactor = clamp((fogParams.y - dist) / (fogParams.y - fogParams.x), 0.0, 1.0);

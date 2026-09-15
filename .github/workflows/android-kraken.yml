@@ -50,6 +50,12 @@ jobs:
           tests/test_weather_shelter_contract.cpp -o /tmp/test-weather-shelter
         /tmp/test-weather-shelter
 
+    - name: Test Vanilla renderer contract
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror \
+          tests/test_vanilla_renderer_contract.cpp -o /tmp/test-vanilla-renderer
+        /tmp/test-vanilla-renderer
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:

@@ -333,6 +333,7 @@ private:
 #endif
     float shadowDistance_ = 300.0f;  // Shadow frustum half-extent (default: 300 units)
     float viewDistance_ = 1200.0f;
+    bool classicRendering_ = false;
     bool sharpStars_ = true;
     float diagTerrainFurthest_ = -1.0f;
     float diagM2Furthest_ = -1.0f;
@@ -358,6 +359,12 @@ public:
     float getShadowDistance() const { return shadowDistance_; }
     void setViewDistance(float distance);
     float getViewDistance() const { return viewDistance_; }
+
+    /// Use the authored Vanilla 1.12 lighting/material path. This does not
+    /// change asset data or geometry; it only disables Kraken-only shading
+    /// additions so Original WoW can be compared against the PC client.
+    void setClassicRendering(bool enabled) { classicRendering_ = enabled; }
+    bool isClassicRendering() const { return classicRendering_; }
     /// Draw the client's own point stars in place of the sky model's baked
     /// star layer, which is a 256x256 compressed texture stretched across the
     /// whole dome. See Renderer::setSharpStars.
