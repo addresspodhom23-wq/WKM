@@ -207,7 +207,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
 
             case MOTX: {
                 // Textures - raw block of null-terminated strings
-                // Material texture1/texture2/texture3 are byte offsets into this chunk.
+                // Material texture1/texture2 are byte offsets into this chunk.
                 // We must map every offset to its texture index.
                 uint32_t texOffset = chunkStart;
                 uint32_t texIndex = 0;
@@ -234,35 +234,30 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOMT: {
-                // Materials - dump raw fields to find correct layout
-                uint32_t nMaterials = chunkSize / 64;  // Each material is 64 bytes
-                for (uint32_t i = 0; i < nMaterials; i++) {
-                    // Read all 16 uint32 fields (64 bytes)
-                    uint32_t fields[16];
-                    for (uint32_t& field : fields) {
-                        field = read<uint32_t>(wmoData, offset);
-                    }
-
-                    // SMOMaterial layout (wowdev.wiki):
-                    // 0: flags, 1: shader, 2: blendMode
-                    // 3: texture_1 (MOTX offset)
-                    // 4: sidnColor (emissive), 5: frameSidnColor
-                    // 6: texture_2 (MOTX offset)
-                    // 7: diffColor, 8: ground_type
-                    // 9: texture_3 (MOTX offset)
-                    // 10: color_2, 11: flags2
-                    // 12-15: runtime
+                // Vanilla 1.12 MOMT is exactly 64 bytes. The on-disk record has
+                // two authored texture-name offsets only: +0x0c and +0x18.
+                // +0x38/+0x3c are runtime handles and must never be interpreted
+                // as a third texture reference.
+                constexpr uint32_t kMaterialSize = 64;
+                const uint32_t nMaterials = chunkSize / kMaterialSize;
+                for (uint32_t i = 0; i < nMaterials; ++i) {
                     WMOMaterial mat;
-                    mat.flags = fields[0];
-                    mat.shader = fields[1];
-                    mat.blendMode = fields[2];
-                    mat.texture1 = fields[3];
-                    mat.color1 = fields[4];
-                    mat.texture2 = fields[6];  // Skip frameSidnColor at [5]
-                    mat.color2 = fields[7];
-                    mat.texture3 = fields[9];  // Skip ground_type at [8]
-                    mat.color3 = fields[10];
-
+                    mat.flags = read<uint32_t>(wmoData, offset);
+                    mat.shader = read<uint32_t>(wmoData, offset);
+                    mat.blendMode = read<uint32_t>(wmoData, offset);
+                    mat.texture1 = read<uint32_t>(wmoData, offset);
+                    mat.sidnColor = read<uint32_t>(wmoData, offset);
+                    mat.frameSidnColor = read<uint32_t>(wmoData, offset);
+                    mat.texture2 = read<uint32_t>(wmoData, offset);
+                    mat.diffColor = read<uint32_t>(wmoData, offset);
+                    mat.groundType = read<uint32_t>(wmoData, offset);
+                    mat.color2 = read<uint32_t>(wmoData, offset);
+                    mat.flags2 = read<uint32_t>(wmoData, offset);
+                    mat.raw2C = read<uint32_t>(wmoData, offset);
+                    mat.raw30 = read<uint32_t>(wmoData, offset);
+                    mat.raw34 = read<uint32_t>(wmoData, offset);
+                    mat.runtimeTexture1 = read<uint32_t>(wmoData, offset);
+                    mat.runtimeTexture2 = read<uint32_t>(wmoData, offset);
                     model.materials.push_back(mat);
                 }
                 core::Logger::getInstance().debug("WMO materials: ", model.materials.size());
