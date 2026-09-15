@@ -374,10 +374,22 @@ public:
     bool isInsideWMO(float glX, float glY, float glZ, uint32_t* outModelId = nullptr) const;
 
     /**
-     * Check if a position is inside an interior WMO group (flag 0x2000).
+     * Check if a position is inside a Vanilla 1.12 interior WMO group.
+     * Interior means (groupFlags & 0x48) == 0.
      * Used to dim M2 lighting for doodads placed indoors.
      */
     bool isInsideInteriorWMO(float glX, float glY, float glZ) const;
+
+    struct InteriorFog {
+        glm::vec3 color{0.0f};
+        float endDistance = 0.0f;
+        float startScalar = 0.0f;
+    };
+
+    /// Resolve the Vanilla 1.12 MFOG target for the camera's actual interior
+    /// group. Returns nullopt when the WMO has only its single default record,
+    /// matching the retail "keep scene fog" rule.
+    std::optional<InteriorFog> getInteriorFogAt(const glm::vec3& worldPos) const;
 
     /** Gather local orange point lights derived from visible lava materials. */
     uint32_t gatherLavaLights(const glm::vec3& cameraPos,
@@ -475,7 +487,12 @@ private:
         glm::vec3 boundingBoxMin;
         glm::vec3 boundingBoxMax;
 
+        uint32_t sourceGroupIndex = 0; // absolute group index in the WMO root
         uint32_t groupFlags = 0;
+        uint8_t fogIndices[4]{};
+        uint32_t areaTableId = 0;
+        std::vector<uint16_t> doodadRefs;
+        std::vector<uint16_t> lightRefs;
         bool allUntextured = false;  // True if ALL batches use fallback white texture (collision/placeholder group)
         bool isLOD = false;          // Distance-only group (skip when camera is close)
 
@@ -603,7 +620,12 @@ private:
         std::vector<GroupResources> groups;
         glm::vec3 boundingBoxMin;
         glm::vec3 boundingBoxMax;
-        glm::vec3 wmoAmbientColor{0.5f, 0.5f, 0.5f};  // From MOHD, used for interior lighting
+        glm::vec3 wmoAmbientColor{0.5f, 0.5f, 0.5f};
+        uint32_t rootId = 0;
+        uint32_t headerFlags = 0;
+        std::vector<pipeline::WMOFog> fogs;
+        std::vector<pipeline::WMOLight> lights;
+        std::string skyboxPath;
         bool isLowPlatform = false;
 
         // Doodad templates (M2 models placed in WMO, stored for instancing)
