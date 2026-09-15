@@ -205,7 +205,15 @@ void main() {
         float diff = foliageTwoSided ? abs(nDotL) : max(nDotL, 0.0);
 
     vec3 result;
-    if (unlit != 0) {
+    if (classicVegetation && unlit == 0) {
+        // Mobile classic vegetation keeps the artist-painted light and shade in
+        // the texture instead of deriving broad dark bands from flat leaf-card
+        // normals. Keep the zone/day-night colours, but make their direct-light
+        // contribution orientation-independent so a tree does not look like an
+        // extra shadow layer was painted over half of its canopy.
+        vec3 classicLight = ambientColor.rgb + lightColor.rgb * 0.50;
+        result = texColor.rgb * min(classicLight, vec3(1.15));
+    } else if (unlit != 0) {
         result = texColor.rgb * emissiveBoost;
         if (emissiveBoost > 1.0) {
             // Weighted by the texel's own brightness. Added flat it lit the
