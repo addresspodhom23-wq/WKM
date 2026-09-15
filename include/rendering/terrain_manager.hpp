@@ -110,7 +110,11 @@ struct PendingTile {
         pipeline::M2Model model;
         glm::vec3 worldPosition;   // For frustum culling
         glm::mat4 modelMatrix;     // Pre-computed world transform
+        glm::mat4 localTransform;  // Original MODD transform in parent WMO space
         glm::vec4 color{1.0f};     // Vanilla MODD per-instance BGRA tint
+        uint32_t parentWmoUniqueId = 0;
+        uint32_t doodadIndex = 0;  // MODD index; MODR entries reference this
+        std::vector<uint16_t> groupRefs; // WMO groups that reference this doodad
     };
     std::vector<WMODoodadReady> wmoDoodads;
 
