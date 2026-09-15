@@ -493,17 +493,32 @@ void Renderer::updatePerFrameUBO() {
         currentFrameData.localLightPosRadius[i] = glm::vec4(0.0f);
         currentFrameData.localLightColorIntensity[i] = glm::vec4(0.0f);
     }
-    uint32_t localLightCount = wmoRenderer
-        ? wmoRenderer->gatherLavaLights(camera->getPosition(),
-              currentFrameData.localLightPosRadius,
-              currentFrameData.localLightColorIntensity,
-              MAX_LOCAL_LIGHTS)
-        : 0;
-    if (m2Renderer && localLightCount < MAX_LOCAL_LIGHTS) {
-        localLightCount += m2Renderer->gatherLocalLights(camera->getPosition(),
-            currentFrameData.localLightPosRadius + localLightCount,
-            currentFrameData.localLightColorIntensity + localLightCount,
-            MAX_LOCAL_LIGHTS - localLightCount);
+    uint32_t localLightCount = 0;
+    if (classicRendering_) {
+        // Vanilla 1.12: only authored WMO root lights referenced by the
+        // containing group's MOLR participate here. WMO walls keep baked MOCV;
+        // these lights are consumed by M2 doodads/characters.
+        if (wmoRenderer) {
+            localLightCount = wmoRenderer->gatherVanillaLights(
+                camera->getPosition(),
+                currentFrameData.localLightPosRadius,
+                currentFrameData.localLightColorIntensity,
+                MAX_LOCAL_LIGHTS);
+        }
+    } else {
+        localLightCount = wmoRenderer
+            ? wmoRenderer->gatherLavaLights(camera->getPosition(),
+                  currentFrameData.localLightPosRadius,
+                  currentFrameData.localLightColorIntensity,
+                  MAX_LOCAL_LIGHTS)
+            : 0;
+        if (m2Renderer && localLightCount < MAX_LOCAL_LIGHTS) {
+            localLightCount += m2Renderer->gatherLocalLights(
+                camera->getPosition(),
+                currentFrameData.localLightPosRadius + localLightCount,
+                currentFrameData.localLightColorIntensity + localLightCount,
+                MAX_LOCAL_LIGHTS - localLightCount);
+        }
     }
     currentFrameData.localLightMeta = glm::ivec4(static_cast<int32_t>(localLightCount), 0, 0, 0);
 
