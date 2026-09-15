@@ -388,7 +388,8 @@ public:
 
     /// Resolve the Vanilla MFOG volume referenced by the containing WMO group.
     /// Returns false when no group/fog applies, leaving zone fog untouched.
-    bool queryVanillaFog(const glm::vec3& worldPos, VanillaFogSample& out) const;
+    bool queryVanillaFog(const glm::vec3& worldPos, bool underwater,
+                         VanillaFogSample& out) const;
 
     /** Gather local orange point lights derived from visible lava materials. */
     uint32_t gatherLavaLights(const glm::vec3& cameraPos,
