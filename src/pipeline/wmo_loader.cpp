@@ -258,10 +258,10 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 const uint32_t nLights = chunkSize / kLightSize;
                 for (uint32_t i = 0; i < nLights && offset + kLightSize <= chunkEnd; ++i) {
                     WMOLight light;
+                    light.lightType = read<uint8_t>(wmoData, offset);
                     light.type = read<uint8_t>(wmoData, offset);
                     light.useAttenuation = read<uint8_t>(wmoData, offset);
-                    light.pad[0] = read<uint8_t>(wmoData, offset);
-                    light.pad[1] = read<uint8_t>(wmoData, offset);
+                    light.pad = read<uint8_t>(wmoData, offset);
                     light.color = unpackBGRA(read<uint32_t>(wmoData, offset));
 
                     light.position.x = read<float>(wmoData, offset);
