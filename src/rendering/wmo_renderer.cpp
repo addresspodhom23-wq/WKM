@@ -1781,13 +1781,36 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                 continue;
             }
 
-            // The distance test used to run whether distanceCulling was set or
-            // not - the flag only chose between two distances - so turning that
-            // flag off never stopped anything past viewDistance_ disappearing.
-            // Now nothing is dropped at all unless culling is asked for.
+            // Group-level camera frustum culling. The old WMO path extracted a
+            // frustum every frame but only used it for portal traversal; normal
+            // exterior groups were still submitted even when entirely behind
+            // the camera. That is especially expensive on mobile city/building
+            // scenes with thousands of WMO material draws.
+            //
+            // Use the real world-space group bounds and expand them slightly so
+            // a wall/roof touching the edge of the screen cannot flicker due to
+            // tiny float/bounds differences. Never reject the group containing
+            // the camera, which also protects large interior groups at the near
+            // plane.
             if (cullingEnabled_ && gi < instance.worldGroupBounds.size()) {
                 const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
+                constexpr float kFrustumPadding = 3.0f;
+                const glm::vec3 pad(kFrustumPadding);
+                const glm::vec3 paddedMin = gMin - pad;
+                const glm::vec3 paddedMax = gMax + pad;
+                const bool cameraInside =
+                    camPos.x >= paddedMin.x && camPos.x <= paddedMax.x &&
+                    camPos.y >= paddedMin.y && camPos.y <= paddedMax.y &&
+                    camPos.z >= paddedMin.z && camPos.z <= paddedMax.z;
+                if (!cameraInside && !frustum.intersectsAABB(paddedMin, paddedMax)) {
+                    continue;
+                }
 
+                // The distance test used to run whether distanceCulling was set
+                // or not - the flag only chose between two distances - so
+                // turning that flag off never stopped anything past
+                // viewDistance_ disappearing. Now nothing is distance-dropped
+                // unless culling is asked for.
                 glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
                 float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
                 const float groupViewDistance = doDistanceCull
