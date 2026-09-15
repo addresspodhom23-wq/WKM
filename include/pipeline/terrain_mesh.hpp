@@ -57,6 +57,11 @@ struct ChunkMesh {
     };
     std::vector<LayerInfo> layers;
 
+    // Packed Vanilla 1.12 MCSH payload. The renderer expands it only at GPU
+    // upload, so terrain streaming keeps the original compact 512-byte form.
+    std::array<uint8_t, 512> bakedShadow{};
+    bool hasBakedShadow = false;
+
     [[nodiscard]] bool isValid() const { return !vertices.empty() && !indices.empty(); }
     [[nodiscard]] size_t getVertexCount() const { return vertices.size(); }
     [[nodiscard]] size_t getTriangleCount() const { return indices.size() / 3; }
