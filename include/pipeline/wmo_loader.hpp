@@ -42,17 +42,17 @@ struct WMOGroupInfo {
     int32_t nameOffset;         // Group name in MOGN chunk
 };
 
-// WMO Light
+// WMO Light (MOLT, Vanilla 1.12: 48 bytes on disk)
 struct WMOLight {
-    uint32_t type;              // 0=omni, 1=spot, 2=directional, 3=ambient
-    uint8_t useAttenuation;
-    uint8_t pad[3];
-    glm::vec4 color;
-    glm::vec3 position;
-    float intensity;
-    float attenuationStart;
-    float attenuationEnd;
-    float unknown[4];
+    uint8_t type = 0;           // 0=omni, 1=spot, 2=directional, 3=ambient
+    uint8_t useAttenuation = 0;
+    uint8_t pad[2] = {0, 0};
+    glm::vec4 color{1.0f};      // unpacked BGRA CImVector -> RGBA
+    glm::vec3 position{0.0f};
+    float intensity = 1.0f;
+    float attenuationStart = 0.0f;
+    float attenuationEnd = 0.0f;
+    float unknown[4] = {0, 0, 0, 0};
 };
 
 // WMO Doodad Set (collection of M2 models placed in WMO)
@@ -72,32 +72,25 @@ struct WMODoodad {
     glm::vec4 color;           // BGRA color
 };
 
-// WMO Fog
+// WMO Fog (MFOG, Vanilla 1.12: 48 bytes on disk)
 struct WMOFog {
-    uint32_t flags;
-    glm::vec3 position;
-    float smallRadius;
-    float largeRadius;
-    float endDist;
-    float startFactor;
-    glm::vec4 color1;          // End fog color
-    float endDist2;
-    float startFactor2;
-    glm::vec4 color2;          // Start fog color (blend with color1)
+    uint32_t flags = 0;
+    glm::vec3 position{0.0f};
+    float smallRadius = 0.0f;
+    float largeRadius = 0.0f;
+    float endDist = 0.0f;
+    float startFactor = 0.0f;
+    glm::vec4 color1{0.0f};    // packed BGRA -> RGBA
+    float endDist2 = 0.0f;
+    float startFactor2 = 0.0f;
+    glm::vec4 color2{0.0f};    // underwater fog
 };
 
-// WMO Portal
+// WMO Portal (MOPT, Vanilla 1.12: 20 bytes on disk)
 struct WMOPortal {
-    uint16_t startVertex;
-    uint16_t vertexCount;
-    uint16_t planeIndex;
-    uint16_t padding;
-};
-
-// WMO Portal Plane
-struct WMOPortalPlane {
-    glm::vec3 normal;
-    float distance;
+    uint16_t startVertex = 0;
+    uint16_t vertexCount = 0;
+    glm::vec4 plane{0.0f};     // xyz normal, w plane distance
 };
 
 // WMO Portal Reference (MOPR chunk) - links portals to groups
@@ -106,6 +99,16 @@ struct WMOPortalRef {
     uint16_t groupIndex;    // Group on other side of portal
     int16_t side;           // Which side of portal plane (-1 or 1)
     uint16_t padding;
+};
+
+// WMO collision BSP node (MOBN, Vanilla 1.12: 16 bytes)
+struct WMOBspNode {
+    uint16_t flags = 0;        // low bits: split axis, bit 0x4: leaf
+    int16_t negativeChild = -1;
+    int16_t positiveChild = -1;
+    uint16_t faceCount = 0;
+    uint32_t firstFace = 0;    // index into MOBR
+    float planeDistance = 0.0f;
 };
 
 // WMO Liquid (MLIQ chunk data)
@@ -160,12 +163,13 @@ struct WMOGroup {
     std::vector<uint8_t> triFlags;        // Per-triangle MOPY flags
     std::vector<uint8_t> triMaterialIds;  // Per-triangle MOPY material id; 0xFF = collision-only
 
-    // Portals
-    std::vector<WMOPortal> portals;
-    std::vector<glm::vec3> portalVertices;
+    // Per-group references into root tables.
+    std::vector<uint16_t> lightRefs;   // MOLR -> WMOModel::lights
+    std::vector<uint16_t> doodadRefs;  // MODR -> WMOModel::doodads
 
-    // BSP tree (for collision - optional)
-    std::vector<uint8_t> bspNodes;
+    // BSP tree used by the original client for WMO collision.
+    std::vector<WMOBspNode> bspNodes;      // MOBN
+    std::vector<uint16_t> bspFaceIndices;  // MOBR -> triangle indices
 
     // Liquid data (MLIQ chunk)
     WMOLiquid liquid;
@@ -205,7 +209,6 @@ struct WMOModel {
 
     // Portals (visibility culling)
     std::vector<WMOPortal> portals;
-    std::vector<WMOPortalPlane> portalPlanes;
     std::vector<glm::vec3> portalVertices;
     std::vector<WMOPortalRef> portalRefs;  // MOPR chunk - portal-to-group links
 
