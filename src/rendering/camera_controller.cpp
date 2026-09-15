@@ -240,7 +240,7 @@ glm::vec3 CameraController::sweepAgainstWalls(const glm::vec3& from, const glm::
                                               bool includeDoodads) {
     const glm::vec3 delta = to - from;
     const float distSq = glm::dot(delta, delta);
-    if (distSq <= 1e-4f) return to;   // stationary: not worth a collision call
+    if (distSq <= 1e-12f) return to;  // Only truly stationary movement skips collision.
 
     const float dist = std::sqrt(distSq);
     // Tighter steps indoors, where the geometry is closer together.
@@ -3299,3 +3299,4 @@ void CameraController::applyKnockBack(float vcos, float vsin, float hspeed, floa
 
 } // namespace rendering
 } // namespace wowee
+

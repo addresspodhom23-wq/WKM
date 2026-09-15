@@ -46,6 +46,7 @@ layout(location = 4) in float ModelHeight;
 layout(location = 5) in float vFadeAlpha;
 layout(location = 6) flat in int vSkyMode;
 layout(location = 7) flat in float vHighlight;
+layout(location = 8) flat in int vClassicVegetation;
 
 layout(location = 0) out vec4 outColor;
 
@@ -129,13 +130,14 @@ void main() {
         return;
     }
 
+    bool classicVegetation = vClassicVegetation != 0;
     bool isFoliage = (alphaTest == 2);
 
     // Fix DXT fringe: transparent edge texels have garbage (black) RGB.
     // At low alpha the original RGB is untrustworthy - replace with the
     // averaged color from nearby opaque texels (high mip).  The lower
     // the alpha the more we distrust the original color.
-    if (alphaTest != 0 && texColor.a > 0.01 && texColor.a < 1.0) {
+    if (!classicVegetation && alphaTest != 0 && texColor.a > 0.01 && texColor.a < 1.0) {
         vec3 mipColor = textureLod(uTexture, TexCoord, 4.0).rgb;
         // trust = 0 at alpha 0, trust = 1 at alpha ~0.9
         float trust = smoothstep(0.0, 0.9, texColor.a);
@@ -153,7 +155,7 @@ void main() {
     // Mip-alpha preservation: alpha mips average downward, thinning distant
     // canopies to skeletons. Boost alpha with mip level so perceived leaf
     // density stays constant with distance.
-    if (isFoliage && hasTexture != 0) {
+    if (isFoliage && !classicVegetation && hasTexture != 0) {
         float mip = textureQueryLod(uTexture, TexCoord).x;
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
@@ -173,7 +175,7 @@ void main() {
     if (blendMode == 1 && texColor.a < 0.004) discard;
 
     // Per-instance color variation (foliage only)
-    if (isFoliage) {
+    if (isFoliage && !classicVegetation) {
         float hash = fract(sin(dot(InstanceOrigin.xy, vec2(127.1, 311.7))) * 43758.5453);
         float hueShiftR = 1.0 + (hash - 0.5) * 0.16;       // ±8% red
         float hueShiftB = 1.0 + (fract(hash * 7.13) - 0.5) * 0.16; // ±8% blue
@@ -186,7 +188,7 @@ void main() {
     if (!foliageTwoSided && !gl_FrontFacing) norm = -norm;
 
     // Detail normal perturbation (foliage only) - UV-based only so wind doesn't cause flicker
-    if (isFoliage) {
+    if (isFoliage && !classicVegetation) {
         float nx = sin(TexCoord.x * 12.0 + TexCoord.y * 5.3) * 0.10;
         float ny = sin(TexCoord.y * 14.0 + TexCoord.x * 4.7) * 0.10;
         norm = normalize(norm + vec3(nx, ny, 0.0));
@@ -214,12 +216,12 @@ void main() {
 
         float spec = 0.0;
         float shadow = 1.0;
-        if (!isFoliage) {
+        if (!isFoliage && !classicVegetation) {
             vec3 halfDir = normalize(ldir + viewDir);
             spec = pow(max(dot(norm, halfDir), 0.0), 32.0) * specularIntensity;
         }
 
-        if (shadowParams.x > 0.5) {
+        if (shadowParams.x > 0.5 && !classicVegetation) {
             float normalOffset = shadowTexel() * 2.0 * (1.0 - abs(dot(norm, ldir)));
             vec3 biasedPos = FragPos + norm * normalOffset;
             vec4 lsPos = lightSpaceMatrix * vec4(biasedPos, 1.0);
@@ -236,7 +238,7 @@ void main() {
 
         // Leaf subsurface scattering (foliage only) - uses stable normal, no FragPos dependency
         vec3 sss = vec3(0.0);
-        if (isFoliage) {
+        if (isFoliage && !classicVegetation) {
             float backLit = max(-nDotL, 0.0);
             float viewDotLight = max(dot(viewDir, -ldir), 0.0);
             float sssAmount = backLit * pow(viewDotLight, 4.0) * 0.35 * texColor.a;
@@ -247,7 +249,7 @@ void main() {
         // ambient than the canopy underside, giving the crown depth instead
         // of a uniformly-lit blob.
         vec3 ambientTerm = ambientColor.rgb;
-        if (isFoliage) {
+        if (isFoliage && !classicVegetation) {
             ambientTerm *= 0.82 + 0.30 * clamp(norm.z, 0.0, 1.0);
         }
         result = ambientTerm * texColor.rgb
@@ -260,7 +262,7 @@ void main() {
     }
 
     // Canopy ambient occlusion (foliage only)
-    if (isFoliage) {
+    if (isFoliage && !classicVegetation) {
         float normalizedHeight = clamp(ModelHeight / 18.0, 0.0, 1.0);
         float aoFactor = mix(0.55, 1.0, smoothstep(0.0, 0.6, normalizedHeight));
         result *= aoFactor;
@@ -300,3 +302,4 @@ void main() {
 
     outColor = vec4(result, outAlpha);
 }
+

@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) uniform PerFrame {
 // Per-draw push constants (batch-level data only)
 layout(push_constant) uniform Push {
     int texCoordSet;         // UV set index (0 or 1)
-    int isFoliage;           // -1 sky, 0 none, 1 foliage, 2 clutter, 3 hanging cloth
+    int isFoliage;           // -1 sky, 0 none, 1 foliage, 2 clutter, 3 hanging cloth, 4 static classic vegetation
     int instanceDataOffset;  // Base index into InstanceSSBO for this draw group
     float swayRefHeight;     // Model height the sway normalises against (model space)
     float swayAmp;           // Sway amplitude scale; 1.0 = the tree-sized default
@@ -60,6 +60,7 @@ layout(location = 4) out float ModelHeight;
 layout(location = 5) out float vFadeAlpha;
 layout(location = 6) flat out int vSkyMode;
 layout(location = 7) flat out float vHighlight;
+layout(location = 8) flat out int vClassicVegetation;
 
 void main() {
     // Fetch per-instance data from SSBO
@@ -93,7 +94,7 @@ void main() {
     // used to hardcode; ground clutter passes its own height instead, because
     // normalising a one-yard tuft against twenty moves it by nothing at all.
     float heightFactor = 0.0;
-    if (push.isFoliage > 0) {
+    if (push.isFoliage > 0 && push.isFoliage != 4) {
         heightFactor = clamp(pos.z / max(push.swayRefHeight, 0.01), 0.0, 1.0);
         heightFactor *= heightFactor; // quadratic - base stays grounded
     }
@@ -188,7 +189,7 @@ void main() {
     // between them is on the plant's own height rather than on which of the two
     // sway modes it happens to use. A shoulder-high bush and a waist-high one
     // should not behave differently because a bounding box crossed a threshold.
-    if (push.isFoliage > 0 && push.isFoliage != 3 && push.plantHeight > 0.0) {
+    if (push.isFoliage > 0 && push.isFoliage != 3 && push.isFoliage != 4 && push.plantHeight > 0.0) {
         vec3 base = model[3].xyz;                      // instance origin, on the ground
         float zScale = length(model[2].xyz);
         float plantHeight = push.plantHeight * zScale;
@@ -260,6 +261,7 @@ void main() {
     ModelHeight = pos.z;
     vFadeAlpha = fade;
     vSkyMode = push.isFoliage < 0 ? 1 : 0;
+    vClassicVegetation = push.isFoliage == 4 ? 1 : 0;
     vHighlight = instanceData[instIdx].highlight;
 
     gl_Position = projection * view * worldPos;
@@ -268,3 +270,4 @@ void main() {
     // drawn after the ground now, and this is what makes that free.
     if (push.isFoliage < 0) gl_Position.z = gl_Position.w;
 }
+

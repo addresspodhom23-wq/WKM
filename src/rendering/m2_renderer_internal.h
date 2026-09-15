@@ -108,6 +108,15 @@ inline float computeGroundDetailDownOffset(const M2ModelGPU& model, float scale)
 }
 
 inline void getTightCollisionBounds(const M2ModelGPU& model, glm::vec3& outMin, glm::vec3& outMax) {
+    // Authored vegetation geometry can be offset from the visual canopy centre
+    // and extend beyond the guessed short trunk box. The spatial grid and the
+    // broad phase must enclose EVERY triangle tested by the narrow phase.
+    if ((model.isFoliageLike || model.collisionTreeTrunk) && model.collision.valid()) {
+        outMin = model.collision.boundsMin;
+        outMax = model.collision.boundsMax;
+        return;
+    }
+
     glm::vec3 center = (model.boundMin + model.boundMax) * 0.5f;
     glm::vec3 half = (model.boundMax - model.boundMin) * 0.5f;
 
@@ -389,3 +398,4 @@ using namespace m2_internal;
 
 } // namespace rendering
 } // namespace wowee
+

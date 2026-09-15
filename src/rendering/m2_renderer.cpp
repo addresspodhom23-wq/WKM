@@ -1255,6 +1255,9 @@ void M2ModelGPU::CollisionMesh::build() {
         bmax = glm::max(bmax, v);
     }
 
+    boundsMin = bmin;
+    boundsMax = bmax;
+
     gridOrigin = glm::vec2(bmin.x, bmin.y);
     gridCellsX = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.x - bmin.x) / CELL_SIZE))));
     gridCellsY = std::max(1, std::min(32, static_cast<int>(std::ceil((bmax.y - bmin.y) / CELL_SIZE))));
@@ -1555,6 +1558,18 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.collision.vertices = model.collisionVertices;
     gpuModel.collision.indices = model.collisionIndices;
     gpuModel.collision.build();
+    if (gpuModel.isFoliageLike || gpuModel.collisionTreeTrunk) {
+        static core::LogBudget vegetationCollisionBudget(32, "Vegetation collision meshes");
+        if (vegetationCollisionBudget.take()) {
+            LOG_WARNING("Collision vegetation mesh: '", model.name, "' triangles=",
+                        gpuModel.collision.triCount, " bounds=(",
+                        gpuModel.collision.boundsMin.x, ",", gpuModel.collision.boundsMin.y,
+                        ",", gpuModel.collision.boundsMin.z, ")..(",
+                        gpuModel.collision.boundsMax.x, ",", gpuModel.collision.boundsMax.y,
+                        ",", gpuModel.collision.boundsMax.z, ")");
+        }
+    }
+
     if (gpuModel.collision.valid()) {
         core::Logger::getInstance().debug("  M2 collision mesh: ", gpuModel.collision.triCount,
             " tris, grid ", gpuModel.collision.gridCellsX, "x", gpuModel.collision.gridCellsY);
@@ -2226,3 +2241,4 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
 
 } // namespace rendering
 } // namespace wowee
+

@@ -1232,7 +1232,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         // Keep vegetation fixed in place, including player-brush displacement.
         // Sky and cloth retain their separate rendering modes.
         if (mdl.shadowWindFoliage) {
-            pc.isFoliage = 0;
+            pc.isFoliage = 4; // Static vegetation with authored texture colours.
             return;
         }
 #endif
@@ -2264,3 +2264,4 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
 } // namespace rendering
 } // namespace wowee
+

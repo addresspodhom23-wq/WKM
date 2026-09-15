@@ -130,6 +130,8 @@ struct M2ModelGPU {
         std::vector<glm::vec3> vertices;
         std::vector<uint16_t> indices;
         uint32_t triCount = 0;
+        glm::vec3 boundsMin{0.0f};
+        glm::vec3 boundsMax{0.0f};
 
         struct TriBounds { float minZ, maxZ; };
         std::vector<TriBounds> triBounds;
@@ -1024,3 +1026,4 @@ private:
 
 } // namespace rendering
 } // namespace wowee
+
