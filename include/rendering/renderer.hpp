@@ -411,6 +411,9 @@ private:
     std::unique_ptr<PostProcessPipeline> postProcessPipeline_;
 
     bool playerIndoors_ = false;  // Cached WMO inside state for macro conditionals
+    // Physical precipitation shelter is separate from the addon indoor state:
+    // an outdoor WMO group can still put an authored roof over the player.
+    bool playerSheltered_ = false;
     bool deferredWorldInitEnabled_ = true;
     bool deferredWorldInitPending_ = false;
     uint8_t deferredWorldInitStage_ = 0;
