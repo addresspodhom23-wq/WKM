@@ -22,6 +22,8 @@ constexpr uint32_t MODS = 0x4D4F4453;  // Doodad sets
 constexpr uint32_t MOPV = 0x4D4F5056;  // Portal vertices
 constexpr uint32_t MOPT = 0x4D4F5054;  // Portal info
 constexpr uint32_t MOPR = 0x4D4F5052;  // Portal references
+constexpr uint32_t MFOG = 0x4D464F47;  // Fog records
+constexpr uint32_t MOSB = 0x4D4F5342;  // WMO-local skybox model path
 
 // WMO group chunk identifiers
 constexpr uint32_t MOGP = 0x4D4F4750;  // Group header
@@ -31,6 +33,10 @@ constexpr uint32_t MOCV = 0x4D4F4356;  // Vertex colors
 constexpr uint32_t MONR = 0x4D4F4E52;  // Normals
 constexpr uint32_t MOTV = 0x4D4F5456;  // Texture coords
 constexpr uint32_t MLIQ = 0x4D4C4951;  // Liquid
+constexpr uint32_t MOLR = 0x4D4F4C52;  // Light references (u16 MOLT indices)
+constexpr uint32_t MODR = 0x4D4F4452;  // Doodad references (u16 MODD indices)
+constexpr uint32_t MOBN = 0x4D4F424E;  // Collision BSP nodes
+constexpr uint32_t MOBR = 0x4D4F4252;  // Collision BSP face refs (u16 triangle indices)
 
 // Read utilities
 template<typename T>
@@ -90,13 +96,17 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
         // 64-bit, for the reason readArray gives above: offset and chunkSize
         // are both uint32 and both come from the file, so the sum wraps and a
         // crafted chunkSize walks the loop past the end of the buffer.
-        if (static_cast<uint64_t>(offset) + chunkSize > wmoData.size()) {
-            core::Logger::getInstance().warning("Chunk extends beyond file");
-            break;
-        }
-
+        // Retail 1.12 tolerates a final WMO chunk whose declared size runs
+        // slightly past EOF; clamp it instead of rejecting the whole remainder.
+        const uint64_t declaredEnd = static_cast<uint64_t>(offset) + chunkSize;
         uint32_t chunkStart = offset;
-        uint32_t chunkEnd = offset + chunkSize;
+        uint32_t chunkEnd = static_cast<uint32_t>(
+            std::min<uint64_t>(declaredEnd, wmoData.size()));
+        if (declaredEnd > wmoData.size()) {
+            core::Logger::getInstance().warning(
+                "WMO chunk extends beyond EOF; clamping declared end ", declaredEnd,
+                " to ", wmoData.size());
+        }
 
         switch (chunkId) {
             case MVER: {
@@ -120,7 +130,7 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 model.ambientColor.r = ((ambColor >> 16) & 0xFF) / 255.0f;
                 model.ambientColor.g = ((ambColor >>  8) & 0xFF) / 255.0f;
                 model.ambientColor.b = ((ambColor >>  0) & 0xFF) / 255.0f;
-                [[maybe_unused]] uint32_t wmoID = read<uint32_t>(wmoData, offset);
+                model.rootId = read<uint32_t>(wmoData, offset); // +0x20
 
                 model.boundingBoxMin.x = read<float>(wmoData, offset);
                 model.boundingBoxMin.y = read<float>(wmoData, offset);
@@ -130,10 +140,16 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 model.boundingBoxMax.y = read<float>(wmoData, offset);
                 model.boundingBoxMax.z = read<float>(wmoData, offset);
 
-                // flags and numLod (uint16 each) - skip for now
-                offset += 4;
+                // Vanilla v17 stores a 32-bit root flags dword at +0x3c.
+                // Later clients split/reinterpreted this tail; do not apply that
+                // later layout to 1.12 data.
+                model.headerFlags = read<uint32_t>(wmoData, offset);
 
-                core::Logger::getInstance().debug("WMO header: nTextures=", model.nTextures, " nGroups=", model.nGroups);
+                core::Logger::getInstance().debug(
+                    "WMO header: nTextures=", model.nTextures,
+                    " nGroups=", model.nGroups,
+                    " wmoID=", model.rootId,
+                    " flags=0x", std::hex, model.headerFlags, std::dec);
                 break;
             }
 
@@ -166,35 +182,30 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOMT: {
-                // Materials - dump raw fields to find correct layout
-                uint32_t nMaterials = chunkSize / 64;  // Each material is 64 bytes
-                for (uint32_t i = 0; i < nMaterials; i++) {
-                    // Read all 16 uint32 fields (64 bytes)
-                    uint32_t fields[16];
-                    for (uint32_t& field : fields) {
-                        field = read<uint32_t>(wmoData, offset);
-                    }
-
-                    // SMOMaterial layout (wowdev.wiki):
-                    // 0: flags, 1: shader, 2: blendMode
-                    // 3: texture_1 (MOTX offset)
-                    // 4: sidnColor (emissive), 5: frameSidnColor
-                    // 6: texture_2 (MOTX offset)
-                    // 7: diffColor, 8: ground_type
-                    // 9: texture_3 (MOTX offset)
-                    // 10: color_2, 11: flags2
-                    // 12-15: runtime
+                // Vanilla 1.12 MOMT is exactly 64 bytes. There are only TWO
+                // authored texture offsets: +0x0c and +0x18. +0x38/+0x3c are
+                // runtime handles which retail overwrites after resolving MOTX.
+                const uint32_t nMaterials = (chunkEnd - chunkStart) / 64;
+                for (uint32_t i = 0; i < nMaterials; ++i) {
+                    const uint32_t rec = chunkStart + i * 64;
+                    uint32_t p = rec;
                     WMOMaterial mat;
-                    mat.flags = fields[0];
-                    mat.shader = fields[1];
-                    mat.blendMode = fields[2];
-                    mat.texture1 = fields[3];
-                    mat.color1 = fields[4];
-                    mat.texture2 = fields[6];  // Skip frameSidnColor at [5]
-                    mat.color2 = fields[7];
-                    mat.texture3 = fields[9];  // Skip ground_type at [8]
-                    mat.color3 = fields[10];
-
+                    mat.flags = read<uint32_t>(wmoData, p);          // +00
+                    mat.shader = read<uint32_t>(wmoData, p);         // +04
+                    mat.blendMode = read<uint32_t>(wmoData, p);      // +08
+                    mat.texture1 = read<uint32_t>(wmoData, p);       // +0c
+                    mat.sidnColor = read<uint32_t>(wmoData, p);      // +10
+                    mat.frameSidnColor = read<uint32_t>(wmoData, p); // +14
+                    mat.texture2 = read<uint32_t>(wmoData, p);       // +18
+                    mat.diffColor = read<uint32_t>(wmoData, p);      // +1c
+                    mat.groundType = read<uint32_t>(wmoData, p);     // +20
+                    mat.color2 = read<uint32_t>(wmoData, p);         // +24
+                    mat.raw28 = read<uint32_t>(wmoData, p);
+                    mat.raw2C = read<uint32_t>(wmoData, p);
+                    mat.raw30 = read<uint32_t>(wmoData, p);
+                    mat.raw34 = read<uint32_t>(wmoData, p);
+                    mat.runtimeTexture1 = read<uint32_t>(wmoData, p);
+                    mat.runtimeTexture2 = read<uint32_t>(wmoData, p);
                     model.materials.push_back(mat);
                 }
                 core::Logger::getInstance().debug("WMO materials: ", model.materials.size());
@@ -238,36 +249,60 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOLT: {
-                // Lights
-                uint32_t nLights = chunkSize / 48;  // Approximate size
-                for (uint32_t i = 0; i < nLights && offset < chunkEnd; i++) {
+                // Exact Vanilla MOLT record, stride 0x30 (48 bytes).
+                const uint32_t nLights = (chunkEnd - chunkStart) / 48;
+                for (uint32_t i = 0; i < nLights; ++i) {
+                    uint32_t p = chunkStart + i * 48;
                     WMOLight light;
-                    light.type = read<uint32_t>(wmoData, offset);
-                    light.useAttenuation = read<uint8_t>(wmoData, offset);
-                    light.pad[0] = read<uint8_t>(wmoData, offset);
-                    light.pad[1] = read<uint8_t>(wmoData, offset);
-                    light.pad[2] = read<uint8_t>(wmoData, offset);
-
-                    light.color.r = read<float>(wmoData, offset);
-                    light.color.g = read<float>(wmoData, offset);
-                    light.color.b = read<float>(wmoData, offset);
-                    light.color.a = read<float>(wmoData, offset);
-
-                    light.position.x = read<float>(wmoData, offset);
-                    light.position.y = read<float>(wmoData, offset);
-                    light.position.z = read<float>(wmoData, offset);
-
-                    light.intensity = read<float>(wmoData, offset);
-                    light.attenuationStart = read<float>(wmoData, offset);
-                    light.attenuationEnd = read<float>(wmoData, offset);
-
-                    for (float& value : light.unknown) {
-                        value = read<float>(wmoData, offset);
-                    }
-
+                    light.lightType = read<uint8_t>(wmoData, p);
+                    light.type = read<uint8_t>(wmoData, p);
+                    light.useAttenuation = read<uint8_t>(wmoData, p);
+                    light.pad = read<uint8_t>(wmoData, p);
+                    light.packedColor = read<uint32_t>(wmoData, p);
+                    light.color.r = ((light.packedColor >> 16) & 0xFF) / 255.0f;
+                    light.color.g = ((light.packedColor >> 8) & 0xFF) / 255.0f;
+                    light.color.b = (light.packedColor & 0xFF) / 255.0f;
+                    light.color.a = ((light.packedColor >> 24) & 0xFF) / 255.0f;
+                    light.position.x = read<float>(wmoData, p);
+                    light.position.y = read<float>(wmoData, p);
+                    light.position.z = read<float>(wmoData, p);
+                    light.intensity = read<float>(wmoData, p);
+                    light.attenuationStart = read<float>(wmoData, p);
+                    light.attenuationEnd = read<float>(wmoData, p);
+                    for (float& value : light.unknown) value = read<float>(wmoData, p);
                     model.lights.push_back(light);
                 }
                 core::Logger::getInstance().debug("WMO lights: ", model.lights.size());
+                break;
+            }
+
+            case MFOG: {
+                // Exact Vanilla MFOG record, stride 0x30.
+                const uint32_t nFogs = (chunkEnd - chunkStart) / 48;
+                for (uint32_t i = 0; i < nFogs; ++i) {
+                    uint32_t p = chunkStart + i * 48;
+                    WMOFog fog;
+                    fog.flags = read<uint32_t>(wmoData, p);
+                    fog.position.x = read<float>(wmoData, p);
+                    fog.position.y = read<float>(wmoData, p);
+                    fog.position.z = read<float>(wmoData, p);
+                    fog.smallRadius = read<float>(wmoData, p);
+                    fog.largeRadius = read<float>(wmoData, p);
+                    fog.endDist = read<float>(wmoData, p);
+                    fog.startFactor = read<float>(wmoData, p);
+                    fog.packedColor = read<uint32_t>(wmoData, p);
+                    fog.underwaterEndDist = read<float>(wmoData, p);
+                    fog.underwaterStartFactor = read<float>(wmoData, p);
+                    fog.packedUnderwaterColor = read<uint32_t>(wmoData, p);
+                    model.fogs.push_back(fog);
+                }
+                break;
+            }
+
+            case MOSB: {
+                // Optional WMO-local skybox model path. Most roots store an
+                // empty string; preserve it for the handful that author one.
+                model.skyboxPath = readString(wmoData, chunkStart);
                 break;
             }
 
@@ -356,18 +391,17 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
             }
 
             case MOPT: {
-                // Portal info
-                uint32_t nPortals = chunkSize / 20;  // Each portal reference is 20 bytes
-                for (uint32_t i = 0; i < nPortals; i++) {
+                // Exact Vanilla MOPT: u16 start/count + C4Plane.
+                const uint32_t nPortals = (chunkEnd - chunkStart) / 20;
+                for (uint32_t i = 0; i < nPortals; ++i) {
+                    uint32_t p = chunkStart + i * 20;
                     WMOPortal portal;
-                    portal.startVertex = read<uint16_t>(wmoData, offset);
-                    portal.vertexCount = read<uint16_t>(wmoData, offset);
-                    portal.planeIndex = read<uint16_t>(wmoData, offset);
-                    portal.padding = read<uint16_t>(wmoData, offset);
-
-                    // Skip additional data (12 bytes)
-                    offset += 12;
-
+                    portal.startVertex = read<uint16_t>(wmoData, p);
+                    portal.vertexCount = read<uint16_t>(wmoData, p);
+                    portal.normal.x = read<float>(wmoData, p);
+                    portal.normal.y = read<float>(wmoData, p);
+                    portal.normal.z = read<float>(wmoData, p);
+                    portal.distance = read<float>(wmoData, p);
                     model.portals.push_back(portal);
                 }
                 core::Logger::getInstance().debug("WMO portals: ", model.portals.size());
@@ -432,14 +466,12 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
     uint32_t offset = 0;
 
     // Parse chunks in group file
-    while (offset + 8 < groupData.size()) {
+    while (offset + 8 <= groupData.size()) {
         uint32_t chunkId = read<uint32_t>(groupData, offset);
         uint32_t chunkSize = read<uint32_t>(groupData, offset);
-        uint32_t chunkEnd = offset + chunkSize;
-
-        if (chunkEnd > groupData.size()) {
-            break;
-        }
+        const uint64_t declaredEnd = static_cast<uint64_t>(offset) + chunkSize;
+        uint32_t chunkEnd = static_cast<uint32_t>(
+            std::min<uint64_t>(declaredEnd, groupData.size()));
 
         if (chunkId == MVER) {
             // Version - skip
@@ -459,9 +491,10 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             mogpOffset += 4; // skip groupName offset
             mogpOffset += 4; // skip descriptiveGroupName offset
             group.flags = read<uint32_t>(groupData, mogpOffset);
-            bool isInterior = (group.flags & 0x2000) != 0;
-            core::Logger::getInstance().debug("  Group flags: 0x", std::hex, group.flags, std::dec,
-                                              (isInterior ? " (INTERIOR)" : " (exterior)"));
+            bool isInterior = wmoGroupIsInterior112(group.flags);
+            core::Logger::getInstance().debug(
+                "  Group flags: 0x", std::hex, group.flags, std::dec,
+                (isInterior ? " (Vanilla INTERIOR)" : " (Vanilla exterior/exterior-lit)"));
             group.boundingBoxMin.x = read<float>(groupData, mogpOffset);
             group.boundingBoxMin.y = read<float>(groupData, mogpOffset);
             group.boundingBoxMin.z = read<float>(groupData, mogpOffset);
@@ -476,8 +509,9 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             group.fogIndices[1] = read<uint8_t>(groupData, mogpOffset);
             group.fogIndices[2] = read<uint8_t>(groupData, mogpOffset);
             group.fogIndices[3] = read<uint8_t>(groupData, mogpOffset);
-            group.liquidType = read<uint32_t>(groupData, mogpOffset);
-            // Skip to end of 68-byte header
+            group.liquidType = read<uint32_t>(groupData, mogpOffset); // +0x34
+            group.areaTableId = read<uint32_t>(groupData, mogpOffset); // +0x38
+            // Remaining bytes to the exact 0x44-byte header are reserved.
             mogpOffset = offset + 68;
 
             // Parse sub-chunks within MOGP
@@ -567,6 +601,46 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         core::Logger::getInstance().debug("    First UV: (", group.vertices[0].texCoord.x, ", ", group.vertices[0].texCoord.y, ")");
                     }
                 }
+                else if (subChunkId == MODR) {
+                    // Exact group ownership of root MODD doodads.
+                    const uint32_t count = subChunkSize / 2;
+                    group.doodadRefs.reserve(group.doodadRefs.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.doodadRefs.push_back(read<uint16_t>(groupData, mogpOffset));
+                    }
+                }
+                else if (subChunkId == MOLR) {
+                    // Indices into root MOLT. These lights belong to this group.
+                    const uint32_t count = subChunkSize / 2;
+                    group.lightRefs.reserve(group.lightRefs.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.lightRefs.push_back(read<uint16_t>(groupData, mogpOffset));
+                    }
+                }
+                else if (subChunkId == MOBN) {
+                    // Vanilla collision BSP, exact 16-byte nodes.
+                    const uint32_t count = subChunkSize / 16;
+                    group.bspNodes.reserve(group.bspNodes.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        WMOBSPNode n;
+                        n.planeType = read<int16_t>(groupData, mogpOffset);
+                        n.children[0] = read<int16_t>(groupData, mogpOffset);
+                        n.children[1] = read<int16_t>(groupData, mogpOffset);
+                        n.faceCount = read<uint16_t>(groupData, mogpOffset);
+                        n.firstFace = read<uint16_t>(groupData, mogpOffset);
+                        n.unknown = read<int16_t>(groupData, mogpOffset);
+                        n.distance = read<float>(groupData, mogpOffset);
+                        group.bspNodes.push_back(n);
+                    }
+                }
+                else if (subChunkId == MOBR) {
+                    // Triangle-number references into MOVI/3, consumed by MOBN leaves.
+                    const uint32_t count = subChunkSize / 2;
+                    group.bspFaceRefs.reserve(group.bspFaceRefs.size() + count);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        group.bspFaceRefs.push_back(read<uint16_t>(groupData, mogpOffset));
+                    }
+                }
                 else if (subChunkId == MOCV) { // Vertex colors
                     // Update vertex colors
                     uint32_t colorCount = subChunkSize / 4;
@@ -639,25 +713,23 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                         const size_t bytesRemaining = (subChunkEnd > parseOffset) ? (subChunkEnd - parseOffset) : 0;
 
                         group.liquid.heights.clear();
+                        group.liquid.opacity.clear();
                         group.liquid.flags.clear();
 
-                        // MLIQ vertex data: each vertex is 8 bytes -
-                        // 4 bytes flow/unknown data + 4 bytes float height.
-                        const size_t VERTEX_STRIDE = 8; // bytes per vertex
-                        if (vertexCount > 0 && bytesRemaining >= vertexCount * VERTEX_STRIDE) {
+                        // Vanilla MLIQ vertex record is exactly 8 bytes. Byte 0
+                        // is the authored opacity/depth channel; bytes 4..7 are
+                        // the float height. Do not reinterpret a truncated record
+                        // as a packed float array: that invents geometry.
+                        constexpr size_t VERTEX_STRIDE = 8;
+                        if (vertexCount > 0 &&
+                            bytesRemaining >= vertexCount * VERTEX_STRIDE) {
                             group.liquid.heights.resize(vertexCount);
-                            for (size_t i = 0; i < vertexCount; i++) {
-                                parseOffset += 4; // skip flow/unknown data
+                            group.liquid.opacity.resize(vertexCount);
+                            for (size_t i = 0; i < vertexCount; ++i) {
+                                group.liquid.opacity[i] = groupData[parseOffset];
+                                parseOffset += 4; // opacity + three authored aux bytes
                                 group.liquid.heights[i] = read<float>(groupData, parseOffset);
                             }
-                        } else if (vertexCount > 0 && bytesRemaining >= vertexCount * sizeof(float)) {
-                            // Fallback: try reading as plain floats if stride doesn't fit
-                            group.liquid.heights.resize(vertexCount);
-                            for (size_t i = 0; i < vertexCount; i++) {
-                                group.liquid.heights[i] = read<float>(groupData, parseOffset);
-                            }
-                        } else if (vertexCount > 0) {
-                            group.liquid.heights.resize(vertexCount, group.liquid.basePosition.z);
                         }
 
                         if (tileCount > 0 && parseOffset + tileCount <= subChunkEnd) {
