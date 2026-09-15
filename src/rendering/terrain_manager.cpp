@@ -1,4 +1,5 @@
 #include "rendering/terrain_manager.hpp"
+#include "rendering/placement_transform.hpp"
 
 #include <vector>
 
@@ -56,40 +57,6 @@ namespace wowee {
 namespace rendering {
 
 namespace {
-/// The euler triple a placement's three degrees become, in render axes.
-///
-/// MDDF and MODF store the rotation identically and this was written out twice,
-/// once for each; it is one function. Both are composed X, Y, Z - see the note
-/// in WMOInstance::updateModelMatrix for how the buildings came to be composed
-/// the other way round and what it took to settle it.
-glm::vec3 placementEuler(const float rotation[3]) {
-    // MDDF and MODF store the rotation identically, this was written out once
-    // for each, and both are composed X, Y, Z - see the note in
-    // WMOInstance::updateModelMatrix for how the buildings came to be composed
-    // the other way and what it took to settle it.
-    //
-    // What is *not* wrong: this mapping. Darkshore's bridges are still slightly
-    // askew, and every dial that could be turned here has been turned - all six
-    // composition orders, all four source permutations, the sign of each
-    // component, and the yaw offset. None of them stands the bridges up, and
-    // the closest compromise anyone found was multiplying one component by
-    // four, which is not a thing a placement convention ever does: a convention
-    // is a sign and a right angle. A factor of four is a small wrong number
-    // stretched until it resembles a different one, and it is wrong differently
-    // for every placement with a different roll.
-    //
-    // So the remaining error is not in the euler mapping, and the next thing to
-    // suspect is what the bridges are being judged against - the terrain they
-    // span. A correctly placed bridge over a slightly wrong heightmap looks
-    // exactly like a wrongly placed bridge, and it would explain the same
-    // pattern turning up on other objects that sit against ground.
-    constexpr float kDeg = core::coords::PI / 180.0f;
-    return glm::vec3(-rotation[2] * kDeg,
-                     -rotation[0] * kDeg,
-                     (rotation[1] + 180.0f) * kDeg);
-}
-
-
 // Alpha map format constants live with the loader now - see
 // pipeline/adt_alpha.hpp - because two copies of the decoder had grown and the
 // grass terrain adapter would have made a third.
@@ -636,7 +603,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
         p.modelId = modelId;
         p.uniqueId = placement.uniqueId;
         p.position = glPos;
-        p.rotation = placementEuler(placement.rotation);
+        p.rotation = placementEulerFromAdtDegrees(placement.rotation);
         p.scale = placement.scale * kInv1024;
         pending->m2Placements.push_back(p);
     }
@@ -712,7 +679,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                                                        placement.position[1],
                                                        placement.position[2]);
 
-                glm::vec3 rot = placementEuler(placement.rotation);
+                glm::vec3 rot = placementEulerFromAdtDegrees(placement.rotation);
 
                 // Pre-load WMO doodads (M2 models inside WMO)
                 if (!workerRunning.load()) return nullptr;
