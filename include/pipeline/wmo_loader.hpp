@@ -104,11 +104,12 @@ struct WMOPortalRef {
 
 // WMO collision BSP node (MOBN, Vanilla 1.12: 16 bytes)
 struct WMOBspNode {
-    uint16_t flags = 0;        // low bits: split axis, bit 0x4: leaf
+    uint16_t planeType = 0;
     int16_t negativeChild = -1;
     int16_t positiveChild = -1;
     uint16_t faceCount = 0;
-    uint32_t firstFace = 0;    // index into MOBR
+    uint16_t firstFace = 0;    // first entry in MOBR
+    int16_t unknown = 0;
     float planeDistance = 0.0f;
 };
 
