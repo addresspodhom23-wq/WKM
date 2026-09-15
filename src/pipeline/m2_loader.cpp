@@ -821,11 +821,15 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
     M2Model model;
 
     // Read header with version-aware field parsing.
-    // Vanilla M2 (version < 264) has 3 extra fields totaling +20 bytes:
-    //   +8: playableAnimLookup M2Array (after animationLookup)
-    //   +4: ofsViews (after nViews, making it a full M2Array)
-    //   +8: unknown extra M2Array (after texReplace, before renderFlags)
-    // Also: vanilla bones are 84 bytes (no boneNameCRC), sequences are 68 bytes.
+    // Vanilla 1.12 MD20 (v256/v257) differs from the later header:
+    //   +8: playableAnimLookup M2Array at 0x2c
+    //   +4: ofsViews at 0x50 (views is a full M2Array)
+    //   +8: unnamed M2Array at 0xac, AFTER texAnimLookup
+    //   +8: one additional array at 0x144 only for v257
+    // Placing the unnamed 0xac array before renderFlags shifts every material
+    // lookup by one descriptor and makes otherwise-correct meshes render with
+    // the wrong flags/textures/transparency.
+    // Vanilla bones are 108 bytes (no boneNameCRC); sequences are 68 bytes.
     constexpr size_t COMMON_PREFIX_SIZE = 0x2C; // magic through ofsAnimationLookup
 
     if (m2Data.size() < COMMON_PREFIX_SIZE + 16) { // Need at least some fields after prefix
@@ -885,22 +889,24 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         header.nTexReplace = r32();
         header.ofsTexReplace = r32();
 
-        // Skip unknown extra M2Array (8 bytes)
-        c += 8;
-
-        // nRenderFlags through ofsUVAnimLookup
-        header.nRenderFlags = r32();
+        // 0x7c..0xab: render/material lookup arrays. These must be read
+        // before the unnamed descriptor at 0xac.
+        header.nRenderFlags = r32();        // 0x7c
         header.ofsRenderFlags = r32();
-        header.nBoneLookupTable = r32();
+        header.nBoneLookupTable = r32();    // 0x84
         header.ofsBoneLookupTable = r32();
-        header.nTexLookup = r32();
+        header.nTexLookup = r32();          // 0x8c
         header.ofsTexLookup = r32();
-        header.nTexUnits = r32();
+        header.nTexUnits = r32();           // 0x94
         header.ofsTexUnits = r32();
-        header.nTransLookup = r32();
+        header.nTransLookup = r32();        // 0x9c
         header.ofsTransLookup = r32();
-        header.nUVAnimLookup = r32();
+        header.nUVAnimLookup = r32();       // 0xa4
         header.ofsUVAnimLookup = r32();
+
+        // 0xac: unnamed M2Array in the v256/v257 header. The 1.12 client
+        // validates/fixes it, but our renderer does not consume it.
+        c += 8;
 
         // Float sections (vertexBox, vertexRadius, boundingBox, boundingRadius)
         if (c + 56 <= m2Data.size()) {
