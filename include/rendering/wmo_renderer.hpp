@@ -7,6 +7,7 @@
 
 #include "pipeline/blp_loader.hpp"
 #include "pipeline/grass_clearing.hpp"
+#include "pipeline/wmo_loader.hpp"
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
