@@ -3,7 +3,7 @@ name: Kraken Mobile Android
 on:
   workflow_dispatch:
   push:
-    branches: [ kraken-mobile ]
+    branches: [ kraken-mobile, vanilla-correctness-final ]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
