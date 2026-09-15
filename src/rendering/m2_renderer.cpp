@@ -2150,6 +2150,7 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             mat.colorKeyThreshold = 0.08f;
             mat.unlit = (bgpu.materialFlags & 0x01) ? 1 : 0;
             mat.blendMode = bgpu.blendMode;
+            mat.twoSided = (bgpu.materialFlags & 4u) ? 1 : 0;
             mat.fadeAlpha = 1.0f;
             mat.interiorDarken = 0.0f;
             mat.specularIntensity = 0.5f;
