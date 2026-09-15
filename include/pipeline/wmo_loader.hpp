@@ -9,6 +9,13 @@
 namespace wowee {
 namespace pipeline {
 
+/// Retail 1.12's group classifier: a true interior has neither the EXTERIOR
+/// bit (0x08) nor the exterior-lit bit (0x40). Do not use later-era 0x2000 as
+/// an indoor bit for Vanilla data.
+inline constexpr bool wmoGroupIsInterior112(uint32_t flags) {
+    return (flags & 0x48u) == 0;
+}
+
 /**
  * WMO (World Model Object) Format
  *
@@ -22,16 +29,26 @@ namespace pipeline {
 
 // WMO Material
 struct WMOMaterial {
-    uint32_t flags;
-    uint32_t shader;
-    uint32_t blendMode;
-    uint32_t texture1;          // Diffuse texture index
-    uint32_t color1;
-    uint32_t texture2;          // Environment/detail texture
-    uint32_t color2;
-    uint32_t texture3;
-    uint32_t color3;
-    float runtime[4];           // Runtime data
+    // Exact Vanilla 1.12 MOMT disk fields. The record is 64 bytes, but only
+    // TWO texture-name offsets exist in the file: +0x0c and +0x18. The final
+    // two dwords (+0x38/+0x3c) are runtime texture handles in WoW.exe, not a
+    // third authored texture.
+    uint32_t flags = 0;             // +0x00
+    uint32_t shader = 0;            // +0x04
+    uint32_t blendMode = 0;         // +0x08
+    uint32_t texture1 = 0;          // +0x0c MOTX byte offset
+    uint32_t sidnColor = 0;         // +0x10
+    uint32_t frameSidnColor = 0;    // +0x14
+    uint32_t texture2 = 0;          // +0x18 MOTX byte offset
+    uint32_t diffColor = 0;         // +0x1c
+    uint32_t groundType = 0;        // +0x20 TerrainType.dbc id
+    uint32_t color2 = 0;            // +0x24
+    uint32_t raw28 = 0;             // +0x28
+    uint32_t raw2C = 0;             // +0x2c
+    uint32_t raw30 = 0;             // +0x30
+    uint32_t raw34 = 0;             // +0x34
+    uint32_t runtimeTexture1 = 0;   // +0x38 overwritten by retail loader
+    uint32_t runtimeTexture2 = 0;   // +0x3c overwritten by retail loader
 };
 
 // WMO Group Info
@@ -44,15 +61,18 @@ struct WMOGroupInfo {
 
 // WMO Light
 struct WMOLight {
-    uint32_t type;              // 0=omni, 1=spot, 2=directional, 3=ambient
-    uint8_t useAttenuation;
-    uint8_t pad[3];
-    glm::vec4 color;
-    glm::vec3 position;
-    float intensity;
-    float attenuationStart;
-    float attenuationEnd;
-    float unknown[4];
+    // Exact 48-byte Vanilla MOLT record.
+    uint8_t lightType = 0;          // +0x00: omni/spot/directional/ambient
+    uint8_t type = 0;               // +0x01
+    uint8_t useAttenuation = 0;     // +0x02
+    uint8_t pad = 0;                // +0x03
+    uint32_t packedColor = 0;       // +0x04, CImVector/BGRA bytes
+    glm::vec4 color{1.0f};          // decoded runtime RGBA
+    glm::vec3 position{0.0f};       // +0x08
+    float intensity = 1.0f;         // +0x14
+    float attenuationStart = 0.0f;  // +0x18
+    float attenuationEnd = 0.0f;    // +0x1c
+    float unknown[4]{};             // +0x20..+0x2c
 };
 
 // WMO Doodad Set (collection of M2 models placed in WMO)
@@ -74,24 +94,26 @@ struct WMODoodad {
 
 // WMO Fog
 struct WMOFog {
-    uint32_t flags;
-    glm::vec3 position;
-    float smallRadius;
-    float largeRadius;
-    float endDist;
-    float startFactor;
-    glm::vec4 color1;          // End fog color
-    float endDist2;
-    float startFactor2;
-    glm::vec4 color2;          // Start fog color (blend with color1)
+    // Exact Vanilla MFOG record, 0x30 bytes.
+    uint32_t flags = 0;
+    glm::vec3 position{0.0f};
+    float smallRadius = 0.0f;
+    float largeRadius = 0.0f;
+    float endDist = 0.0f;
+    float startFactor = 0.0f;       // fraction of endDist, not a distance
+    uint32_t packedColor = 0;       // 0xAARRGGBB as a little-endian CImVector
+    float underwaterEndDist = 0.0f;
+    float underwaterStartFactor = 0.0f;
+    uint32_t packedUnderwaterColor = 0;
 };
 
 // WMO Portal
 struct WMOPortal {
-    uint16_t startVertex;
-    uint16_t vertexCount;
-    uint16_t planeIndex;
-    uint16_t padding;
+    // Exact Vanilla MOPT record, 20 bytes.
+    uint16_t startVertex = 0;
+    uint16_t vertexCount = 0;
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    float distance = 0.0f; // signed plane: dot(normal, p) + distance
 };
 
 // WMO Portal Plane
@@ -108,6 +130,16 @@ struct WMOPortalRef {
     uint16_t padding;
 };
 
+// Vanilla MOBN BSP node, exact 16-byte on-disk record.
+struct WMOBSPNode {
+    int16_t planeType = 0;
+    int16_t children[2]{-1, -1};
+    uint16_t faceCount = 0;
+    uint16_t firstFace = 0;
+    int16_t unknown = 0;
+    float distance = 0.0f;
+};
+
 // WMO Liquid (MLIQ chunk data)
 struct WMOLiquid {
     uint32_t xVerts = 0;        // Vertices in X direction
@@ -117,6 +149,7 @@ struct WMOLiquid {
     glm::vec3 basePosition;     // Corner position in model space
     uint16_t materialId = 0;    // Liquid material/type
     std::vector<float> heights; // Height per vertex (xVerts * yVerts)
+    std::vector<uint8_t> opacity; // Authored first byte of each 8-byte MLIQ vertex
     std::vector<uint8_t> flags; // Flags per tile (xTiles * yTiles)
 
     [[nodiscard]] bool hasLiquid() const { return xVerts > 0 && yVerts > 0; }
@@ -149,9 +182,10 @@ struct WMOGroup {
     uint16_t portalCount;
     uint16_t batchCountA;
     uint16_t batchCountB;
-    uint32_t fogIndices[4];     // Fog references
-    uint32_t liquidType;
-    uint32_t groupId;
+    uint8_t fogIndices[4]{};    // MOGP +0x30, indices into root MFOG
+    uint32_t liquidType = 0x0F;  // MOGP +0x34, 0x0F = no whole-group liquid
+    uint32_t areaTableId = 0;    // MOGP +0x38, WMOAreaTable group id
+    uint32_t groupId = 0;
 
     // Geometry
     std::vector<WMOVertex> vertices;
@@ -164,8 +198,13 @@ struct WMOGroup {
     std::vector<WMOPortal> portals;
     std::vector<glm::vec3> portalVertices;
 
-    // BSP tree (for collision - optional)
-    std::vector<uint8_t> bspNodes;
+    // Group ownership and local-light references authored by Vanilla.
+    std::vector<uint16_t> doodadRefs; // MODR -> root MODD indices
+    std::vector<uint16_t> lightRefs;  // MOLR -> root MOLT indices
+
+    // Exact WMO collision BSP: MOBN nodes + MOBR triangle-number refs.
+    std::vector<WMOBSPNode> bspNodes;
+    std::vector<uint16_t> bspFaceRefs;
 
     // Liquid data (MLIQ chunk)
     WMOLiquid liquid;
@@ -189,6 +228,8 @@ struct WMOModel {
     uint32_t nDoodadNames;
     uint32_t nDoodadDefs;
     uint32_t nDoodadSets;
+    uint32_t rootId = 0;       // MOHD +0x20, WMOAreaTable WMOID
+    uint32_t headerFlags = 0;  // MOHD +0x3c
 
     glm::vec3 ambientColor;     // MOHD ambient color (used for interior group lighting)
     glm::vec3 boundingBoxMin;
@@ -220,6 +261,9 @@ struct WMOModel {
 
     // Fog
     std::vector<WMOFog> fogs;
+
+    // Optional WMO-local skybox M2 (MOSB). Empty for almost all roots.
+    std::string skyboxPath;
 
     // Group names
     std::vector<std::string> groupNames;
