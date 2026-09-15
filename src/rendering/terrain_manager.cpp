@@ -816,6 +816,7 @@ std::shared_ptr<PendingTile> TerrainManager::prepareTile(int x, int y) {
                         doodadReady.model = std::move(m2Model);
                         doodadReady.worldPosition = worldPos;
                         doodadReady.modelMatrix = worldMatrix;
+                        doodadReady.color = doodad.color;
                         pending->wmoDoodads.push_back(std::move(doodadReady));
                     }
                     }
@@ -1208,6 +1209,10 @@ bool TerrainManager::advanceFinalization(FinalizingTile& ft) {
                 uint32_t wmoDoodadInstId = m2Renderer->createInstanceWithMatrix(
                     doodad.modelId, doodad.modelMatrix, doodad.worldPosition);
                 if (wmoDoodadInstId) {
+                    // Apply the authored Vanilla MODD colour per instance. This
+                    // was parsed for years but previously discarded here.
+                    m2Renderer->setInstanceColor(wmoDoodadInstId, doodad.color);
+
                     // WMO doodads should not add duplicate/over-aggressive wall
                     // blocking, but structural doodads such as Exodarplatform01
                     // carry the only authored floor for their walkable ramps.
