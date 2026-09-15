@@ -14,6 +14,7 @@ int main() {
     const auto terrain=read("assets/shaders/terrain.frag.glsl");
     const auto m2=read("assets/shaders/m2.frag.glsl");
     const auto wmo=read("assets/shaders/wmo.frag.glsl");
+    const auto m2Loader=read("src/pipeline/m2_loader.cpp");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
     assert(renderer.find("classicRendering_ ? 1.0f : 0.0f") != std::string::npos);
@@ -22,5 +23,22 @@ int main() {
     assert(m2.find("vanillaRendering = shadowParams.w > 0.5") != std::string::npos);
     assert(wmo.find("vanillaRendering = shadowParams.w > 0.5") != std::string::npos);
     assert(wmo.find("result = texColor.rgb * VertColor.rgb") != std::string::npos);
+
+    // Build 5875 Vanilla MD20 keeps the unnamed descriptor at 0xac AFTER
+    // renderFlags/texture/transparency lookups. Moving that skip earlier shifts
+    // every material lookup by eight bytes and produces valid geometry with
+    // the wrong materials -- most visible on trees and alpha-cutout doodads.
+    const auto renderFlagsPos=m2Loader.find("header.nRenderFlags = r32()");
+    const auto texLookupPos=m2Loader.find("header.nTexLookup = r32()");
+    const auto texUnitPos=m2Loader.find("header.nTexUnits = r32()");
+    const auto transLookupPos=m2Loader.find("header.nTransLookup = r32()");
+    const auto uvAnimLookupPos=m2Loader.find("header.nUVAnimLookup = r32()");
+    const auto unnamedPos=m2Loader.find("// 0xac: unnamed M2Array");
+    assert(renderFlagsPos != std::string::npos);
+    assert(texLookupPos > renderFlagsPos);
+    assert(texUnitPos > texLookupPos);
+    assert(transLookupPos > texUnitPos);
+    assert(uvAnimLookupPos > transLookupPos);
+    assert(unnamedPos > uvAnimLookupPos);
     return 0;
 }
