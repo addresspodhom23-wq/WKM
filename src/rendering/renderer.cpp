@@ -462,6 +462,22 @@ void Renderer::updatePerFrameUBO() {
         }
     }
 
+    // Vanilla WMO groups can carry their own authored fog volume (MFOG).
+    // It overrides zone Light.dbc fog only while the camera is inside the
+    // referenced group/volume; otherwise the zone fog above remains intact.
+    if (classicRendering_ && wmoRenderer && camera) {
+        const glm::vec3 camPos = camera->getPosition();
+        const bool wmoUnderwater =
+            cameraController && cameraController->isSwimming() &&
+            waterRenderer && waterRenderer->isWmoWaterAt(camPos.x, camPos.y);
+        WMORenderer::VanillaFogSample wmoFog;
+        if (wmoRenderer->queryVanillaFog(camPos, wmoUnderwater, wmoFog)) {
+            currentFrameData.fogColor = glm::vec4(wmoFog.color, 1.0f);
+            currentFrameData.fogParams.x = wmoFog.start;
+            currentFrameData.fogParams.y = wmoFog.end;
+        }
+    }
+
     currentFrameData.lightSpaceMatrix = lightSpaceMatrix;
     // Scale shadow bias proportionally to ortho extent to avoid acne at close range / gaps at far range
     float shadowBias = glm::clamp(0.8f * (shadowDistance_ / 300.0f), 0.0f, 1.0f);
