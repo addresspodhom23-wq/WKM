@@ -62,11 +62,17 @@ struct MapChunk {
     std::vector<TextureLayer> layers;
     std::vector<uint8_t> alphaMap;  // Alpha blend maps for layers
 
+    // Vanilla 1.12 baked terrain shadow (MCSH): 64x64 one-bit texels packed
+    // LSB-first into exactly 512 bytes. Kept packed until GPU upload.
+    std::array<uint8_t, 512> bakedShadow{};
+    bool bakedShadowLoaded = false;
+
     // Normals (compressed)
     std::array<int8_t, 145 * 3> normals;  // X, Y, Z per vertex
 
     [[nodiscard]] bool hasHeightMap() const { return heightMap.isLoaded(); }
     [[nodiscard]] bool hasLayers() const { return !layers.empty(); }
+    [[nodiscard]] bool hasBakedShadow() const { return bakedShadowLoaded; }
 
     // Check if a quad has a hole (y and x are quad indices 0-7)
     [[nodiscard]] bool isHole(int y, int x) const {
@@ -231,6 +237,7 @@ private:
     static void parseMCNR(std::span<const uint8_t> data, MapChunk& chunk);
     static void parseMCLY(std::span<const uint8_t> data, MapChunk& chunk);
     static void parseMCAL(std::span<const uint8_t> data, MapChunk& chunk);
+    static void parseMCSH(std::span<const uint8_t> data, MapChunk& chunk);
     static void parseMH2O(std::span<const uint8_t> data, ADTTerrain& terrain);
     static void parseMCLQ(std::span<const uint8_t> data, int chunkIndex,
                           uint32_t mcnkFlags, ADTTerrain& terrain);
