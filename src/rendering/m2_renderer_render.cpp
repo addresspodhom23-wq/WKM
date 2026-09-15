@@ -1665,7 +1665,14 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
 
                     // Pipeline selection (per-model/batch, not per-instance)
-                    const bool foliageCutout = foliageLikeModel && !model.isSpellEffect && batch.blendMode <= 3;
+                    // Preserve authored alpha-blended leaf batches. Forcing blend mode 2
+                    // through the opaque cutout path discards the soft edge coverage that
+                    // makes classic canopies look full. Only opaque foliage textures that
+                    // actually carry alpha need this fallback; alpha-key materials are
+                    // already handled by m2BatchNeedsAlphaTest below.
+                    const bool foliageCutout =
+                        foliageLikeModel && !model.isSpellEffect &&
+                        batch.blendMode == M2_BLEND_OPAQUE && batch.hasAlpha;
                     // The fire burning in the hearth is an effect overlay on a
                     // black background, the same shape as a spell visual; drawn
                     // opaque it fills the forge opening with a black rectangle
