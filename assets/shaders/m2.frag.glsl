@@ -34,6 +34,7 @@ layout(set = 1, binding = 2) uniform M2Material {
     float tintR;
     float tintG;
     float tintB;
+    int twoSided;
 };
 
 layout(set = 0, binding = 1) uniform sampler2DShadow uShadowMap;
@@ -133,6 +134,13 @@ void main() {
 
     const bool vanillaRendering = shadowParams.w > 0.5;
 
+    // Vanilla draws back faces only for materials carrying the authored
+    // TwoSided flag. The shared Vulkan pipeline stays cull-none, so reproduce
+    // that per-material raster state here.
+    if (vanillaRendering && twoSided == 0 && !gl_FrontFacing) {
+        discard;
+    }
+
     // Vanilla WMO doodads carry a packed MODD colour per instance. Ordinary
     // ADT/world M2 instances upload white, so this is a no-op for them.
     // The classic client applies the authored colour to opaque/alpha-key
@@ -202,8 +210,8 @@ void main() {
     }
 
     vec3 norm = normalize(Normal);
-    bool foliageTwoSided = (alphaTest == 2);
-    if (!foliageTwoSided && !gl_FrontFacing) norm = -norm;
+    bool foliageTwoSided = vanillaRendering ? (twoSided != 0) : (alphaTest == 2);
+    if (foliageTwoSided && !gl_FrontFacing) norm = -norm;
 
     // Detail normal perturbation (foliage only) - UV-based only so wind doesn't cause flicker
     if (isFoliage && !classicVegetation && !vanillaRendering) {
