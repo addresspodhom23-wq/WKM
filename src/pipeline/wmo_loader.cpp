@@ -23,7 +23,6 @@ constexpr uint32_t MOPV = 0x4D4F5056;  // Portal vertices
 constexpr uint32_t MOPT = 0x4D4F5054;  // Portal info
 constexpr uint32_t MOPR = 0x4D4F5052;  // Portal references
 constexpr uint32_t MFOG = 0x4D464F47;  // Fog volumes
-constexpr uint32_t MCVP = 0x4D435650;  // Convex volume planes
 
 // WMO group chunk identifiers
 constexpr uint32_t MOGP = 0x4D4F4750;  // Group header
@@ -421,22 +420,6 @@ WMOModel WMOLoader::load(const std::vector<uint8_t>& wmoData) {
                 break;
             }
 
-            case MCVP: {
-                // Optional whole-WMO convex volume: 4 floats per plane.
-                constexpr uint32_t kPlaneSize = 16;
-                const uint32_t count = chunkSize / kPlaneSize;
-                model.convexVolumePlanes.reserve(model.convexVolumePlanes.size() + count);
-                for (uint32_t i = 0; i < count && offset + kPlaneSize <= chunkEnd; ++i) {
-                    glm::vec4 plane;
-                    plane.x = read<float>(wmoData, offset);
-                    plane.y = read<float>(wmoData, offset);
-                    plane.z = read<float>(wmoData, offset);
-                    plane.w = read<float>(wmoData, offset);
-                    model.convexVolumePlanes.push_back(plane);
-                }
-                break;
-            }
-
             default:
                 // Unknown chunk, skip it
                 break;
@@ -518,20 +501,18 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
             group.boundingBoxMax.z = read<float>(groupData, mogpOffset);
             group.portalStart = read<uint16_t>(groupData, mogpOffset);
             group.portalCount = read<uint16_t>(groupData, mogpOffset);
-            group.transparentBatchCount = read<uint8_t>(groupData, mogpOffset);
-            group.interiorBatchCount = read<uint8_t>(groupData, mogpOffset);
-            group.exteriorBatchCount = read<uint8_t>(groupData, mogpOffset);
-            group.batchPadding = read<uint8_t>(groupData, mogpOffset);
+            group.batchCountA = read<uint16_t>(groupData, mogpOffset);
+            group.batchCountB = read<uint16_t>(groupData, mogpOffset);
+            group.batchCountC = read<uint16_t>(groupData, mogpOffset);
+            group.batchCountD = read<uint16_t>(groupData, mogpOffset);
             group.fogIndices[0] = read<uint8_t>(groupData, mogpOffset);
             group.fogIndices[1] = read<uint8_t>(groupData, mogpOffset);
             group.fogIndices[2] = read<uint8_t>(groupData, mogpOffset);
             group.fogIndices[3] = read<uint8_t>(groupData, mogpOffset);
             group.liquidType = read<uint32_t>(groupData, mogpOffset);
             group.groupId = read<uint32_t>(groupData, mogpOffset);
-            // 0x3C and 0x40 are legacy/unknown in Vanilla; preserve file cursor
-            // semantics by consuming them before subchunks begin at +0x44.
-            (void)read<uint32_t>(groupData, mogpOffset);
-            (void)read<uint32_t>(groupData, mogpOffset);
+            (void)read<uint32_t>(groupData, mogpOffset); // unk2
+            (void)read<uint32_t>(groupData, mogpOffset); // unk3
             mogpOffset = offset + 68;
 
             // Parse sub-chunks within MOGP
