@@ -788,6 +788,11 @@ constexpr const char* kGraphicsPresetKeys[] = {
     "normalmapping", "normalmapstrength", "parallax", "parallaxquality",
     "groundclutter",
     "grassenabled", "grassdensity", "grassheight", "grassdistance",
+    // Original WoW also owns these so touching one of them after selecting the
+    // profile correctly changes the preset marker back to Custom.
+    "groundclutterdistance", "particledensity", "weatherdetail",
+    "environmentdetail", "texturefiltering", "upscaling", "framegen",
+    "fogstrength", "fogskyblend", "sharpstars", "lensflare", "framecap",
 };
 
 /// Every graphics setting that has to reach something when it is loaded.
@@ -863,6 +868,25 @@ void SettingsPanel::applyGraphicsPreset(GraphicsPreset preset) {
         pendingGrassDensity      = p.grassDensity;
         pendingGrassHeight       = p.grassHeight;
         pendingGrassDistance     = p.grassDistance;
+
+        if (preset == GraphicsPreset::ORIGINAL_WOW) {
+            // A conservative 3.3.5-era baseline: preserve the authored world
+            // instead of stacking Kraken-only detail on top of it. These values
+            // mirror common Wrath-era Config.wtf ranges and intentionally keep
+            // the expensive modern additions disabled on Android.
+            pendingGroundClutterDistance = 130;
+            pendingParticleDensity       = 80;
+            pendingWeatherDetail         = 3;
+            pendingEnvironmentDetail     = 125;
+            pendingTextureFiltering      = 4;   // 16x; cheap and keeps roads sharp
+            pendingUpscalingMode         = 0;   // native rendering, no FSR
+            pendingAMDFramegen           = false;
+            pendingFogStrength           = 1.0f; // zone-authored fog strength
+            pendingFogSkyBlend           = 0.0f; // use the zone's own fog colour
+            pendingSharpStars            = false; // keep the sky texture as authored
+            pendingLensFlare             = 0.0f; // no Kraken-added flare
+            pendingFrameCap              = 0;   // unlimited; do not hide performance
+        }
         // Each one goes to the thing it affects through the one function that
         // knows where that is, rather than through a second copy of the same
         // renderer calls written out here.
@@ -898,7 +922,23 @@ void SettingsPanel::updateGraphicsPresetFromCurrentSettings() {
             // how dense, how tall or how far it would have been.
             (!p.grass || (std::abs(pendingGrassDensity - p.grassDensity) <= 5 &&
                           std::abs(pendingGrassHeight - p.grassHeight) <= 5 &&
-                          std::abs(pendingGrassDistance - p.grassDistance) <= 10));
+                          std::abs(pendingGrassDistance - p.grassDistance) <= 10)) &&
+            // Only the appended Original WoW row owns the wider set of legacy
+            // world-detail choices. The four existing presets retain exactly
+            // the recognition rules they had before this profile was added.
+            (i != 4 ||
+             (std::abs(pendingGroundClutterDistance - 130) <= 5 &&
+              std::abs(pendingParticleDensity - 80) <= 5 &&
+              pendingWeatherDetail == 3 &&
+              std::abs(pendingEnvironmentDetail - 125) <= 5 &&
+              pendingTextureFiltering == 4 &&
+              pendingUpscalingMode == 0 &&
+              !pendingAMDFramegen &&
+              std::abs(pendingFogStrength - 1.0f) <= 0.05f &&
+              std::abs(pendingFogSkyBlend - 0.0f) <= 0.05f &&
+              !pendingSharpStars &&
+              std::abs(pendingLensFlare - 0.0f) <= 0.05f &&
+              pendingFrameCap == 0));
         if (matches) {
             pendingGraphicsPreset = static_cast<GraphicsPreset>(i + 1);
             return;
@@ -1462,7 +1502,7 @@ bool SettingsPanel::setSettingValue(const std::string& key, const std::string& v
     const bool on = settingIsOn(value);
 
     if (key == "graphicspreset") {
-        const int idx = std::clamp(static_cast<int>(v + 0.5), 0, 4);
+        const int idx = std::clamp(static_cast<int>(v + 0.5), 0, 5);
         pendingGraphicsPreset = static_cast<GraphicsPreset>(idx);
         applySettingSideEffects(key);
         return true;
