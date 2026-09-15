@@ -180,6 +180,7 @@ struct FinalizingTile {
     std::vector<uint32_t> wmoInstanceIds;
     std::vector<uint32_t> tileUniqueIds;
     std::vector<uint32_t> tileWmoUniqueIds;
+    std::unordered_map<uint32_t, uint32_t> wmoInstanceByUniqueId; // ADT uniqueId -> runtime WMO instance
     std::unordered_set<uint32_t> uploadedM2ModelIds;
 };
 
