@@ -222,26 +222,28 @@ void main() {
     float basicType = push.liquidBasicType;
 
     if (push.pad0 > 0.5) {
-        // The source BLP contains both the ripple detail and surface opacity.
-        // Frame selection is CPU-side with immutable descriptors, not noise.
-        vec4 ripple = texture(ClassicWater, TexCoord);
-        vec3 illumination = clamp(ambientColor.rgb + lightColor.rgb *
-            max(-lightDir.z, 0.0), vec3(0.0), vec3(1.0));
-        // Dark blue palette for original-texture water. Partly neutralize
-        // warm land lighting so it does not suppress the blue channel, while
-        // retaining its intensity (including night-time darkening).
-        vec3 blueTint = basicType > 0.5
-            ? vec3(0.07, 0.32, 0.52)
-            : vec3(0.08, 0.36, 0.56);
-        float lightLevel = dot(illumination, vec3(0.2126, 0.7152, 0.0722));
-        vec3 waterLight = mix(illumination, vec3(lightLevel), 0.65);
-        vec3 color = (blueTint + ripple.rgb) * waterLight;
+        // Vanilla 1.12 path: animate and sample the original XTextures liquid
+        // BLPs directly. No procedural colour palette, refraction, reflection,
+        // foam or generated noise is layered on top.
+        vec4 authored = texture(ClassicWater, TexCoord);
+        vec3 color = authored.rgb;
+
+        if (basicType < 1.5) {
+            // Water/ocean participates in world lighting. Keep the authored BLP
+            // hue instead of replacing it with Kraken's hard-coded blue tint.
+            vec3 illumination = clamp(
+                ambientColor.rgb +
+                lightColor.rgb * max(-lightDir.z, 0.0),
+                vec3(0.0), vec3(1.0));
+            color *= illumination;
+        }
+        // Magma/slime source textures are self-luminous in the classic path.
+
         float dist = length(viewPos.xyz - FragPos);
         float fogFactor = clamp((fogParams.y - dist) /
             max(fogParams.y - fogParams.x, 0.001), 0.0, 1.0);
         color = mix(fogColor.rgb, color, fogFactor);
-        // Opaque from both sides as requested; BLP RGB still animates the ripples.
-        outColor = vec4(color, 1.0);
+        outColor = vec4(color, authored.a);
         return;
     }
 
