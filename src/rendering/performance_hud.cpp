@@ -170,7 +170,12 @@ void PerformanceHUD::render(Renderer* renderer, const Camera* camera) {
 #ifdef __ANDROID__
         ImGui::TextUnformatted("ПРОВЕРКА ГРАФИКИ");
         ImGui::TextUnformatted("Галочка = включено, пусто = выключено");
-        ImGui::TextUnformatted("Осадки: ВЫКЛ");
+        if (auto* precipitation = renderer->getWeather()) {
+            if (renderer->isPlayerIndoors())
+                ImGui::TextUnformatted("Осадки: ВЫКЛ (под крышей)");
+            else
+                ImGui::Text("Осадки: %s", precipitation->isEnabled() ? "ВКЛ" : "ВЫКЛ");
+        }
         bool buildingsEnabled = renderer->isBuildingDiagnosticEnabled();
         if (ImGui::Checkbox("Здания (WMO)###buildings", &buildingsEnabled)) {
             renderer->setBuildingDiagnosticEnabled(buildingsEnabled);

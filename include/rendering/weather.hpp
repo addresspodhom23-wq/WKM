@@ -93,12 +93,10 @@ public:
      * @brief Enable or disable weather
      */
     void setEnabled(bool enabled) {
-#ifdef __ANDROID__
-        (void)enabled;
-        this->enabled = false; // Precipitation disabled in the mobile client.
-#else
+        // Mobile used to hard-disable precipitation while the renderer was
+        // being diagnosed. Weather is now safe to run there; the renderer
+        // supplies false whenever the player is inside/under a WMO roof.
         this->enabled = enabled;
-#endif
     }
     [[nodiscard]] bool isEnabled() const { return enabled; }
 

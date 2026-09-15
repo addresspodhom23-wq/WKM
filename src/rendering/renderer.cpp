@@ -1580,14 +1580,17 @@ void Renderer::update(float deltaTime) {
         }
     }
 
-    // Resolve WMO containment before weather and ambience consume it. Server
-    // weather remains authoritative outdoors, but particles must not follow the
-    // camera through a roof into Ironforge or other enclosed WMOs.
-    const bool canQueryWmo = (camera && wmoRenderer);
+    // Resolve WMO shelter before weather and ambience consume it. This is a
+    // PLAYER state, not a camera state: in third person the camera can remain
+    // outside a doorway while the character is already under the roof. Probe
+    // around torso height so feet sitting exactly on a group's lower bound do
+    // not make indoor/outdoor flicker.
     const glm::vec3 camPos = camera ? camera->getPosition() : glm::vec3(0.0f);
+    const glm::vec3 shelterProbe = characterPosition + glm::vec3(0.0f, 0.0f, 1.0f);
     uint32_t insideWmoId = 0;
-    const bool insideWmo = canQueryWmo &&
-        wmoRenderer->isInsideWMO(camPos.x, camPos.y, camPos.z, &insideWmoId);
+    const bool insideWmo = wmoRenderer &&
+        wmoRenderer->isInsideWMO(shelterProbe.x, shelterProbe.y, shelterProbe.z,
+                                 &insideWmoId);
     // Announce the crossing. zonetext.lua and worldstateframe.lua both listen
     // for ZONE_CHANGED_INDOORS, and WoW answers the way back out with a plain
     // ZONE_CHANGED - there is no outdoors counterpart. Nothing fired either,
