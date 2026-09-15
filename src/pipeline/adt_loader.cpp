@@ -331,13 +331,16 @@ void ADTLoader::parseMCNK(std::span<const uint8_t> data, int chunkIndex, ADTTerr
     uint32_t ofsLayer = readUInt32(data, 28);    // MCLY offset
     uint32_t ofsAlpha = readUInt32(data, 36);    // MCAL offset
     uint32_t sizeAlpha = readUInt32(data, 40);
+    uint32_t ofsShadow = readUInt32(data, 44);   // MCSH offset
+    uint32_t sizeShadow = readUInt32(data, 48);  // normally 512 (+ optional chunk header)
 
     // Debug first chunk only
     if (chunkIndex == 0) {
         LOG_DEBUG("MCNK[0] offsets: nLayers=", nLayers,
                  " height=", ofsHeight, " normal=", ofsNormal,
                  " layer=", ofsLayer, " alpha=", ofsAlpha,
-                 " sizeAlpha=", sizeAlpha, " size=", data.size(),
+                 " sizeAlpha=", sizeAlpha, " shadow=", ofsShadow,
+                 " sizeShadow=", sizeShadow, " size=", data.size(),
                  " holes=0x", std::hex, chunk.holes, std::dec);
     }
 
@@ -396,6 +399,23 @@ void ADTLoader::parseMCNK(std::span<const uint8_t> data, int chunkIndex, ADTTerr
         uint32_t skip = (possibleMagic == MCAL) ? 8 : 0;
         if (sizeAlpha > skip) {
             parseMCAL(data.subspan(ofsAlpha + skip, sizeAlpha - skip), chunk);
+        }
+    }
+
+    // Vanilla baked terrain shadow (MCSH): 64x64 one-bit samples,
+    // exactly 512 payload bytes, LSB-first. MCNK flag bit 0 is the retail
+    // "shadow present" bit. Accept offsets that point either at the optional
+    // MCSH sub-chunk header or directly at its payload, like the other arrays.
+    if ((chunk.flags & 0x1u) != 0 && ofsShadow > 0 && ofsShadow < data.size()) {
+        const uint32_t possibleMagic = readUInt32(data, ofsShadow);
+        const uint32_t skip = (possibleMagic == MCSH) ? 8u : 0u;
+        constexpr size_t kShadowBytes = 512;
+        if (static_cast<size_t>(ofsShadow) + skip + kShadowBytes <= data.size()) {
+            parseMCSH(data.subspan(ofsShadow + skip, kShadowBytes), chunk);
+        } else {
+            LOG_WARNING("MCSH outside MCNK bounds: offset=", ofsShadow,
+                        " skip=", skip, " declaredSize=", sizeShadow,
+                        " mcnkSize=", data.size());
         }
     }
 
@@ -491,6 +511,16 @@ void ADTLoader::parseMCAL(std::span<const uint8_t> data, MapChunk& chunk) {
     // Store raw data; decompression happens per-layer during mesh generation
     chunk.alphaMap.resize(data.size());
     std::memcpy(chunk.alphaMap.data(), data.data(), data.size());
+}
+
+void ADTLoader::parseMCSH(std::span<const uint8_t> data, MapChunk& chunk) {
+    constexpr size_t kShadowBytes = 512;
+    if (data.size() < kShadowBytes) {
+        LOG_WARNING("MCSH chunk too small: ", data.size(), " bytes");
+        return;
+    }
+    std::copy_n(data.begin(), kShadowBytes, chunk.bakedShadow.begin());
+    chunk.bakedShadowLoaded = true;
 }
 
 void ADTLoader::parseMCLQ(std::span<const uint8_t> data, int chunkIndex,
