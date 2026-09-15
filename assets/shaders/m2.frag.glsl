@@ -160,12 +160,12 @@ void main() {
         float mip = textureQueryLod(uTexture, TexCoord).x;
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
-    if (classicVegetation && alphaTest != 0) {
-        // This draw uses an opaque, depth-writing pipeline. Fractional coverage
-        // cannot blend away dark transparent edge texels here. Use the texture's
-        // alpha mask directly, retaining painted dark leaves and branch detail.
+    if ((classicVegetation || vanillaRendering) && alphaTest != 0) {
+        // Vanilla uses the authored alpha mask directly. Keep fractional alpha
+        // only for actual blended materials; opaque/cutout passes become solid
+        // after the cutoff.
         if (texColor.a < alphaCutoff) discard;
-        texColor.a = 1.0;
+        if (blendMode <= 1) texColor.a = 1.0;
     } else if (alphaTest != 0) {
         // Screen-space sharpened alpha: rescale so the cutoff maps to the
         // texel boundary. With MSAA + alpha-to-coverage on the cutout
@@ -195,7 +195,7 @@ void main() {
     if (!foliageTwoSided && !gl_FrontFacing) norm = -norm;
 
     // Detail normal perturbation (foliage only) - UV-based only so wind doesn't cause flicker
-    if (isFoliage && !classicVegetation) {
+    if (isFoliage && !classicVegetation && !vanillaRendering) {
         float nx = sin(TexCoord.x * 12.0 + TexCoord.y * 5.3) * 0.10;
         float ny = sin(TexCoord.y * 14.0 + TexCoord.x * 4.7) * 0.10;
         norm = normalize(norm + vec3(nx, ny, 0.0));
@@ -279,7 +279,7 @@ void main() {
     }
 
     // Canopy ambient occlusion (foliage only)
-    if (isFoliage && !classicVegetation) {
+    if (isFoliage && !classicVegetation && !vanillaRendering) {
         float normalizedHeight = clamp(ModelHeight / 18.0, 0.0, 1.0);
         float aoFactor = mix(0.55, 1.0, smoothstep(0.0, 0.6, normalizedHeight));
         result *= aoFactor;

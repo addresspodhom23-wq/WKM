@@ -175,7 +175,7 @@ void main() {
     vec2 finalUV = TexCoord;
 
     // Lava/magma: scroll UVs for flowing effect
-    if (isLava != 0) {
+    if (!vanillaRendering && isLava != 0) {
         float time = fogParams.z;
         // Scroll both axes - pools get horizontal flow, waterfalls get vertical flow
         // (UV orientation depends on mesh, so animate both)
