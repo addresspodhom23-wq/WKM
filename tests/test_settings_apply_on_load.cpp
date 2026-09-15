@@ -303,11 +303,14 @@ TEST_CASE("no preset asks for shadows to be off", "[settings]") {
     }
 }
 
-TEST_CASE("the presets climb", "[settings]") {
-    // Each step up is meant to ask for more than the one below it. A column
-    // that goes backwards is a preset that improves something by turning it
-    // down, which is how the two copies were spotted disagreeing.
-    for (int i = 1; i < wowee::ui::kGraphicsPresetCount; ++i) {
+TEST_CASE("the quality presets climb", "[settings]") {
+    // Low through Ultra are ordered quality rungs. Original WoW 1.12 is an
+    // appended compatibility profile (appended so old saved indices do not
+    // change), so it deliberately returns to the original client's smaller
+    // draw distances and is not part of this monotonic sequence.
+    constexpr int kRankedPresetCount = 4;
+    REQUIRE(wowee::ui::kGraphicsPresetCount >= kRankedPresetCount + 1);
+    for (int i = 1; i < kRankedPresetCount; ++i) {
         const auto& lo = wowee::ui::kGraphicsPresets[i - 1];
         const auto& hi = wowee::ui::kGraphicsPresets[i];
         INFO("preset " << i << " asks for less than " << (i - 1));
