@@ -345,6 +345,27 @@ struct M2BatchDisk {
 static_assert(sizeof(M2BatchDisk) == 24,
               "M2BatchDisk is read straight from the file: 24 bytes, no padding");
 
+// Vanilla 1.12 inline ModelView texUnit (24 bytes / 0x18). Unlike the later
+// skin record, +0x00 is one uint16 flags field, not uint8 flags + priority.
+// The remaining fields keep the original on-disk offsets. Fields that the
+// build-5875 draw path does not name are retained so later values cannot slide.
+struct M2TexUnitVanilla {
+    uint16_t flags;                  // +0x00
+    uint16_t shaderId;               // +0x02
+    uint16_t submeshIndex;           // +0x04
+    uint16_t submeshIndex2;          // +0x06 (retained, not used by 1.12 draw pairing)
+    uint16_t colorIndex;             // +0x08
+    uint16_t materialIndex;          // +0x0a
+    uint16_t raw0C;                  // +0x0c
+    uint16_t textureCount;           // +0x0e
+    uint16_t textureComboIndex;      // +0x10
+    uint16_t texCoordSet;            // +0x12
+    uint16_t transparencyIndex;      // +0x14
+    uint16_t textureTransformIndex;  // +0x16
+};
+static_assert(sizeof(M2TexUnitVanilla) == 0x18,
+              "Vanilla 1.12 ModelView texUnit must be exactly 0x18 bytes");
+
 // Compressed quaternion (on-disk) for rotation tracks
 struct CompressedQuat {
     int16_t x, y, z, w;
@@ -1790,30 +1811,33 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             }
         }
 
-        // Read batches
+        // Read Vanilla inline texUnits. The 24-byte stride matches later
+        // skin batches, but the first word does not: 1.12 stores uint16 flags.
+        // Reading it through M2BatchDisk silently threw away the upper byte and
+        // invented a signed priority plane from it.
         if (skinProfile.nBatches > 0 && skinProfile.ofsBatches > 0) {
-            auto diskBatches = readArray<M2BatchDisk>(m2Data,
+            auto diskBatches = readArray<M2TexUnitVanilla>(m2Data,
                 skinProfile.ofsBatches, skinProfile.nBatches);
             model.batches.clear();
             model.batches.reserve(diskBatches.size());
 
             for (const auto& db : diskBatches) {
-                M2Batch batch;
+                M2Batch batch{};
                 batch.flags = db.flags;
-                batch.priorityPlane = db.priorityPlane;
-                batch.shader = db.shader;
-                batch.skinSectionIndex = db.skinSectionIndex;
+                batch.priorityPlane = 0;
+                batch.shader = db.shaderId;
+                batch.skinSectionIndex = db.submeshIndex;
                 batch.colorIndex = db.colorIndex;
                 batch.materialIndex = db.materialIndex;
-                batch.materialLayer = db.materialLayer;
+                batch.materialLayer = db.raw0C;
                 batch.textureCount = db.textureCount;
                 batch.textureIndex = db.textureComboIndex;
-                batch.textureUnit = db.textureCoordIndex;
-                batch.transparencyIndex = db.textureWeightIndex;
+                batch.textureUnit = db.texCoordSet;
+                batch.transparencyIndex = db.transparencyIndex;
                 batch.textureAnimIndex = db.textureTransformIndex;
 
-                if (db.skinSectionIndex < submeshes.size()) {
-                    const auto& sm = submeshes[db.skinSectionIndex];
+                if (db.submeshIndex < submeshes.size()) {
+                    const auto& sm = submeshes[db.submeshIndex];
                     batch.indexStart = sm.indexStart;
                     batch.indexCount = sm.indexCount;
                     batch.vertexStart = sm.vertexStart;
