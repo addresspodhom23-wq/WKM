@@ -73,6 +73,7 @@ std::vector<glm::vec3> M2Renderer::getWaterVegetationPositions(const glm::vec3& 
     std::vector<glm::vec3> result;
     float maxDistSq = maxDist * maxDist;
     for (const auto& inst : instances) {
+        if (inst.forcedHidden) continue;
         if (!inst.cachedModel || !inst.cachedModel->isWaterVegetation) continue;
         glm::vec3 diff = inst.position - camPos;
         if (glm::dot(diff, diff) <= maxDistSq) {
@@ -83,7 +84,7 @@ std::vector<glm::vec3> M2Renderer::getWaterVegetationPositions(const glm::vec3& 
 }
 
 void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
-    if (gpu.isInstancePortal) return;
+    if (inst.forcedHidden || gpu.isInstancePortal) return;
 
     if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
         inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
@@ -413,6 +414,7 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
     auto& draws = ribbonDraws_;
 
     for (const auto& inst : instances) {
+        if (inst.forcedHidden) continue;
         if (!inst.cachedModel) continue;
         const auto& gpu = *inst.cachedModel;
         if (gpu.isInstancePortal) continue;
@@ -566,6 +568,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
     size_t totalParticles = 0;
 
     for (auto& inst : instances) {
+        if (inst.forcedHidden) continue;
         if (inst.particles.empty()) continue;
         if (!inst.cachedModel) continue;
         const auto& gpu = *inst.cachedModel;
