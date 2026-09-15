@@ -955,7 +955,6 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
     // directly into these arrays.
     modelData.lights = model.lights;
     modelData.fogs = model.fogs;
-    modelData.convexVolumePlanes = model.convexVolumePlanes;
 
     // Copy portal data for visibility culling
     modelData.portalVertices = model.portalVertices;
@@ -4072,23 +4071,6 @@ bool WMORenderer::isInsideWMOGroups(float glX, float glY, float glZ,
 
         const glm::vec3 localPos =
             glm::vec3(instance.invModelMatrix * glm::vec4(glX, glY, glZ, 1.0f));
-
-        // MCVP is the authored whole-WMO containment volume. Plane normals
-        // point outward; the original contract defines a point as inside when
-        // it is behind every plane (negative point-plane distance).
-        if (!model.convexVolumePlanes.empty()) {
-            bool insideConvexVolume = true;
-            constexpr float kPlaneEpsilon = 0.02f;
-            for (const glm::vec4& plane : model.convexVolumePlanes) {
-                const float d =
-                    glm::dot(glm::vec3(plane), localPos) + plane.w;
-                if (d > kPlaneEpsilon) {
-                    insideConvexVolume = false;
-                    break;
-                }
-            }
-            if (!insideConvexVolume) continue;
-        }
 
         for (const auto& group : model.groups) {
             if (interiorOnly && !(group.groupFlags & kWMOGroupIndoor)) continue;
