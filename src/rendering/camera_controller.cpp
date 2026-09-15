@@ -249,12 +249,14 @@ glm::vec3 CameraController::sweepAgainstWalls(const glm::vec3& from, const glm::
     const glm::vec3 stepDelta = delta / static_cast<float>(steps);
 
     glm::vec3 stepPos = from;
+    bool wmoAdjusted = false;
     for (int i = 0; i < steps; i++) {
         glm::vec3 candidate = stepPos + stepDelta;
 
         if (wmoRenderer) {
             glm::vec3 adjusted;
             if (wmoRenderer->checkWallCollision(stepPos, candidate, adjusted, cachedInsideWMO)) {
+                wmoAdjusted = true;
                 candidate.x = adjusted.x;
                 candidate.y = adjusted.y;
                 // Up is a ramp; down would be a wall pulling the feet under the floor.
@@ -271,6 +273,36 @@ glm::vec3 CameraController::sweepAgainstWalls(const glm::vec3& from, const glm::
         }
 
         stepPos = candidate;
+    }
+
+    // Final WMO tunnelling guard. The cylinder solver above remains the normal
+    // response because it preserves wall sliding and step-up. This line test is
+    // only used when that solver reported no WMO contact at all. Probe through
+    // the torso and extend the far endpoint by one body radius: segmentBlocked
+    // deliberately ignores a small far-end margin for camera/LOS use, and the
+    // extension keeps a thin wall at the requested endpoint inside the tested
+    // interval instead of letting it fall into that margin.
+    if (wmoRenderer && !wmoAdjusted) {
+        const glm::vec2 horizontal(stepPos.x - from.x, stepPos.y - from.y);
+        const float horizontalLenSq = glm::dot(horizontal, horizontal);
+        if (horizontalLenSq > 1.0e-6f) {
+            const glm::vec2 dir2 =
+                horizontal * glm::inversesqrt(horizontalLenSq);
+            constexpr float kTorsoProbeHeight = 1.0f;
+            constexpr float kEndpointExtension = 0.55f;
+            const glm::vec3 torsoOffset(0.0f, 0.0f, kTorsoProbeHeight);
+            const glm::vec3 guardStart = from + torsoOffset;
+            const glm::vec3 guardEnd =
+                stepPos + torsoOffset +
+                glm::vec3(dir2.x, dir2.y, 0.0f) * kEndpointExtension;
+            if (wmoRenderer->segmentBlocked(guardStart, guardEnd)) {
+                // Do not invent a second collision response here. Returning to
+                // the last known-safe horizontal position is deterministic and
+                // lets the regular cylinder solver take over on the next frame.
+                stepPos.x = from.x;
+                stepPos.y = from.y;
+            }
+        }
     }
     return stepPos;
 }
