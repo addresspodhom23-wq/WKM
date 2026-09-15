@@ -845,7 +845,7 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
             }
 
             uint32_t flags = 0;
-            if (inst.cachedIsValid)          flags |= 1u;
+            if (inst.cachedIsValid && !inst.forcedHidden) flags |= 1u;
             if (inst.cachedIsSmoke)           flags |= 2u;
             if (inst.cachedIsInvisibleTrap)   flags |= 4u;
             // Bit 3: previouslyVisible - the shader runs the HiZ occlusion test
@@ -1065,6 +1065,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         out.transparent.reserve((end - begin) / 12);
         for (uint32_t i = begin; i < end; ++i) {
             const auto& instance = instances[i];
+            if (instance.forcedHidden) continue;
             float distSq;
             float effectiveMaxDistSq;
 
