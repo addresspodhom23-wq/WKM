@@ -4093,7 +4093,7 @@ bool WMORenderer::isInsideInteriorWMO(float glX, float glY, float glZ) const {
     return isInsideWMOGroups(glX, glY, glZ, /*interiorOnly=*/true, nullptr);
 }
 
-bool WMORenderer::queryVanillaFog(const glm::vec3& worldPos,
+bool WMORenderer::queryVanillaFog(const glm::vec3& worldPos, bool underwater,
                                   VanillaFogSample& out) const {
     for (const auto& instance : instances) {
         if (!withinWorldBounds(instance, worldPos.x, worldPos.y, worldPos.z,
@@ -4129,10 +4129,15 @@ bool WMORenderer::queryVanillaFog(const glm::vec3& worldPos,
             }
 
             const float worldScale = std::max(0.001f, std::abs(instance.scale));
-            out.end = std::max(0.0f, fog.endDist * worldScale);
-            out.start = glm::clamp(fog.startFactor, 0.0f, 1.0f) * out.end;
-            out.color = glm::vec3(fog.color1);
-            out.underwater = false;
+            const float authoredEnd = underwater ? fog.endDist2 : fog.endDist;
+            const float authoredStart =
+                underwater ? fog.startFactor2 : fog.startFactor;
+            const glm::vec4 authoredColor =
+                underwater ? fog.color2 : fog.color1;
+            out.end = std::max(0.0f, authoredEnd * worldScale);
+            out.start = glm::clamp(authoredStart, 0.0f, 1.0f) * out.end;
+            out.color = glm::vec3(authoredColor);
+            out.underwater = underwater;
             return out.end > 0.0f;
         }
     }
