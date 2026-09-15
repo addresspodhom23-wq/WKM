@@ -37,9 +37,10 @@ struct InstanceData {
     int useBones;
     int boneBase;
     int boneCount;
-    // 0 for an ordinary instance, 1 while the player is pressing on it. Sits
-    // in what was padding, so the entry is the same 96 bytes it always was.
+    // 0 for an ordinary instance, 1 while the player is pressing on it.
     float highlight;
+    int _pad;
+    vec4 instanceColor;
 };
 layout(set = 3, binding = 0) readonly buffer InstanceSSBO {
     InstanceData instanceData[];
@@ -61,6 +62,7 @@ layout(location = 5) out float vFadeAlpha;
 layout(location = 6) flat out int vSkyMode;
 layout(location = 7) flat out float vHighlight;
 layout(location = 8) flat out int vClassicVegetation;
+layout(location = 9) flat out vec4 vInstanceColor;
 
 void main() {
     // Fetch per-instance data from SSBO
@@ -263,6 +265,7 @@ void main() {
     vSkyMode = push.isFoliage < 0 ? 1 : 0;
     vClassicVegetation = push.isFoliage == 4 ? 1 : 0;
     vHighlight = instanceData[instIdx].highlight;
+    vInstanceColor = instanceData[instIdx].instanceColor;
 
     gl_Position = projection * view * worldPos;
     // A sky model sits on the far plane whatever its radius, so the depth
