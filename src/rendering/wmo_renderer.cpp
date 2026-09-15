@@ -688,6 +688,12 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         };
         std::unordered_map<BatchKey, GroupResources::MergedBatch, BatchKeyHash> batchMap;
 
+        // Render-only index order. collisionIndices intentionally stays in the
+        // authored order because MOPY flags and collision-grid triangle numbers
+        // refer to that order. The GPU EBO may be freely reordered by material.
+        std::vector<uint16_t> packedRenderIndices;
+        packedRenderIndices.reserve(groupRes.collisionIndices.size());
+
         for (const auto& batch : groupRes.batches) {
             VkTexture* tex = whiteTexture_.get();
             bool hasTexture = false;
@@ -944,9 +950,49 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
                 }
             }
 
+            // mb.draws still names ranges in the authored index order up to this
+            // point (cloth/lava analysis above depends on that). Copy those
+            // ranges contiguously into the render EBO, preserving their order,
+            // then replace the list with one range. Vertices are untouched.
+            const uint32_t packedFirst =
+                static_cast<uint32_t>(packedRenderIndices.size());
+            for (const auto& draw : mb.draws) {
+                const uint32_t begin = std::min<uint32_t>(
+                    draw.firstIndex,
+                    static_cast<uint32_t>(groupRes.collisionIndices.size()));
+                const uint32_t end = std::min<uint32_t>(
+                    draw.firstIndex + draw.indexCount,
+                    static_cast<uint32_t>(groupRes.collisionIndices.size()));
+                if (end <= begin) continue;
+                packedRenderIndices.insert(
+                    packedRenderIndices.end(),
+                    groupRes.collisionIndices.begin() + begin,
+                    groupRes.collisionIndices.begin() + end);
+            }
+            const uint32_t packedCount =
+                static_cast<uint32_t>(packedRenderIndices.size()) - packedFirst;
+            mb.draws.clear();
+            if (packedCount > 0) {
+                mb.draws.push_back({packedFirst, packedCount});
+            }
+
             groupRes.mergedBatches.push_back(std::move(mb));
         }
         groupRes.allUntextured = !anyTextured && !groupRes.mergedBatches.empty();
+
+        // One immutable render EBO per group, already sorted into contiguous
+        // material ranges. The renderer now emits at most one indexed draw for
+        // each merged material batch instead of one draw for every authored
+        // sub-range. Collision keeps its independent, original CPU index order.
+        if (!packedRenderIndices.empty()) {
+            AllocatedBuffer idxBuf = uploadBuffer(
+                *vkCtx_, packedRenderIndices.data(),
+                packedRenderIndices.size() * sizeof(uint16_t),
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            groupRes.indexBuffer = idxBuf.buffer;
+            groupRes.indexAlloc = idxBuf.allocation;
+            groupRes.indexCount = static_cast<uint32_t>(packedRenderIndices.size());
+        }
     }
 
     vkCtx_->endUploadBatch();
@@ -2092,13 +2138,12 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     resources.vertexBuffer = vertBuf.buffer;
     resources.vertexAlloc = vertBuf.allocation;
 
-    // Upload index buffer to GPU
-    AllocatedBuffer idxBuf = uploadBuffer(*vkCtx_, group.indices.data(),
-        group.indices.size() * sizeof(uint16_t),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    resources.indexBuffer = idxBuf.buffer;
-    resources.indexAlloc = idxBuf.allocation;
-
+    // Keep the authored index order on the CPU for collision/material analysis.
+    // The render EBO is uploaded later, after material batches have been merged:
+    // ranges using the same render state are packed next to each other so one
+    // vkCmdDrawIndexed can replace many tiny draws. Uploading here as well would
+    // create an EBO that is immediately superseded and would also make it unsafe
+    // to destroy while the current upload command buffer still references it.
     // Store collision geometry for floor raycasting.
     // Use MOPY per-triangle flags to exclude detail/decorative geometry (flag 0x04)
     // from collision - these are things like gears, railings, etc.
