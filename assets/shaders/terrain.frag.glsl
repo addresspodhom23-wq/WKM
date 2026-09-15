@@ -33,6 +33,8 @@ layout(set = 1, binding = 7) uniform TerrainParams {
     int hasLayer3;
 };
 
+layout(set = 1, binding = 8) uniform sampler2D uBakedShadow;
+
 layout(set = 0, binding = 1) uniform sampler2DShadow uShadowMap;
 
 layout(location = 0) in vec3 FragPos;
@@ -160,7 +162,10 @@ void main() {
     float diff = max(dot(norm, lightDir2), 0.0);
     vec3 diffuse = diff * lightColor.rgb * finalColor.rgb;
 
-    float shadow = 1.0;
+    // Retail 1.12 packs MCSH beside MCAL. The decoded shadow channel
+    // is 1.0 in direct light and 0.0 in baked shadow. It masks sunlight only;
+    // ambient lighting remains, so shaded ground does not become black.
+    float shadow = vanillaRendering ? texture(uBakedShadow, LayerUV).r : 1.0;
     if (!vanillaRendering && shadowParams.x > 0.5) {
         vec3 ldir = normalize(-lightDir.xyz);
         float normalOffset = shadowTexel() * 2.0 * (1.0 - abs(dot(norm, ldir)));
