@@ -951,22 +951,34 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
 
     vkCtx_->endUploadBatch();
 
+    // Preserve exact Vanilla root tables. Group MOLR/MFOG indices refer
+    // directly into these arrays.
+    modelData.lights = model.lights;
+    modelData.fogs = model.fogs;
+
     // Copy portal data for visibility culling
     modelData.portalVertices = model.portalVertices;
     for (const auto& portal : model.portals) {
         PortalData pd;
         pd.startVertex = portal.startVertex;
         pd.vertexCount = portal.vertexCount;
-        // Compute portal plane from vertices if we have them
-        if (portal.vertexCount >= 3 && portal.startVertex + portal.vertexCount <= model.portalVertices.size()) {
-            glm::vec3 v0 = model.portalVertices[portal.startVertex];
-            glm::vec3 v1 = model.portalVertices[portal.startVertex + 1];
-            glm::vec3 v2 = model.portalVertices[portal.startVertex + 2];
-            // Degenerate portal (collinear or coincident verts) → cross is
-            // zero → normalize returns NaN. Fall back to up-axis instead of
-            // poisoning the portal-frustum cull.
-            glm::vec3 cross = glm::cross(v1 - v0, v2 - v0);
-            float crossLen = glm::length(cross);
+
+        // MOPT already stores the exact C4Plane used by the Vanilla client.
+        // Older Kraken rebuilt it from the first three vertices, which changes
+        // orientation/side on non-trivial portals and throws away authored data.
+        const glm::vec3 authoredNormal(portal.plane.x, portal.plane.y, portal.plane.z);
+        const float authoredLen = glm::length(authoredNormal);
+        if (authoredLen > 1e-6f && std::isfinite(portal.plane.w)) {
+            pd.normal = authoredNormal / authoredLen;
+            pd.distance = portal.plane.w / authoredLen;
+        } else if (portal.vertexCount >= 3 &&
+                   portal.startVertex + portal.vertexCount <= model.portalVertices.size()) {
+            // Defensive fallback for damaged/custom WMO files only.
+            const glm::vec3 v0 = model.portalVertices[portal.startVertex];
+            const glm::vec3 v1 = model.portalVertices[portal.startVertex + 1];
+            const glm::vec3 v2 = model.portalVertices[portal.startVertex + 2];
+            const glm::vec3 cross = glm::cross(v1 - v0, v2 - v0);
+            const float crossLen = glm::length(cross);
             if (crossLen > 1e-6f) {
                 pd.normal = cross / crossLen;
                 pd.distance = glm::dot(pd.normal, v0);
@@ -2121,6 +2133,14 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
         }
     }
 
+    // Preserve original group references/BSP. The collision grid below is an
+    // acceleration structure over the authored BSP face set, not a replacement
+    // definition of which WMO polygons are solid.
+    resources.bspNodes = group.bspNodes;
+    resources.bspFaceIndices = group.bspFaceIndices;
+    resources.lightRefs = group.lightRefs;
+    resources.doodadRefs = group.doodadRefs;
+
     // Compute actual bounding box from vertices (WMO header bboxes can be unreliable)
     if (!resources.collisionVertices.empty()) {
         resources.boundingBoxMin = resources.collisionVertices[0];
@@ -2924,11 +2944,31 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
     triNormals.resize(numTriangles);
     triVisited.resize(numTriangles, 0);
 
+    bspCollisionFaceMask.clear();
+    if (!bspNodes.empty() && !bspFaceIndices.empty()) {
+        bspCollisionFaceMask.resize(numTriangles, 0);
+        for (uint16_t face : bspFaceIndices) {
+            if (static_cast<size_t>(face) < numTriangles) {
+                bspCollisionFaceMask[face] = 1;
+            }
+        }
+    }
+
     float invCellW = gridCellsX / std::max(0.01f, extentX);
     float invCellH = gridCellsY / std::max(0.01f, extentY);
 
     for (size_t i = 0; i + 2 < collisionIndices.size(); i += 3) {
         const size_t triIndex = i / 3;
+
+        // If the file carries a MOBN/MOBR BSP, only faces referenced by that
+        // authored collision tree participate. This matches the Vanilla WMO
+        // collision domain while retaining Kraken's faster grid query.
+        if (!bspCollisionFaceMask.empty() && !bspCollisionFaceMask[triIndex]) {
+            triBounds[triIndex] = { .minZ = 0.0f, .maxZ = 0.0f };
+            triNormals[triIndex] = glm::vec3(0.0f, 0.0f, 1.0f);
+            continue;
+        }
+
         if (!triMopyFlags.empty()) {
             const uint8_t flags =
                 triIndex < triMopyFlags.size() ? triMopyFlags[triIndex] : 0;
