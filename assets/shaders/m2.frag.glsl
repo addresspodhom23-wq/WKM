@@ -226,6 +226,10 @@ void main() {
         } else {
             result = texColor.rgb *
                      (ambientColor.rgb + lightColor.rgb * diff);
+            // In Original WoW the per-frame local-light table is populated only
+            // from authored WMO MOLT/MOLR, so this restores room lighting for
+            // doodads without reintroducing Kraken's synthetic lights.
+            result += localLightContribution(FragPos, norm, texColor.rgb);
         }
     } else if (classicVegetation && unlit == 0) {
         // Mobile classic vegetation keeps the artist-painted light and shade in
