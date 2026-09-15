@@ -40,6 +40,9 @@ int main() {
     assert(loader.find("subChunkId == MODR") != std::string::npos);
     assert(loader.find("subChunkId == MOBN") != std::string::npos);
     assert(loader.find("subChunkId == MOBR") != std::string::npos);
+    assert(loader.find("node.firstFace = read<uint16_t>") != std::string::npos);
+    assert(loader.find("node.unknown = read<int16_t>") != std::string::npos);
+    assert(loaderH.find("uint16_t firstFace") != std::string::npos);
 
     // Collision grid is restricted to authored MOBR faces when BSP is present.
     assert(wmo.find("bspCollisionFaceMask") != std::string::npos);
