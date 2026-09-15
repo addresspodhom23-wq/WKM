@@ -44,9 +44,10 @@ struct WMOGroupInfo {
 
 // WMO Light (MOLT, Vanilla 1.12: 48 bytes on disk)
 struct WMOLight {
-    uint8_t type = 0;           // 0=omni, 1=spot, 2=directional, 3=ambient
+    uint8_t lightType = 0;      // 0=omni, 1=spot, 2=directional, 3=ambient
+    uint8_t type = 0;           // Vanilla auxiliary light flag
     uint8_t useAttenuation = 0;
-    uint8_t pad[2] = {0, 0};
+    uint8_t pad = 0;
     glm::vec4 color{1.0f};      // unpacked BGRA CImVector -> RGBA
     glm::vec3 position{0.0f};
     float intensity = 1.0f;
