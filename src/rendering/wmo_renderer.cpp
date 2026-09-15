@@ -688,12 +688,6 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
         };
         std::unordered_map<BatchKey, GroupResources::MergedBatch, BatchKeyHash> batchMap;
 
-        // Render-only index order. collisionIndices intentionally stays in the
-        // authored order because MOPY flags and collision-grid triangle numbers
-        // refer to that order. The GPU EBO may be freely reordered by material.
-        std::vector<uint16_t> packedRenderIndices;
-        packedRenderIndices.reserve(groupRes.collisionIndices.size());
-
         for (const auto& batch : groupRes.batches) {
             VkTexture* tex = whiteTexture_.get();
             bool hasTexture = false;
@@ -950,49 +944,9 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
                 }
             }
 
-            // mb.draws still names ranges in the authored index order up to this
-            // point (cloth/lava analysis above depends on that). Copy those
-            // ranges contiguously into the render EBO, preserving their order,
-            // then replace the list with one range. Vertices are untouched.
-            const uint32_t packedFirst =
-                static_cast<uint32_t>(packedRenderIndices.size());
-            for (const auto& draw : mb.draws) {
-                const uint32_t begin = std::min<uint32_t>(
-                    draw.firstIndex,
-                    static_cast<uint32_t>(groupRes.collisionIndices.size()));
-                const uint32_t end = std::min<uint32_t>(
-                    draw.firstIndex + draw.indexCount,
-                    static_cast<uint32_t>(groupRes.collisionIndices.size()));
-                if (end <= begin) continue;
-                packedRenderIndices.insert(
-                    packedRenderIndices.end(),
-                    groupRes.collisionIndices.begin() + begin,
-                    groupRes.collisionIndices.begin() + end);
-            }
-            const uint32_t packedCount =
-                static_cast<uint32_t>(packedRenderIndices.size()) - packedFirst;
-            mb.draws.clear();
-            if (packedCount > 0) {
-                mb.draws.push_back({packedFirst, packedCount});
-            }
-
             groupRes.mergedBatches.push_back(std::move(mb));
         }
         groupRes.allUntextured = !anyTextured && !groupRes.mergedBatches.empty();
-
-        // One immutable render EBO per group, already sorted into contiguous
-        // material ranges. The renderer now emits at most one indexed draw for
-        // each merged material batch instead of one draw for every authored
-        // sub-range. Collision keeps its independent, original CPU index order.
-        if (!packedRenderIndices.empty()) {
-            AllocatedBuffer idxBuf = uploadBuffer(
-                *vkCtx_, packedRenderIndices.data(),
-                packedRenderIndices.size() * sizeof(uint16_t),
-                VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-            groupRes.indexBuffer = idxBuf.buffer;
-            groupRes.indexAlloc = idxBuf.allocation;
-            groupRes.indexCount = static_cast<uint32_t>(packedRenderIndices.size());
-        }
     }
 
     vkCtx_->endUploadBatch();
@@ -1781,36 +1735,13 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                 continue;
             }
 
-            // Group-level camera frustum culling. The old WMO path extracted a
-            // frustum every frame but only used it for portal traversal; normal
-            // exterior groups were still submitted even when entirely behind
-            // the camera. That is especially expensive on mobile city/building
-            // scenes with thousands of WMO material draws.
-            //
-            // Use the real world-space group bounds and expand them slightly so
-            // a wall/roof touching the edge of the screen cannot flicker due to
-            // tiny float/bounds differences. Never reject the group containing
-            // the camera, which also protects large interior groups at the near
-            // plane.
+            // The distance test used to run whether distanceCulling was set or
+            // not - the flag only chose between two distances - so turning that
+            // flag off never stopped anything past viewDistance_ disappearing.
+            // Now nothing is dropped at all unless culling is asked for.
             if (cullingEnabled_ && gi < instance.worldGroupBounds.size()) {
                 const auto& [gMin, gMax] = instance.worldGroupBounds[gi];
-                constexpr float kFrustumPadding = 3.0f;
-                const glm::vec3 pad(kFrustumPadding);
-                const glm::vec3 paddedMin = gMin - pad;
-                const glm::vec3 paddedMax = gMax + pad;
-                const bool cameraInside =
-                    camPos.x >= paddedMin.x && camPos.x <= paddedMax.x &&
-                    camPos.y >= paddedMin.y && camPos.y <= paddedMax.y &&
-                    camPos.z >= paddedMin.z && camPos.z <= paddedMax.z;
-                if (!cameraInside && !frustum.intersectsAABB(paddedMin, paddedMax)) {
-                    continue;
-                }
 
-                // The distance test used to run whether distanceCulling was set
-                // or not - the flag only chose between two distances - so
-                // turning that flag off never stopped anything past
-                // viewDistance_ disappearing. Now nothing is distance-dropped
-                // unless culling is asked for.
                 glm::vec3 closestPoint = glm::clamp(camPos, gMin, gMax);
                 float distSq = glm::dot(closestPoint - camPos, closestPoint - camPos);
                 const float groupViewDistance = doDistanceCull
@@ -1928,8 +1859,7 @@ void WMORenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const
                                        sizeof(glm::vec4), &pushedCloth);
                 }
 
-                // Packed WMO groups now normally contain exactly one range here:
-                // authored same-material ranges were joined when the GPU EBO was built.
+                // Issue draw calls for each range in this merged batch
                 for (const auto& dr : mb.draws) {
                     if (dr.indexCount == 0) continue;
                     vkCmdDrawIndexed(cmd, dr.indexCount, 1, dr.firstIndex, 0, 0);
@@ -2162,12 +2092,13 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     resources.vertexBuffer = vertBuf.buffer;
     resources.vertexAlloc = vertBuf.allocation;
 
-    // Keep the authored index order on the CPU for collision/material analysis.
-    // The render EBO is uploaded later, after material batches have been merged:
-    // ranges using the same render state are packed next to each other so one
-    // vkCmdDrawIndexed can replace many tiny draws. Uploading here as well would
-    // create an EBO that is immediately superseded and would also make it unsafe
-    // to destroy while the current upload command buffer still references it.
+    // Upload index buffer to GPU
+    AllocatedBuffer idxBuf = uploadBuffer(*vkCtx_, group.indices.data(),
+        group.indices.size() * sizeof(uint16_t),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    resources.indexBuffer = idxBuf.buffer;
+    resources.indexAlloc = idxBuf.allocation;
+
     // Store collision geometry for floor raycasting.
     // Use MOPY per-triangle flags to exclude detail/decorative geometry (flag 0x04)
     // from collision - these are things like gears, railings, etc.
@@ -2175,16 +2106,19 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     for (const auto& v : group.vertices) {
         resources.collisionVertices.push_back(v.position);
     }
+    resources.collisionIndices = group.indices;
     if (!group.triFlags.empty()) {
-        // Store all triangles but tag each with MOPY flags for collision filtering
-        resources.collisionIndices = group.indices;
+        // Store both bytes of MOPY. In particular, material 0xFF marks
+        // collision-only faces and is not interchangeable with material 0.
         size_t numTris = group.indices.size() / 3;
         resources.triMopyFlags.resize(numTris, 0);
+        resources.triMopyMaterialIds.resize(numTris, 0);
         for (size_t t = 0; t < numTris; t++) {
-            resources.triMopyFlags[t] = (t < group.triFlags.size()) ? group.triFlags[t] : 0;
+            resources.triMopyFlags[t] =
+                (t < group.triFlags.size()) ? group.triFlags[t] : 0;
+            resources.triMopyMaterialIds[t] =
+                (t < group.triMaterialIds.size()) ? group.triMaterialIds[t] : 0;
         }
-    } else {
-        resources.collisionIndices = group.indices;
     }
 
     // Compute actual bounding box from vertices (WMO header bboxes can be unreliable)
@@ -2200,38 +2134,27 @@ bool WMORenderer::createGroupResources(const pipeline::WMOGroup& group, GroupRes
     // Build 2D spatial grid for fast collision triangle lookup
     resources.buildCollisionGrid();
 
-    // What this group offers to stand on, said once per group.
-    //
-    // Darkshore's bridges are walked through, and they are WMOs rather than
-    // doodads - world/wmo/kalimdor/collidabledoodads/darkshore/bridge - so the
-    // floor under them is this list. A group that draws and has no triangles
-    // here, or whose triangles are all detail, is a floor that cannot be found,
-    // and neither shows up as anything but falling.
-    {
-        size_t hull = 0, renderedSolid = 0, detail = 0;
-        for (uint8_t mopy : resources.triMopyFlags) {
-            if (mopy & 0x08) ++hull;
-            if ((mopy & 0x20) && !(mopy & 0x04)) ++renderedSolid;
-            if (mopy & 0x04) ++detail;
-        }
-        // At warning, because the log carries nothing below it - which is why
-        // the first attempt at this said nothing at all.
-        //
-        // Only a group that offers no floor. Every group saying its counts is
-        // thousands of lines and buries the ones that matter; a group with no
-        // triangles at all, or none that block, is the whole of what "walked
-        // through it" looks like from here.
+    // Report groups whose parsed MOPY metadata contains no collidable face.
+    // Do not turn detail geometry solid as a fallback: Vanilla's contract is
+    // explicit, and doing so creates invisible walls. materialId 0xFF is the
+    // collision-only escape hatch that the old parser discarded.
+    if (!resources.triMopyFlags.empty()) {
+        size_t collidable = 0, collisionOnly = 0, detail = 0;
         const size_t tris = resources.collisionIndices.size() / 3;
-        resources.noBlockingTriangles = (tris > 0 && hull == 0 && renderedSolid == 0);
-        if (tris == 0 || resources.noBlockingTriangles) {
-            LOG_WARNING("WMO group offers no floor: verts=",
+        for (size_t t = 0; t < tris; ++t) {
+            const uint8_t flags = resources.triMopyFlags[t];
+            const uint8_t material =
+                (t < resources.triMopyMaterialIds.size())
+                    ? resources.triMopyMaterialIds[t] : 0;
+            if (flags & 0x04) ++detail;
+            if (material == 0xFF) ++collisionOnly;
+            if (wmoMopyCollidable(flags, material)) ++collidable;
+        }
+        if (tris > 0 && collidable == 0) {
+            LOG_WARNING("WMO group has no collidable MOPY faces: verts=",
                         resources.collisionVertices.size(),
-                        " tris=", tris,
-                        " hull(0x08)=", hull,
-                        " renderedSolid(0x20 not 0x04)=", renderedSolid,
-                        " detail(0x04)=", detail,
-                        " - nothing here blocks, so anything standing on this "
-                        "group falls through it");
+                        " tris=", tris, " detail=", detail,
+                        " materialFF=", collisionOnly);
         }
     }
 
@@ -3005,6 +2928,22 @@ void WMORenderer::GroupResources::buildCollisionGrid() {
     float invCellH = gridCellsY / std::max(0.01f, extentY);
 
     for (size_t i = 0; i + 2 < collisionIndices.size(); i += 3) {
+        const size_t triIndex = i / 3;
+        if (!triMopyFlags.empty()) {
+            const uint8_t flags =
+                triIndex < triMopyFlags.size() ? triMopyFlags[triIndex] : 0;
+            const uint8_t material =
+                triIndex < triMopyMaterialIds.size() ? triMopyMaterialIds[triIndex] : 0;
+            if (!wmoMopyCollidable(flags, material)) {
+                // Keep bounds/normals arrays indexed one-to-one with MOVI
+                // triangles, but do not put decorative/non-collision faces in
+                // the spatial query lists.
+                triBounds[triIndex] = { .minZ = 0.0f, .maxZ = 0.0f };
+                triNormals[triIndex] = glm::vec3(0.0f, 0.0f, 1.0f);
+                continue;
+            }
+        }
+
         const glm::vec3& v0 = collisionVertices[collisionIndices[i]];
         const glm::vec3& v1 = collisionVertices[collisionIndices[i + 1]];
         const glm::vec3& v2 = collisionVertices[collisionIndices[i + 2]];
@@ -3723,6 +3662,10 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
         // Transform positions into local space using cached inverse
         glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
         glm::vec3 localTo = glm::vec3(instance.invModelMatrix * glm::vec4(to, 1.0f));
+        const float localScale = std::max(0.001f, std::abs(instance.scale));
+        const float localRadius = PLAYER_RADIUS / localScale;
+        const float localHeight = PLAYER_HEIGHT / localScale;
+        const float localStepHeight = MAX_STEP_HEIGHT / localScale;
         float localFeetZ = localTo.z;
         for (size_t gi = 0; gi < model.groups.size(); ++gi) {
             // World-space group cull
@@ -3737,7 +3680,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
 
             const auto& group = model.groups[gi];
             // Local-space AABB check
-            float margin = PLAYER_RADIUS + 2.0f;
+            float margin = localRadius + 2.0f / localScale;
             if (localTo.x < group.boundingBoxMin.x - margin || localTo.x > group.boundingBoxMax.x + margin ||
                 localTo.y < group.boundingBoxMin.y - margin || localTo.y > group.boundingBoxMax.y + margin ||
                 localTo.z < group.boundingBoxMin.z - margin || localTo.z > group.boundingBoxMax.z + margin) {
@@ -3748,10 +3691,10 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
             const auto& indices = group.collisionIndices;
 
             // Use spatial grid: query range covering the movement segment + player radius
-            float rangeMinX = std::min(localFrom.x, localTo.x) - PLAYER_RADIUS - 1.5f;
-            float rangeMinY = std::min(localFrom.y, localTo.y) - PLAYER_RADIUS - 1.5f;
-            float rangeMaxX = std::max(localFrom.x, localTo.x) + PLAYER_RADIUS + 1.5f;
-            float rangeMaxY = std::max(localFrom.y, localTo.y) + PLAYER_RADIUS + 1.5f;
+            float rangeMinX = std::min(localFrom.x, localTo.x) - localRadius - 1.5f / localScale;
+            float rangeMinY = std::min(localFrom.y, localTo.y) - localRadius - 1.5f / localScale;
+            float rangeMaxX = std::max(localFrom.x, localTo.x) + localRadius + 1.5f / localScale;
+            float rangeMaxY = std::max(localFrom.y, localTo.y) + localRadius + 1.5f / localScale;
             group.getTrianglesInRange(rangeMinX, rangeMinY, rangeMaxX, rangeMaxY, tl_triScratch);
 
             for (uint32_t triStart : tl_triScratch) {
@@ -3759,43 +3702,15 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 const auto& tb = group.triBounds[triStart / 3];
 
                 // Only collide with walls in player's vertical range
-                if (tb.maxZ < localFeetZ + 0.3f) continue;
-                if (tb.minZ > localFeetZ + PLAYER_HEIGHT) continue;
+                if (tb.maxZ < localFeetZ + 0.3f / localScale) continue;
+                if (tb.minZ > localFeetZ + localHeight) continue;
 
                 // Skip low geometry that can be stepped over
-                if (tb.maxZ <= localFeetZ + MAX_STEP_HEIGHT) continue;
+                if (tb.maxZ <= localFeetZ + localStepHeight) continue;
 
                 // Skip very short vertical surfaces (stair risers)
                 float triHeight = tb.maxZ - tb.minZ;
-                if (triHeight < 1.0f && tb.maxZ <= localFeetZ + 1.2f) continue;
-
-                // Use MOPY flags to filter wall collision. Blocking set is the
-                // union of both flag conventions seen in the assets:
-                //  - explicit collision hulls (0x08), rendered or not - tunnel
-                //    walls rely on invisible hulls;
-                //  - rendered geometry (0x20) that is not detail (0x04) - the
-                //    Deeprun Tram gates carry render flags without 0x08 and
-                //    were walk-through when only 0x08 blocked.
-                // Detail/decorative (0x04: gears, railings, webs) never blocks.
-                uint32_t triIdx = triStart / 3;
-                // Detail never blocks - unless it is all the group has.
-                //
-                // A group whose every triangle is detail has nothing left to
-                // stand on or walk into once detail is excluded, and a group
-                // that offers no collision at all is not what the flag means:
-                // 0x04 marks the gears and railings *among* solid geometry, so
-                // that they do not block. Darkshore's bridges are 428 triangles
-                // and every one of them is detail, which is why they are walked
-                // through.
-                if (!group.noBlockingTriangles &&
-                    !group.triMopyFlags.empty() && triIdx < group.triMopyFlags.size()) {
-                    uint8_t mopy = group.triMopyFlags[triIdx];
-                    if (mopy != 0) {
-                        const bool collisionHull = (mopy & 0x08) != 0;
-                        const bool renderedSolid = (mopy & 0x20) != 0 && !(mopy & 0x04);
-                        if (!collisionHull && !renderedSolid) continue;
-                    }
-                }
+                if (triHeight < 1.0f / localScale && tb.maxZ <= localFeetZ + 1.2f / localScale) continue;
 
                 const glm::vec3& v0 = verts[indices[triStart]];
                 const glm::vec3& v1 = verts[indices[triStart + 1]];
@@ -3809,31 +3724,48 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 float fromDist = glm::dot(localFrom - v0, normal);
                 float toDist = glm::dot(localTo - v0, normal);
 
-                // Swept test: prevent tunneling when crossing a wall between frames
-                if ((fromDist > PLAYER_RADIUS && toDist < -PLAYER_RADIUS) ||
-                    (fromDist < -PLAYER_RADIUS && toDist > PLAYER_RADIUS)) {
-                    float denom = (fromDist - toDist);
+                // Swept test: preserve the side of the wall we started on.
+                //
+                // A radius-qualified sign test was wrong here: if the first
+                // endpoint was already 0.2 yd from a wall and the next endpoint
+                // was 0.1 yd through it, a 0.5 yd player never satisfied
+                // "> radius ... < -radius". The static pass then saw the body on
+                // the far side and could push it farther through. Any true plane
+                // crossing is a tunnelling event regardless of endpoint radius.
+                if (crossesCollisionPlane(fromDist, toDist)) {
+                    const float denom = fromDist - toDist;
                     if (std::abs(denom) > 1e-6f) {
-                        float tHit = fromDist / denom;
+                        const float tHit = fromDist / denom;
                         if (tHit >= 0.0f && tHit <= 1.0f) {
-                            glm::vec3 hitPoint = localFrom + (localTo - localFrom) * tHit;
-                            glm::vec3 hitClosest = closestPointOnTriangle(hitPoint, v0, v1, v2);
-                            float hitErrSq = glm::dot(hitClosest - hitPoint, hitClosest - hitPoint);
-                            if (hitErrSq <= 0.25f * 0.25f) {
-                                float side = fromDist > 0.0f ? 1.0f : -1.0f;
-                                glm::vec3 safeLocal = hitPoint + normal * side * (PLAYER_RADIUS + 0.05f);
-                                glm::vec3 pushLocal(safeLocal.x - localTo.x, safeLocal.y - localTo.y, 0.0f);
-                                // Cap swept pushback so walls don't shove the player violently
-                                float pushLenSq = pushLocal.x * pushLocal.x + pushLocal.y * pushLocal.y;
-                                const float MAX_SWEPT_PUSH = insideWMO ? 0.45f : 0.25f;
-                                if (pushLenSq > MAX_SWEPT_PUSH * MAX_SWEPT_PUSH) {
-                                    float scale = MAX_SWEPT_PUSH * glm::inversesqrt(pushLenSq);
-                                    pushLocal.x *= scale;
-                                    pushLocal.y *= scale;
-                                }
+                            const glm::vec3 hitPoint =
+                                localFrom + (localTo - localFrom) * tHit;
+                            const glm::vec3 hitClosest =
+                                closestPointOnTriangle(hitPoint, v0, v1, v2);
+                            const glm::vec3 edgeError = hitClosest - hitPoint;
+                            // The player is a cylinder, not a centre ray. A
+                            // plane crossing within one radius of a triangle
+                            // edge is still a collision with that wall.
+                            const float hitErrSq = glm::dot(edgeError, edgeError);
+                            if (hitErrSq <= localRadius * localRadius) {
+                                const float side = fromDist > 0.0f ? 1.0f : -1.0f;
+                                constexpr float WORLD_SKIN = 0.01f;
+                                const float localSkin = WORLD_SKIN / localScale;
+                                const glm::vec3 safeLocal =
+                                    hitPoint + normal * side * (localRadius + localSkin);
+                                const glm::vec3 pushLocal(
+                                    safeLocal.x - localTo.x,
+                                    safeLocal.y - localTo.y,
+                                    0.0f);
+
+                                // Do not cap this correction. A cap smaller than
+                                // the amount needed to return to the starting
+                                // side leaves the player embedded/across the
+                                // plane, which is exactly the walk-through bug.
                                 localTo.x += pushLocal.x;
                                 localTo.y += pushLocal.y;
-                                glm::vec3 pushWorld = glm::vec3(instance.modelMatrix * glm::vec4(pushLocal, 0.0f));
+                                const glm::vec3 pushWorld =
+                                    glm::vec3(instance.modelMatrix *
+                                              glm::vec4(pushLocal, 0.0f));
                                 adjustedPos.x += pushWorld.x;
                                 adjustedPos.y += pushWorld.y;
                                 blocked = true;
@@ -3848,7 +3780,7 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
                 glm::vec3 delta = localTo - closest;
                 float horizDistSq = delta.x * delta.x + delta.y * delta.y;
 
-                if (horizDistSq <= PLAYER_RADIUS * PLAYER_RADIUS) {
+                if (horizDistSq <= localRadius * localRadius) {
                     // Skip floor-like surfaces - grounding handles them, not wall
                     // collision. The same cutoff the static pass sorted by.
                     float absNz = std::abs(normal.z);
@@ -3856,9 +3788,9 @@ bool WMORenderer::checkWallCollision(const glm::vec3& from, const glm::vec3& to,
 
                     const float SKIN = 0.005f;        // small separation so we don't re-collide immediately
                     // Push must cover full penetration to prevent gradual clip-through
-                    const float MAX_PUSH = PLAYER_RADIUS;
+                    const float MAX_PUSH = localRadius;
                     float horizDist = std::sqrt(horizDistSq);
-                    float penetration = (PLAYER_RADIUS - horizDist);
+                    float penetration = (localRadius - horizDist);
                     float pushDist = glm::clamp(penetration + SKIN, 0.0f, MAX_PUSH);
                     glm::vec2 pushDir2;
                     if (horizDistSq > 1e-8f) {

@@ -536,9 +536,10 @@ bool WMOLoader::loadGroup(const std::vector<uint8_t>& groupData,
                     // flag 0x04 = detail/decorative geometry (no collision)
                     uint32_t triCount = subChunkSize / 2;
                     group.triFlags.resize(triCount);
+                    group.triMaterialIds.resize(triCount);
                     for (uint32_t i = 0; i < triCount; i++) {
                         group.triFlags[i] = read<uint8_t>(groupData, mogpOffset);
-                        read<uint8_t>(groupData, mogpOffset); // materialId (skip)
+                        group.triMaterialIds[i] = read<uint8_t>(groupData, mogpOffset);
                     }
                 }
                 else if (subChunkId == MONR) { // Normals

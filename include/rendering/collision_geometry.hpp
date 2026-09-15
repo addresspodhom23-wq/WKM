@@ -61,6 +61,34 @@ inline float rayTriangleIntersect(const glm::vec3& origin, const glm::vec3& dir,
     return t > EPSILON ? t : -1.0f;  // behind the origin counts as a miss
 }
 
+/// Vanilla WMO MOPY collision contract.
+///
+/// Each WMO triangle has a flags byte plus a material id. A face blocks world
+/// movement when it is an explicit collision hull (0x08), a normal rendered
+/// face (0x20 without detail 0x04), or a collision-only face whose material id
+/// is 0xFF. Keeping materialId matters: many simplified collision meshes use
+/// 0xFF and are deliberately not renderable.
+inline bool wmoMopyCollidable(uint8_t flags, uint8_t materialId) {
+    constexpr uint8_t DETAIL    = 0x04;
+    constexpr uint8_t COLLISION = 0x08;
+    constexpr uint8_t RENDER    = 0x20;
+    if (materialId == 0xFF) return true;
+    return (flags & COLLISION) != 0 ||
+           (((flags & RENDER) != 0) && ((flags & DETAIL) == 0));
+}
+
+/// Whether a swept point moved from one side of a collision plane to the other.
+///
+/// The old WMO wall test required both endpoints to be farther than the player
+/// radius from the plane. At normal walking frame steps the body is often
+/// already inside that radius before crossing, so the test missed the crossing
+/// and the static overlap pass could push the player out on the *far* side.
+inline bool crossesCollisionPlane(float fromDistance, float toDistance,
+                                  float epsilon = 1.0e-5f) {
+    return (fromDistance > epsilon && toDistance < -epsilon) ||
+           (fromDistance < -epsilon && toDistance > epsilon);
+}
+
 /// The sphere a collision query is restricted to, so that a query near the
 /// player does not walk every instance in the world.
 ///

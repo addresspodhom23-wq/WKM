@@ -32,6 +32,12 @@ jobs:
           tests/test_vegetation_sweep.cpp -o /tmp/test-vegetation-sweep
         /tmp/test-vegetation-sweep
 
+    - name: Test Vanilla WMO collision contract
+      run: |
+        g++ -std=c++20 -Wall -Wextra -Werror -Iinclude \
+          tests/test_wow112_collision_contract.cpp -o /tmp/test-wow112-collision
+        /tmp/test-wow112-collision
+
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:

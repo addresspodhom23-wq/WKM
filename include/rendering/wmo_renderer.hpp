@@ -548,14 +548,11 @@ private:
         // Pre-computed per-triangle normals (unit length, indexed by triStart/3)
         std::vector<glm::vec3> triNormals;
 
-        // Per-collision-triangle MOPY flags (indexed by collision tri index, i.e. triStart/3)
+        // Per-collision-triangle MOPY metadata (indexed by triStart/3).
+        // materialId 0xFF is collision-only geometry in the Vanilla client and
+        // must survive parsing even though it has no render material.
         std::vector<uint8_t> triMopyFlags;
-        /// True when no triangle in this group blocks: no collision hull, and
-        /// nothing rendered that is not detail. Detail never blocks, so such a
-        /// group is walk-through in its entirety - which is a thing to be
-        /// walked through only if it was meant to be, and Darkshore's bridges
-        /// are 428 triangles of it.
-        bool noBlockingTriangles = false;
+        std::vector<uint8_t> triMopyMaterialIds;
 
         // Scratch bitset for deduplicating triangle queries (sized to numTriangles)
         mutable std::vector<uint8_t> triVisited;

@@ -157,7 +157,8 @@ struct WMOGroup {
     std::vector<WMOVertex> vertices;
     std::vector<uint16_t> indices;
     std::vector<WMOBatch> batches;
-    std::vector<uint8_t> triFlags;  // Per-triangle MOPY flags (0x04 = detail/no-collide)
+    std::vector<uint8_t> triFlags;        // Per-triangle MOPY flags
+    std::vector<uint8_t> triMaterialIds;  // Per-triangle MOPY material id; 0xFF = collision-only
 
     // Portals
     std::vector<WMOPortal> portals;
