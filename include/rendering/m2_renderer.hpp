@@ -191,10 +191,11 @@ struct M2ModelGPU {
     std::vector<VkTexture*> particleTextures;    // Resolved Vulkan textures per emitter
     std::vector<VkDescriptorSet> particleTexSets; // Pre-allocated descriptor sets per emitter (stable, avoids per-frame alloc)
 
-    // Ribbon emitter data (kept from M2Model)
+    // Ribbon emitter data (kept from M2Model). Each emitter can author
+    // several direct texture indices; textureSlotTrack selects one at runtime.
     std::vector<pipeline::M2RibbonEmitter> ribbonEmitters;
-    std::vector<VkTexture*> ribbonTextures;       // Resolved texture per ribbon emitter
-    std::vector<VkDescriptorSet> ribbonTexSets;   // Descriptor sets per ribbon emitter
+    std::vector<std::vector<VkTexture*>> ribbonTextures;
+    std::vector<std::vector<VkDescriptorSet>> ribbonTexSets;
 
     // Texture transform data for UV animation
     std::vector<pipeline::M2TextureTransform> textureTransforms;
