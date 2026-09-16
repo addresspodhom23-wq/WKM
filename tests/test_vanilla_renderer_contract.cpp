@@ -15,6 +15,7 @@ int main() {
     const auto m2=read("assets/shaders/m2.frag.glsl");
     const auto wmo=read("assets/shaders/wmo.frag.glsl");
     const auto m2Loader=read("src/pipeline/m2_loader.cpp");
+    const auto m2LoaderHeader=read("include/pipeline/m2_loader.hpp");
     const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
     const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
     const auto m2Particles=read("src/rendering/m2_renderer_particles.cpp");
@@ -286,8 +287,8 @@ int main() {
     // sampled from each particle's own normalized life, never a model clock.
     assert(m2Loader.find("base + 0x168") != std::string::npos);
     assert(m2Loader.find("base + 0x172") != std::string::npos);
-    assert(m2Header.find("headCellBegin[2]") != std::string::npos);
-    assert(m2Header.find("headCellRepeat[2]") != std::string::npos);
+    assert(m2LoaderHeader.find("headCellBegin[2]") != std::string::npos);
+    assert(m2LoaderHeader.find("headCellRepeat[2]") != std::string::npos);
     assert(m2Particles.find("const float tLife = glm::clamp(lifeRatio") != std::string::npos);
     assert(m2Particles.find("const int authoredCell") != std::string::npos);
     assert(m2Particles.find("static_cast<uint32_t>(authoredCell) % cachedTotalTiles") != std::string::npos);
