@@ -17,6 +17,7 @@ int main() {
     const auto m2Loader=read("src/pipeline/m2_loader.cpp");
     const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
     const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
+    const auto m2Particles=read("src/rendering/m2_renderer_particles.cpp");
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
     const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
@@ -227,6 +228,12 @@ int main() {
     assert(m2Render.find("!(vanillaRendering_ && instance.cachedModel->isGroundDetail)") != std::string::npos);
     assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
+
+    // Vanilla ribbons use their current animation/global-sequence tracks,
+    // and an invalid/0xFFFF bone stays in model space rather than snapping to bone 0.
+    assert(m2Particles.find("m2_track::sampleFloat(") != std::string::npos);
+    assert(m2Particles.find("m2_track::sampleVec3(") != std::string::npos);
+    assert(m2Particles.find("boneIdx = 0") == std::string::npos);
 
     // World-doodad fade keeps the 224/255 AlphaKey silhouette stable: object
     // fade affects source alpha/output blend, not the texel-alpha comparison.
