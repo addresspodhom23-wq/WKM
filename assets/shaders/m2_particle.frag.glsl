@@ -11,11 +11,12 @@ layout(push_constant) uniform Push {
 layout(location = 0) in vec4 vColor;
 layout(location = 1) in float vTile;
 layout(location = 2) in float vFogVisibility;
+layout(location = 3) in vec2 vSpriteUV;
 
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    vec2 p = gl_PointCoord;
+    vec2 p = vSpriteUV;
     float tile = floor(vTile);
     float tx = mod(tile, push.tileCount.x);
     float ty = floor(tile / push.tileCount.x);
