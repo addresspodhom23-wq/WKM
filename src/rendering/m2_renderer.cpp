@@ -1591,6 +1591,8 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
     gpuModel.ambientEmitterType          = cls.ambientEmitterType;
     gpuModel.boundMin = tightMin;
     gpuModel.boundMax = tightMax;
+    gpuModel.authoredBoundCenter = (model.boundMin + model.boundMax) * 0.5f;
+    gpuModel.authoredBoundRadius = model.boundRadius;
     if (cls.isHangingCloth) {
         // Named, once each, so a banner that does not move can be told from a
         // banner this never saw: cloth built into a building's own mesh is not

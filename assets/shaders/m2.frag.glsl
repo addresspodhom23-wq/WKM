@@ -200,7 +200,9 @@ void main() {
             alphaForTest *= vFadeAlpha;
         }
         if (alphaForTest < alphaCutoff) discard;
-        if (blendMode <= 1) texColor.a = 1.0;
+        // The Vanilla fade twin blends texel alpha × object alpha. On the
+        // steady opaque/cutout pipelines output alpha is ignored anyway.
+        if (!vanillaRendering && blendMode <= 1) texColor.a = 1.0;
     } else if (alphaTest != 0) {
         // Screen-space sharpened alpha: rescale so the cutoff maps to the
         // texel boundary. With MSAA + alpha-to-coverage on the cutout

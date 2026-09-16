@@ -50,6 +50,47 @@ constexpr float kCullDistanceShrinkRate = 0.08f;
 #else
 constexpr float kCullDistanceShrinkRate = 0.005f;
 #endif
+
+float vanillaWorldDoodadFadeAlpha(const M2Instance& instance,
+                                  const M2ModelGPU& model,
+                                  const glm::vec3& cameraPos) {
+    // FUN_00683f80 is the placed world-doodad lane. Server GameObjects,
+    // transient effects, and detail doodads use different visibility rules.
+    if (instance.isGameObject || model.isSpellEffect || model.isGroundDetail) {
+        return 1.0f;
+    }
+
+    // The 1.12 record stores the M2's authored bounding radius multiplied by
+    // placement scale. Use the transform basis here because WMO doodads can be
+    // nested under a parent matrix rather than created with instance.scale.
+    const float sx = glm::length(glm::vec3(instance.modelMatrix[0]));
+    const float sy = glm::length(glm::vec3(instance.modelMatrix[1]));
+    const float sz = glm::length(glm::vec3(instance.modelMatrix[2]));
+    const float worldScale = std::max({sx, sy, sz});
+    const float radius = model.authoredBoundRadius * worldScale;
+
+    // Radius > 7 yd bypasses this fade completely and survives to farclip.
+    if (radius > 7.0f) return 1.0f;
+
+    // The client measures horizontal distance to the authored bounding-box
+    // centre, then subtracts the scaled authored bounding-sphere radius.
+    const glm::vec3 center = glm::vec3(
+        instance.modelMatrix * glm::vec4(model.authoredBoundCenter, 1.0f));
+    const float dx = center.x - cameraPos.x;
+    const float dy = center.y - cameraPos.y;
+    const float d = std::sqrt(dx * dx + dy * dy) - radius;
+
+    float start = 150.0f;
+    float range = 50.0f;
+    if (radius <= 0.5f) {
+        start = 40.0f;
+        range = 10.0f;
+    } else if (radius <= 2.5f) {
+        start = 100.0f;
+        range = 25.0f;
+    }
+    return std::clamp(1.0f - (d - start) / range, 0.0f, 1.0f);
+}
 } // namespace
 
 /// Starts a new instance's animation and gives it bones to draw with now.
@@ -1385,6 +1426,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             float fadeAlpha;
             bool useBones;
             uint16_t targetLOD;
+            bool fading;
         };
         std::vector<PendingInstance> pending;
         pending.reserve(128);
@@ -1431,38 +1473,61 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 if (entry.index >= instances.size()) continue;
                 auto& instance = instances[entry.index];
 
-                // Distance-based fade alpha
-                float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
-                float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
-                float fadeAlpha = 1.0f;
-                if (entry.distSq > fadeStartDistSq) {
-                    fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
-                                          (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+                // Vanilla placed M2 doodads use FUN_00683f80's
+                // authored-radius buckets. Kraken's adaptive fade stays outside
+                // the Vanilla renderer; detail doodads have their own 70 yd law.
+                float instanceFadeAlpha = 1.0f;
+                if (vanillaRendering_ && !skyMode_ && !model.isGroundDetail) {
+                    instanceFadeAlpha =
+                        vanillaWorldDoodadFadeAlpha(instance, model, camPos);
+                    if (instanceFadeAlpha <= 0.0f) continue;
+                } else {
+                    float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
+                    float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
+                    float fadeAlpha = 1.0f;
+                    if (entry.distSq > fadeStartDistSq) {
+                        fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
+                                              (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+                    }
+                    instanceFadeAlpha = fadeAlpha;
+                    if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
                 }
-                float instanceFadeAlpha = fadeAlpha;
-                if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
 
                 // Bone readiness check
                 if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
                 bool needsBones = modelNeedsAnimation && !instance.boneMatrices.empty();
                 if (needsBones && instance.megaBoneOffset == 0) continue;
 
-                // LOD selection
-                uint16_t desiredLOD = 0;
-                if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
-                else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
-                else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
-                uint16_t targetLOD = desiredLOD;
-                if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+                // Kraken's 40/80/150 yd profile switch is not a Vanilla 1.12
+                // world-M2 rule. Vanilla keeps the base authored profile here.
+                uint16_t targetLOD = 0;
+                if (!vanillaRendering_) {
+                    uint16_t desiredLOD = 0;
+                    if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
+                    else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
+                    else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
+                    targetLOD = desiredLOD;
+                    if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+                }
 
-                pending.push_back({.instanceIdx = entry.index, .fadeAlpha = instanceFadeAlpha, .useBones = needsBones, .targetLOD = targetLOD});
+                const bool fading = vanillaRendering_ &&
+                    instanceFadeAlpha > 0.0f && instanceFadeAlpha < 0.99999f;
+                pending.push_back({.instanceIdx = entry.index,
+                                   .fadeAlpha = instanceFadeAlpha,
+                                   .useBones = needsBones,
+                                   .targetLOD = targetLOD,
+                                   .fading = fading});
             }
 
             if (pending.empty()) { visStart = groupEnd; continue; }
 
-            // Sort by targetLOD so each sub-group occupies a contiguous SSBO range
+            // Keep LOD and fade-state contiguous. A fading Vanilla subset
+            // switches opaque/cutout batches to the SRC_ALPHA blend twin.
             std::sort(pending.begin(), pending.end(),
-                      [](const PendingInstance& a, const PendingInstance& b) { return a.targetLOD < b.targetLOD; });
+                      [](const PendingInstance& a, const PendingInstance& b) {
+                          if (a.targetLOD != b.targetLOD) return a.targetLOD < b.targetLOD;
+                          return a.fading < b.fading;
+                      });
 
             // Bind vertex/index buffers once per model group
             VkDeviceSize vbOffset = 0;
@@ -1516,8 +1581,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             size_t lodIdx = 0;
             while (lodIdx < pending.size()) {
                 uint16_t lod = pending[lodIdx].targetLOD;
+                const bool groupFading = pending[lodIdx].fading;
                 size_t lodEnd = lodIdx + 1;
-                while (lodEnd < pending.size() && pending[lodEnd].targetLOD == lod) lodEnd++;
+                while (lodEnd < pending.size() &&
+                       pending[lodEnd].targetLOD == lod &&
+                       pending[lodEnd].fading == groupFading) {
+                    lodEnd++;
+                }
                 uint32_t groupSize = static_cast<uint32_t>(lodEnd - lodIdx);
                 uint32_t groupSSBOOffset = baseSSBOOffset + static_cast<uint32_t>(lodIdx);
 
@@ -1769,10 +1839,14 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                     if (forceCutout) effectiveBlendMode = 1;
 
+                    const bool vanillaFadeBlend =
+                        vanillaRendering_ && groupFading &&
+                        effectiveBlendMode <= M2_BLEND_ALPHA_KEY;
                     const uint8_t pipelineBlendMode =
-                        forceCutout ? M2_BLEND_OPAQUE :
-                        (effectiveBlendMode <= M2_BLEND_MODULATE2X
-                             ? effectiveBlendMode : M2_BLEND_ADD_ALPHA);
+                        vanillaFadeBlend ? M2_BLEND_ALPHA :
+                        (forceCutout ? M2_BLEND_OPAQUE :
+                         (effectiveBlendMode <= M2_BLEND_MODULATE2X
+                              ? effectiveBlendMode : M2_BLEND_ADD_ALPHA));
                     VkPipeline desiredPipeline;
                     switch (pipelineBlendMode) {
                         case M2_BLEND_OPAQUE: desiredPipeline = opaquePipeline_; break;
@@ -1886,29 +1960,39 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
         const M2ModelGPU& model = *currentModel;
 
-        // Fade alpha
-        float fadeAlpha = 1.0f;
-        float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
-        float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
-        if (entry.distSq > fadeStartDistSq) {
-            fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
-                                  (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+        // Match the opaque/cutout pass's instance alpha law.
+        float instanceFadeAlpha = 1.0f;
+        if (vanillaRendering_ && !skyMode_ && !model.isGroundDetail) {
+            instanceFadeAlpha =
+                vanillaWorldDoodadFadeAlpha(instance, model, camPos);
+            if (instanceFadeAlpha <= 0.0f) continue;
+        } else {
+            float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
+            float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
+            float fadeAlpha = 1.0f;
+            if (entry.distSq > fadeStartDistSq) {
+                fadeAlpha = std::clamp((entry.effectiveMaxDistSq - entry.distSq) /
+                                      (entry.effectiveMaxDistSq - fadeStartDistSq), 0.0f, 1.0f);
+            }
+            instanceFadeAlpha = fadeAlpha;
+            if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
+            if (!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f;
         }
-        float instanceFadeAlpha = fadeAlpha;
-        if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
-        if (!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f;
 
         bool modelNeedsAnimation = authoredAnimationEnabled(model);
         if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
         bool needsBones = modelNeedsAnimation && !instance.boneMatrices.empty();
         if (needsBones && instance.megaBoneOffset == 0) continue;
 
-        uint16_t desiredLOD = 0;
-        if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
-        else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
-        else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
-        uint16_t targetLOD = desiredLOD;
-        if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+        uint16_t targetLOD = 0;
+        if (!vanillaRendering_) {
+            uint16_t desiredLOD = 0;
+            if (entry.distSq > 150.0f * 150.0f) desiredLOD = 3;
+            else if (entry.distSq > 80.0f * 80.0f) desiredLOD = 2;
+            else if (entry.distSq > 40.0f * 40.0f) desiredLOD = 1;
+            targetLOD = desiredLOD;
+            if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
+        }
 
         const bool particleDominantEffect = !vanillaRendering_ && model.isSpellEffect &&
             !model.particleEmitters.empty() && model.batches.size() <= 2;

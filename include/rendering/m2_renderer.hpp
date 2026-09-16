@@ -103,6 +103,10 @@ struct M2ModelGPU {
 
     glm::vec3 boundMin;
     glm::vec3 boundMax;
+    // Preserve the file-authored fade sphere independently of Kraken's tighter
+    // render/collision bounds and any safety fallback radius.
+    glm::vec3 authoredBoundCenter{0.0f};
+    float authoredBoundRadius = 0.0f;
     float boundRadius = 0.0f;
     bool collisionSteppedFountain = false;
     bool collisionSteppedLowPlatform = false;

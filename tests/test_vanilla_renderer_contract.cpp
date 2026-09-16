@@ -186,5 +186,27 @@ int main() {
     // inverse-transpose skin matrix.
     const auto m2Vert=read("assets/shaders/m2.vert.glsl");
     assert(m2Vert.find("norm = skinMat * norm") != std::string::npos);
+
+    // Vanilla world-doodad fade uses the authored bbox centre/radius and the
+    // exact FUN_00683f80 size buckets: 40→50, 100→125, 150→200; >7 never fades.
+    assert(m2Header.find("authoredBoundCenter") != std::string::npos);
+    assert(m2Header.find("authoredBoundRadius") != std::string::npos);
+    assert(m2Renderer.find("gpuModel.authoredBoundCenter = (model.boundMin + model.boundMax) * 0.5f") != std::string::npos);
+    assert(m2Renderer.find("gpuModel.authoredBoundRadius = model.boundRadius") != std::string::npos);
+    assert(m2Render.find("vanillaWorldDoodadFadeAlpha") != std::string::npos);
+    assert(m2Render.find("if (radius > 7.0f) return 1.0f") != std::string::npos);
+    assert(m2Render.find("radius <= 0.5f") != std::string::npos);
+    assert(m2Render.find("start = 40.0f") != std::string::npos);
+    assert(m2Render.find("range = 10.0f") != std::string::npos);
+    assert(m2Render.find("radius <= 2.5f") != std::string::npos);
+    assert(m2Render.find("start = 100.0f") != std::string::npos);
+    assert(m2Render.find("range = 25.0f") != std::string::npos);
+    assert(m2Render.find("start = 150.0f") != std::string::npos);
+    assert(m2Render.find("range = 50.0f") != std::string::npos);
+    assert(m2Render.find("vanillaFadeBlend ? M2_BLEND_ALPHA") != std::string::npos);
+
+    // Kraken's 40/80/150 mesh-profile switch stays out of Vanilla.
+    assert(m2Render.find("if (!vanillaRendering_) {\n                    uint16_t desiredLOD = 0;") != std::string::npos);
+    assert(m2.find("if (!vanillaRendering && blendMode <= 1) texColor.a = 1.0") != std::string::npos);
     return 0;
 }
