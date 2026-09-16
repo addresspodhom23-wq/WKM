@@ -1551,10 +1551,11 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
 
             if (isVanilla) {
                 // Vanilla: 10 contiguous M2TrackDiskVanilla tracks (28 bytes each) at 0x34
-                auto parseTrackV = [&](uint32_t off, M2AnimationTrack& track) {
+                auto parseTrackV = [&](uint32_t off, M2AnimationTrack& track,
+                                       TrackType type = TrackType::FLOAT) {
                     if (base + off + sizeof(M2TrackDiskVanilla) <= m2Data.size()) {
                         M2TrackDiskVanilla disk = readValue<M2TrackDiskVanilla>(m2Data, base + off);
-                        parseAnimTrackVanilla(m2Data, disk, track, TrackType::FLOAT);
+                        parseAnimTrackVanilla(m2Data, disk, track, type);
                     }
                 };
                 parseTrackV(0x34, em.emissionSpeed);       // +28 = 0x50
@@ -1564,9 +1565,13 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 parseTrackV(0xA4, em.gravity);             // +28 = 0xC0
                 parseTrackV(0xC0, em.lifespan);            // +28 = 0xDC
                 parseTrackV(0xDC, em.emissionRate);        // +28 = 0xF8
-                parseTrackV(0xF8, em.emissionAreaLength);  // +28 = 0x114
-                parseTrackV(0x114, em.emissionAreaWidth);  // +28 = 0x130
-                parseTrackV(0x130, em.deceleration);       // +28 = 0x14C
+                // Classic layout names these width then length. Keeping them
+                // crossed changes plane/sphere emitter shape.
+                parseTrackV(0xF8, em.emissionAreaWidth);   // +28 = 0x114
+                parseTrackV(0x114, em.emissionAreaLength); // +28 = 0x130
+                // The final Classic track is emitter visibility (byte keys),
+                // not deceleration/z-source.
+                parseTrackV(0x130, em.visibilityTrack, TrackType::BYTE_BOOL);
 
                 // Vanilla: NO FBlocks - color/alpha/scale are static inline values
                 // Layout (empirically confirmed from real vanilla M2 files):
