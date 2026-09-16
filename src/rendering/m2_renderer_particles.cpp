@@ -360,96 +360,153 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
     const auto& emitters = gpu.ribbonEmitters;
     if (emitters.empty()) return;
 
-    // Grow per-instance state arrays if needed
-    if (inst.ribbonEdges.size() != emitters.size()) {
+    const float rawDt = std::isfinite(dt) ? std::max(0.0f, dt) : 0.0f;
+    const float simDt = std::min(rawDt, 0.1f);
+
+    // Grow per-instance state arrays if needed.
+    if (inst.ribbonEdges.size() != emitters.size())
         inst.ribbonEdges.resize(emitters.size());
-    }
-    if (inst.ribbonEdgeAccumulators.size() != emitters.size()) {
+    if (inst.ribbonEdgeAccumulators.size() != emitters.size())
         inst.ribbonEdgeAccumulators.resize(emitters.size(), 0.0f);
-    }
+    if (inst.ribbonPrevSpines.size() != emitters.size())
+        inst.ribbonPrevSpines.resize(emitters.size(), glm::vec3(0.0f));
+    if (inst.ribbonPrevUps.size() != emitters.size())
+        inst.ribbonPrevUps.resize(emitters.size(), glm::vec3(0.0f, 0.0f, 1.0f));
+    if (inst.ribbonPoseValid.size() != emitters.size())
+        inst.ribbonPoseValid.resize(emitters.size(), 0);
 
     for (size_t ri = 0; ri < emitters.size(); ri++) {
         const auto& em = emitters[ri];
-        auto& edges    = inst.ribbonEdges[ri];
-        auto& accum    = inst.ribbonEdgeAccumulators[ri];
+        auto& edges = inst.ribbonEdges[ri];
+        auto& accum = inst.ribbonEdgeAccumulators[ri];
 
-        // Ribbon emitter positions are local to their authored bone. A missing
-        // / 0xFFFF bone means model space; it must not silently snap to bone 0.
-        glm::vec4 local(em.position.x, em.position.y, em.position.z, 1.0f);
-        glm::vec3 spineWorld;
-        const uint32_t boneIdx = em.bone;
-        if (boneIdx < inst.boneMatrices.size()) {
-            spineWorld = glm::vec3(
-                inst.modelMatrix * inst.boneMatrices[boneIdx] * local);
-        } else {
-            spineWorld = glm::vec3(inst.modelMatrix * local);
+        // The ribbon cross section follows the emitter bone's authored local +Z
+        // axis. Using world +Z made weapon trails twist or flatten when the hand
+        // rotated, even though their centerline followed the correct bone.
+        glm::mat4 emitterWorld = inst.modelMatrix;
+        if (em.bone < inst.boneMatrices.size())
+            emitterWorld = inst.modelMatrix * inst.boneMatrices[em.bone];
+
+        const glm::vec3 spineWorld = glm::vec3(
+            emitterWorld * glm::vec4(em.position, 1.0f));
+        glm::vec3 upWorld = glm::mat3(emitterWorld) * glm::vec3(0.0f, 0.0f, 1.0f);
+        const float upLen2 = glm::dot(upWorld, upWorld);
+        if (upLen2 > 1e-12f && std::isfinite(upLen2))
+            upWorld *= glm::inversesqrt(upLen2);
+        else
+            upWorld = glm::vec3(0.0f, 0.0f, 1.0f);
+
+        if (!std::isfinite(spineWorld.x) || !std::isfinite(spineWorld.y) ||
+            !std::isfinite(spineWorld.z)) {
+            continue;
         }
 
-        // Skip emitters that produce NaN positions (garbage bone/position data)
-        if (std::isnan(spineWorld.x) || std::isnan(spineWorld.y) || std::isnan(spineWorld.z))
-            continue;
-
-        // Sample the ribbon's authored tracks at the instance's current
-        // animation/global-sequence time. Taking key[0] made weapon trails and
-        // spell ribbons permanently inherit their first frame.
         const auto& gsd = gpu.globalSequenceDurations;
-        float visibility = m2_track::sampleFloat(
+        const float visibility = m2_track::sampleFloat(
             em.visibilityTrack, inst.currentSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 1.0f);
-        float heightAbove = std::max(0.0f, m2_track::sampleFloat(
+        const float heightAbove = std::max(0.0f, m2_track::sampleFloat(
             em.heightAboveTrack, inst.currentSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 0.0f));
-        float heightBelow = std::max(0.0f, m2_track::sampleFloat(
+        const float heightBelow = std::max(0.0f, m2_track::sampleFloat(
             em.heightBelowTrack, inst.currentSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 0.0f));
-        glm::vec3 color = m2_track::sampleVec3(
+        const glm::vec3 color = m2_track::sampleVec3(
             em.colorTrack, inst.currentSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, glm::vec3(1.0f));
-        float alpha = glm::clamp(m2_track::sampleFloat(
+        const float alpha = glm::clamp(m2_track::sampleFloat(
             em.alphaTrack, inst.currentSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 1.0f), 0.0f, 1.0f);
 
-        // Age existing edges and remove expired ones
-        for (auto& e : edges) {
-            e.age += dt;
-            // Apply gravity
-            if (em.gravity != 0.0f) {
-                e.worldPos.z -= em.gravity * dt * dt * 0.5f;
+        // Vanilla normalizes these two scalar controls before simulation.
+        const float edgeRate = std::isfinite(em.edgesPerSecond)
+            ? std::ceil(std::max(0.0f, em.edgesPerSecond)) : 0.0f;
+        const float edgeLifetime = std::isfinite(em.edgeLifetime)
+            ? std::max(0.25f, em.edgeLifetime) : 0.25f;
+
+        // Age old committed edges. Gravity is a function of the edge's age:
+        // displacement is g*t^2, so one step adds
+        // g*((t+dt)^2 - t^2) = 2*g*t*dt + g*dt^2.
+        for (auto& edge : edges) {
+            const float ageBefore = edge.age;
+            edge.age += rawDt;
+            if (em.gravity != 0.0f && simDt > 0.0f) {
+                const float sag =
+                    2.0f * em.gravity * ageBefore * simDt +
+                    em.gravity * simDt * simDt;
+                edge.worldPos.z -= sag;
             }
         }
-        while (!edges.empty() && edges.front().age >= em.edgeLifetime) {
+        while (!edges.empty() && edges.front().age > edgeLifetime)
             edges.pop_front();
+
+        const bool firstPose = inst.ribbonPoseValid[ri] == 0;
+        if (firstPose) {
+            inst.ribbonPrevSpines[ri] = spineWorld;
+            inst.ribbonPrevUps[ri] = upWorld;
+            inst.ribbonPoseValid[ri] = 1;
         }
 
-        // Emit new edges based on edgesPerSecond
-        if (visibility > 0.5f) {
-            accum += em.edgesPerSecond * dt;
-            while (accum >= 1.0f) {
-                accum -= 1.0f;
-                M2Instance::RibbonEdge e;
-                e.worldPos    = spineWorld;
-                e.color       = color;
-                e.alpha       = alpha;
-                e.heightAbove = heightAbove;
-                e.heightBelow = heightBelow;
-                e.age         = 0.0f;
-                edges.push_back(e);
+        if (visibility > 0.5f && edgeRate > 0.0f) {
+            const float previousPhase = accum;
+            float edgeProgress = previousPhase + edgeRate * simDt;
+            // The source and ribbon share a birth edge. Ensure the first live
+            // update commits it even if the first frame is shorter than 1/rate.
+            if (firstPose && edges.empty())
+                edgeProgress = std::max(edgeProgress, 1.0001f);
 
-                // Diagnostic: log first ribbon edge per spell effect instance+emitter
+            const uint32_t edgeCount =
+                static_cast<uint32_t>(std::floor(edgeProgress));
+            const float phaseDelta = edgeProgress - previousPhase;
+
+            const size_t capacity = std::clamp<size_t>(
+                static_cast<size_t>(std::ceil(edgeLifetime * edgeRate)) + 2u,
+                2u, 512u);
+
+            for (uint32_t edgeIndex = 0; edgeIndex < edgeCount; ++edgeIndex) {
+                const float targetPhase = static_cast<float>(edgeIndex + 1u);
+                const float interpolation = phaseDelta > 0.0f
+                    ? glm::clamp((targetPhase - previousPhase) / phaseDelta,
+                                 0.0f, 1.0f)
+                    : 1.0f;
+
+                M2Instance::RibbonEdge edge{};
+                edge.worldPos = glm::mix(
+                    inst.ribbonPrevSpines[ri], spineWorld, interpolation);
+                edge.upWorld = glm::mix(
+                    inst.ribbonPrevUps[ri], upWorld, interpolation);
+                const float axisLen2 = glm::dot(edge.upWorld, edge.upWorld);
+                if (axisLen2 > 1e-12f && std::isfinite(axisLen2))
+                    edge.upWorld *= glm::inversesqrt(axisLen2);
+                else
+                    edge.upWorld = upWorld;
+                edge.color = color;
+                edge.alpha = alpha;
+                edge.heightAbove = heightAbove;
+                edge.heightBelow = heightBelow;
+                edge.age = 0.0f;
+                edges.push_back(edge);
+
+                while (edges.size() > capacity)
+                    edges.pop_front();
+
                 if (gpu.isSpellEffect && edges.size() == 1) {
                     LOG_INFO("SpellEffect: ribbon edge[0] for '", gpu.name,
-                             "' emitter=", ri, " pos=(", spineWorld.x, ",", spineWorld.y,
-                             ",", spineWorld.z, ") hA=", heightAbove, " hB=", heightBelow,
-                             " vis=", visibility, " eps=", em.edgesPerSecond,
-                             " edgeLife=", em.edgeLifetime, " bone=", em.bone);
+                             "' emitter=", ri, " pos=(", edge.worldPos.x, ",",
+                             edge.worldPos.y, ",", edge.worldPos.z, ") hA=",
+                             heightAbove, " hB=", heightBelow,
+                             " vis=", visibility, " eps=", edgeRate,
+                             " edgeLife=", edgeLifetime, " bone=", em.bone);
                 }
-
-                // Cap trail length
-                if (edges.size() > 128) edges.pop_front();
             }
+
+            accum = edgeProgress - std::floor(edgeProgress);
         } else {
             accum = 0.0f;
         }
+
+        inst.ribbonPrevSpines[ri] = spineWorld;
+        inst.ribbonPrevUps[ri] = upWorld;
     }
 }
 
