@@ -262,8 +262,8 @@ int main() {
     assert(m2ParticleVert.find("corner * aSize") != std::string::npos);
     assert(m2Renderer.find("pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE") != std::string::npos);
     assert(m2Renderer.find("VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 10 * sizeof(float)") != std::string::npos);
-    assert(m2Particles.find("packed + packedCount * 10") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
+    assert(m2Particles.find("packed + packedCount * 15") != std::string::npos);
     assert(m2Particles.find("vkCmdDraw(cmd, 4, draw.instanceCount, 0, draw.firstInstance)") != std::string::npos);
     assert(m2Particles.find("memcpy(m2ParticleVBMapped_") == std::string::npos);
 
@@ -297,6 +297,23 @@ int main() {
     assert(m2Particles.find("inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f)") != std::string::npos);
     assert(m2Particles.find("std::min(sdt * em.drag, 1.0f)") != std::string::npos);
 
+    // Classic head/tail routing: 1 is tail-only, >=2 draws both. Tails use
+    // the authored tail-cell ramp and extend opposite current velocity for
+    // TailTime seconds; flag 0x400 clamps the streak to current particle age.
+    assert(m2Loader.find("base + 0x2C") != std::string::npos);
+    assert(m2Loader.find("base + 0x174") != std::string::npos);
+    assert(m2Loader.find("base + 0x17C") != std::string::npos);
+    assert(m2LoaderHeader.find("uint8_t headOrTail = 0") != std::string::npos);
+    assert(m2LoaderHeader.find("float tailTime = 0.0f") != std::string::npos);
+    assert(m2Particles.find("em.headOrTail != 1") != std::string::npos);
+    assert(m2Particles.find("em.headOrTail >= 1") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x400u) != 0") != std::string::npos);
+    assert(m2Particles.find("sampleCell(em.tailCellBegin, em.tailCellEnd)") != std::string::npos);
+    assert(m2ParticleVert.find("-aVelocity * max(aTailSeconds, 0.0)") != std::string::npos);
+    assert(m2ParticleVert.find("projectedLen2 < 7.7e-4") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 15 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
+
     // Classic twinkle is a per-particle deterministic LUT phase and can
     // hard-gate a quad; authored head spin rotates the camera billboard. Placement
     // scale affects particle half-size only under emitter flag 0x20.
@@ -312,7 +329,7 @@ int main() {
     assert(m2Particles.find("spinAngle = em.spin * p.life") != std::string::npos);
     assert(m2ParticleVert.find("layout(location = 4) in float aSpin") != std::string::npos);
     assert(m2ParticleVert.find("float cs = cos(aSpin)") != std::string::npos);
-    assert(m2Renderer.find("pBind.stride = 10 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 15 * sizeof(float)") != std::string::npos);
     assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 10 * sizeof(float)") != std::string::npos);
 
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,

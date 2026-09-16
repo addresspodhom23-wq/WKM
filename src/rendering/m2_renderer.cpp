@@ -409,7 +409,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     if (particleVert.isValid() && particleFrag.isValid()) {
         VkVertexInputBindingDescription pBind{};
         pBind.binding = 0;
-        pBind.stride = 10 * sizeof(float); // pos3 + color4 + size1 + tile1 + spin1
+        pBind.stride = 15 * sizeof(float); // pos3 + color4 + size + tile + spin + velocity3 + tailTime + mode
         pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::vector<VkVertexInputAttributeDescription> pAttrs = {
@@ -418,6 +418,9 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
             {.location = 2, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 7 * sizeof(float)},          // size
             {.location = 3, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 8 * sizeof(float)},          // tile
             {.location = 4, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 9 * sizeof(float)},          // spin angle
+            {.location = 5, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 10 * sizeof(float)},      // world velocity
+            {.location = 6, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 13 * sizeof(float)},            // tail seconds
+            {.location = 7, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 14 * sizeof(float)},            // tail mode
         };
 
         auto buildParticlePipeline = [&](VkPipelineColorBlendAttachmentState blend) -> VkPipeline {
@@ -1049,7 +1052,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
 
         // M2 particle INSTANCE buffer. It spans all visible emitters in the
         // frame; MAX_M2_PARTICLES is only the per-instance simulation ceiling.
-        bci.size = MAX_M2_RENDER_PARTICLES * 10 * sizeof(float);
+        bci.size = MAX_M2_RENDER_PARTICLES * 15 * sizeof(float);
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &m2ParticleVB_, &m2ParticleVBAlloc_, &allocInfo);
         m2ParticleVBMapped_ = allocInfo.pMappedData;
 

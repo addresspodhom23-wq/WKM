@@ -962,49 +962,47 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                     inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f));
             }
 
-            auto& vd = cachedGroup->vertexData;
-            vd.push_back(drawPos.x);
-            vd.push_back(drawPos.y);
-            vd.push_back(drawPos.z);
-            vd.push_back(color.r);
-            vd.push_back(color.g);
-            vd.push_back(color.b);
-            vd.push_back(alpha);
-            vd.push_back(scale);
-            float tileIndex = p.tileIndex;
-            if (vanillaRendering_ && cachedTotalTiles > 1) {
-                // Classic head-cell ramp is evaluated PER PARTICLE from its own
-                // normalized age. A model/global clock makes every flame sprite
-                // flip in lockstep and visibly strobes the whole emitter.
-                const float tLife = glm::clamp(lifeRatio, 0.0f, 1.0f);
-                const float mid = glm::clamp(em.lifeMidpoint, 0.001f, 1.0f);
-                const int seg = tLife <= mid ? 0 : 1;
-                float segT = seg == 0
-                    ? tLife / mid
-                    : (tLife - mid) / std::max(1.0f - mid, 0.001f);
-                // Vanilla's cell ramp insets both endpoints before sampling.
-                segT = glm::clamp(segT, 0.0f, 1.0f) * 0.99f + 0.005f;
-                const float repeat = static_cast<float>(em.headCellRepeat[seg]);
-                const float cellT = repeat != 1.0f
-                    ? segT * repeat - std::floor(segT * repeat)
-                    : segT;
-                const int begin = static_cast<int>(em.headCellBegin[seg]);
-                const int end = static_cast<int>(em.headCellEnd[seg]);
-                const int baseCell = end >= begin ? begin : begin + 1;
-                const int span = end >= begin
-                    ? end - begin + 1
-                    : end - begin - 1;
+            glm::vec3 drawVelocity = p.velocity;
+            if (vanillaRendering_ && ((em.flags & 0x10u) != 0)) {
+                glm::mat4 liveBone(1.0f);
+                if (em.bone < inst.boneMatrices.size())
+                    liveBone = inst.boneMatrices[em.bone];
+                drawVelocity = glm::mat3(inst.modelMatrix * liveBone) * p.velocity;
+            }
+
+            const float tLife = glm::clamp(lifeRatio, 0.0f, 1.0f);
+            const float mid = glm::clamp(em.lifeMidpoint, 0.001f, 1.0f);
+            const int seg = tLife <= mid ? 0 : 1;
+            float segT = seg == 0
+                ? tLife / mid
+                : (tLife - mid) / std::max(1.0f - mid, 0.001f);
+            segT = glm::clamp(segT, 0.0f, 1.0f) * 0.99f + 0.005f;
+            const float repeat = static_cast<float>(em.headCellRepeat[seg]);
+            const float cellT = repeat != 1.0f
+                ? segT * repeat - std::floor(segT * repeat)
+                : segT;
+
+            auto sampleCell = [&](const uint16_t begin[2],
+                                  const uint16_t finish[2]) -> float {
+                if (cachedTotalTiles <= 1) return 0.0f;
+                const int b = static_cast<int>(begin[seg]);
+                const int e = static_cast<int>(finish[seg]);
+                const int baseCell = e >= b ? b : b + 1;
+                const int span = e >= b ? e - b + 1 : e - b - 1;
                 const int authoredCell =
                     static_cast<int>(std::floor(baseCell + span * cellT)) & 0xFF;
-                tileIndex = static_cast<float>(
+                return static_cast<float>(
                     static_cast<uint32_t>(authoredCell) % cachedTotalTiles);
+            };
+
+            float headTileIndex = p.tileIndex;
+            if (vanillaRendering_ && cachedTotalTiles > 1) {
+                headTileIndex = sampleCell(em.headCellBegin, em.headCellEnd);
             } else if (cachedIsTiled) {
-                tileIndex = p.tileIndex + static_cast<float>(cachedAnimFrame);
-                while (tileIndex >= cachedTilesFloat) {
-                    tileIndex -= cachedTilesFloat;
-                }
+                headTileIndex = p.tileIndex + static_cast<float>(cachedAnimFrame);
+                while (headTileIndex >= cachedTilesFloat)
+                    headTileIndex -= cachedTilesFloat;
             }
-            vd.push_back(tileIndex);
 
             float spinAngle = 0.0f;
             if (vanillaRendering_ && em.spin != 0.0f) {
@@ -1012,8 +1010,44 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 if (spinAngle < 0.0f && (p.phase & 0x20u) != 0)
                     spinAngle = -spinAngle;
             }
-            vd.push_back(spinAngle);
-            totalParticles++;
+
+            auto appendRecord = [&](float tileIndex, float spin,
+                                    float tailSeconds, float tailMode) {
+                auto& vd = cachedGroup->vertexData;
+                vd.push_back(drawPos.x);
+                vd.push_back(drawPos.y);
+                vd.push_back(drawPos.z);
+                vd.push_back(color.r);
+                vd.push_back(color.g);
+                vd.push_back(color.b);
+                vd.push_back(alpha);
+                vd.push_back(scale);
+                vd.push_back(tileIndex);
+                vd.push_back(spin);
+                vd.push_back(drawVelocity.x);
+                vd.push_back(drawVelocity.y);
+                vd.push_back(drawVelocity.z);
+                vd.push_back(tailSeconds);
+                vd.push_back(tailMode);
+                totalParticles++;
+            };
+
+            const bool drawHead = !vanillaRendering_ || em.headOrTail != 1;
+            const bool drawTail = vanillaRendering_ && em.headOrTail >= 1;
+
+            if (drawHead)
+                appendRecord(headTileIndex, spinAngle, 0.0f, 0.0f);
+
+            if (drawTail) {
+                const float tailTileIndex =
+                    cachedTotalTiles > 1
+                        ? sampleCell(em.tailCellBegin, em.tailCellEnd)
+                        : 0.0f;
+                float tailSeconds = std::max(0.0f, em.tailTime);
+                if ((em.flags & 0x400u) != 0)
+                    tailSeconds = std::min(tailSeconds, std::max(0.0f, p.life));
+                appendRecord(tailTileIndex, 0.0f, tailSeconds, 1.0f);
+            }
         }
     }
 
@@ -1053,13 +1087,13 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         if (group.vertexData.empty()) continue;
         if (packedCount >= MAX_M2_RENDER_PARTICLES) break;
 
-        const size_t groupCount = group.vertexData.size() / 10;
+        const size_t groupCount = group.vertexData.size() / 15;
         const size_t count = std::min(
             groupCount, MAX_M2_RENDER_PARTICLES - packedCount);
         if (count == 0) continue;
 
-        memcpy(packed + packedCount * 10, group.vertexData.data(),
-               count * 10 * sizeof(float));
+        memcpy(packed + packedCount * 15, group.vertexData.data(),
+               count * 15 * sizeof(float));
         packedDraws.push_back({
             .group = &group,
             .firstInstance = static_cast<uint32_t>(packedCount),

@@ -165,6 +165,7 @@ struct M2ParticleEmitter {
     uint16_t texture;
     uint8_t blendingType;   // 0=opaque,1=alphakey,2=alpha,4=add
     uint8_t emitterType;    // 1=plane,2=sphere,3=spline
+    uint8_t headOrTail = 0;  // 0=head, 1=tail, >=2=head+tail
     int16_t textureTileRotation = 0;
     uint16_t textureRows = 1;
     uint16_t textureCols = 1;
@@ -194,6 +195,9 @@ struct M2ParticleEmitter {
     uint16_t headCellBegin[2] = {0, 0};
     uint16_t headCellEnd[2] = {0, 0};
     uint16_t headCellRepeat[2] = {1, 1};
+    uint16_t tailCellBegin[2] = {0, 0};
+    uint16_t tailCellEnd[2] = {0, 0};
+    float tailTime = 0.0f;
     bool enabled = true;
 };
 

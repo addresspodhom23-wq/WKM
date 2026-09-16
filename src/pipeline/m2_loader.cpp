@@ -1550,6 +1550,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     readValue<uint16_t>(m2Data, base + 0x28));
                 em.emitterType = static_cast<uint8_t>(
                     readValue<uint16_t>(m2Data, base + 0x2A));
+                em.headOrTail = readValue<uint8_t>(m2Data, base + 0x2C);
             } else {
                 em.blendingType = readValue<uint8_t>(m2Data, base + 0x28);
                 em.emitterType  = readValue<uint8_t>(m2Data, base + 0x29);
@@ -1623,6 +1624,13 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 em.headCellBegin[1] = readValue<uint16_t>(m2Data, base + 0x16E);
                 em.headCellEnd[1] = readValue<uint16_t>(m2Data, base + 0x170);
                 em.headCellRepeat[1] = readValue<uint16_t>(m2Data, base + 0x172);
+                em.tailCellBegin[0] = readValue<uint16_t>(m2Data, base + 0x174);
+                em.tailCellEnd[0] = readValue<uint16_t>(m2Data, base + 0x176);
+                em.tailCellBegin[1] = readValue<uint16_t>(m2Data, base + 0x178);
+                em.tailCellEnd[1] = readValue<uint16_t>(m2Data, base + 0x17A);
+                const float tailTime = readValue<float>(m2Data, base + 0x17C);
+                if (std::isfinite(tailTime) && tailTime >= 0.0f)
+                    em.tailTime = tailTime;
 
                 // Synthesize color FBlock from static BGRA values
                 // Vanilla M2 stores 3× uint32 as BGRA (little-endian: byte0=B, byte1=G, byte2=R, byte3=A)
