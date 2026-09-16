@@ -257,8 +257,13 @@ void main() {
     }
 
     vec3 ldir = normalize(-lightDir.xyz);
-        float nDotL = dot(norm, ldir);
-        float diff = foliageTwoSided ? abs(nDotL) : max(nDotL, 0.0);
+    float nDotL = dot(norm, ldir);
+    // Vanilla TwoSided is raster state only; it does not turn Lambert
+    // lighting into abs(N.L). Keep Kraken's historical two-sided foliage
+    // lighting outside the Vanilla path.
+    float diff = (!vanillaRendering && foliageTwoSided)
+        ? abs(nDotL)
+        : max(nDotL, 0.0);
 
     vec3 result;
     if (vanillaRendering) {
