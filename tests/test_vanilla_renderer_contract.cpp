@@ -157,7 +157,7 @@ int main() {
     assert(m2Internal.find("const glm::mat3* cameraBasisWorld") != std::string::npos);
     assert(m2Internal.find("posedPivot") != std::string::npos);
     assert(m2Internal.find("glm::cross(camFwd, bz)") != std::string::npos);
-    assert(renderer.find("camera->getViewMatrix())") != std::string::npos);
+    assert(renderer.find("camera->getViewMatrix(), globalTime)") != std::string::npos);
 
     // M2 vertices carry full uint8 bone indices (0..255). Do not collapse
     // indices 128..255 onto bone 127; the shader already clamps them against
