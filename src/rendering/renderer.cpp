@@ -1782,7 +1782,7 @@ void Renderer::update(float deltaTime) {
         skyboxModelRenderer_->setInstancePosition(skyboxModelInstanceId_, camera->getPosition());
         skyboxModelRenderer_->update(deltaTime, camera->getPosition(),
             camera->getProjectionMatrix() * camera->getViewMatrix(),
-            camera->getViewMatrix());
+            camera->getViewMatrix(), globalTime);
     }
 
     // Update precipitation only outdoors. On leaving a building the existing
@@ -1881,12 +1881,14 @@ void Renderer::update(float deltaTime) {
     bool m2AnimLaunched = false;
     if (m2Renderer && camera) {
         float m2DeltaTime = deltaTime;
+        float m2GlobalTime = globalTime;
         glm::vec3 m2CamPos = camera->getPosition();
         glm::mat4 m2View = camera->getViewMatrix();
         glm::mat4 m2ViewProj = camera->getProjectionMatrix() * m2View;
         m2AnimFuture = core::ThreadPool::frameWorkers().submit(
-            [this, m2DeltaTime, m2CamPos, m2ViewProj, m2View]() {
-                m2Renderer->update(m2DeltaTime, m2CamPos, m2ViewProj, m2View);
+            [this, m2DeltaTime, m2GlobalTime, m2CamPos, m2ViewProj, m2View]() {
+                m2Renderer->update(m2DeltaTime, m2CamPos, m2ViewProj, m2View,
+                                   m2GlobalTime);
             });
         m2AnimLaunched = true;
     }

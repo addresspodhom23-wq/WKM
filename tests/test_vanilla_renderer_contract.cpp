@@ -286,6 +286,11 @@ int main() {
     assert(m2Loader.find("baseTime = sequenceWindows[i].first") != std::string::npos);
     assert(m2Loader.find("track.globalSequence < 0") != std::string::npos);
 
+    // One render clock owns all Classic global-sequence phases.
+    assert(m2Render.find("instance.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
+    assert(m2Render.find("instance.globalSequenceTime += dtMs") == std::string::npos);
+    assert(m2Render.find("sharedGlobalTimeSeconds * 1000.0f") != std::string::npos);
+
     // Vanilla point sprites keep the authored square billboard; the BLP alpha,
     // not Kraken's synthetic radial mask, defines their silhouette.
     assert(m2ParticleFrag.find("push.vanillaRendering != 0") != std::string::npos);

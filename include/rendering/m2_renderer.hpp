@@ -254,7 +254,7 @@ struct M2Instance {
 
     // Animation state
     float animTime = 0.0f;       // Current animation time (ms)
-    float globalSequenceTime = 0.0f; // Independent clock for global animation tracks
+    float globalSequenceTime = 0.0f; // Shared client clock snapshot for global animation tracks
     float animSpeed = 1.0f;      // Animation playback speed
     int currentSequenceIndex = 0;// Index into sequences array
     float animDuration = 0.0f;   // Duration of current animation (ms)
@@ -464,7 +464,8 @@ public:
                                        const glm::vec3& position);
 
     void update(float deltaTime, const glm::vec3& cameraPos,
-                const glm::mat4& viewProjection, const glm::mat4& viewMatrix);
+                const glm::mat4& viewProjection, const glm::mat4& viewMatrix,
+                float sharedGlobalTimeSeconds = -1.0f);
 
     /**
      * Render all visible instances (Vulkan)
@@ -1062,6 +1063,10 @@ private:
     static constexpr int MAX_SMOKE_PARTICLES = 1000;
     float smokeEmitAccum = 0.0f;
     std::mt19937 smokeRng{42};
+
+    // Classic global sequences are keyed from the client/render clock, not
+    // from the age of each M2 instance.
+    float sharedGlobalSequenceTimeMs_ = 0.0f;
 
     // M2 particle emitter system. MAX_M2_PARTICLES limits one instance's
     // simulation; the render buffer spans many instances visible in one frame.

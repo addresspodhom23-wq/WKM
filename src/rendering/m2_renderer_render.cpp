@@ -211,6 +211,7 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
     }
 
     M2Instance instance;
+    instance.globalSequenceTime = sharedGlobalSequenceTimeMs_;
     instance.id = nextInstanceId++;
     instance.modelId = modelId;
     instance.position = position;
@@ -310,6 +311,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     }
 
     M2Instance instance;
+    instance.globalSequenceTime = sharedGlobalSequenceTimeMs_;
     instance.id = nextInstanceId++;
     instance.modelId = modelId;
     instance.position = position;  // Used for frustum culling
@@ -396,7 +398,8 @@ static bool skyBatchAllowed(bool skyMode, std::size_t index) {
 }
 
 void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
-                        const glm::mat4& viewProjection, const glm::mat4& viewMatrix) {
+                        const glm::mat4& viewProjection, const glm::mat4& viewMatrix,
+                        float sharedGlobalTimeSeconds) {
     ZoneScopedN("M2Renderer::update");
 
     // Geometry-model particle M2s must be resident before command recording.
@@ -407,6 +410,12 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     }
 
     float dtMs = deltaTime * 1000.0f;
+    if (std::isfinite(sharedGlobalTimeSeconds) && sharedGlobalTimeSeconds >= 0.0f) {
+        sharedGlobalSequenceTimeMs_ = sharedGlobalTimeSeconds * 1000.0f;
+    } else {
+        // Fallback for isolated/test callers that do not own Renderer::globalTime.
+        sharedGlobalSequenceTimeMs_ += dtMs;
+    }
 
     // Cache camera state for frustum culling and the Vanilla billboard
     // palette replacement. Billboard orientation is the camera VIEW basis,
@@ -509,7 +518,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     // This is a tight loop touching only one float per instance - no hash lookups.
     for (auto& instance : instances) {
         instance.animTime += dtMs;
-        instance.globalSequenceTime += dtMs;
+        instance.globalSequenceTime = sharedGlobalSequenceTimeMs_;
     }
 
     // The sky model's clock, when this is the renderer that draws one.
