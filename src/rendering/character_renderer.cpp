@@ -2036,7 +2036,14 @@ void CharacterRenderer::playAnimation(uint32_t instanceId, uint32_t animationId,
     }
 }
 
-void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
+void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos,
+                               float sharedGlobalTimeSeconds) {
+    if (std::isfinite(sharedGlobalTimeSeconds) && sharedGlobalTimeSeconds >= 0.0f) {
+        sharedGlobalSequenceTimeMs_ = sharedGlobalTimeSeconds * 1000.0f;
+    } else {
+        sharedGlobalSequenceTimeMs_ += deltaTime * 1000.0f;
+    }
+
     // Distance culling for animation updates in dense areas.
     const float animUpdateRadius = static_cast<float>(envSizeOrDefault("WOWEE_CHAR_ANIM_RADIUS", 120));
     const float animUpdateRadiusSq = animUpdateRadius * animUpdateRadius;
@@ -2052,6 +2059,7 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
 
     for (auto& pair : instances) {
         auto& inst = pair.second;
+        inst.globalSequenceTime = sharedGlobalSequenceTimeMs_;
 
         // Update fade-in opacity
         if (inst.fadeInDuration > 0.0f && inst.opacity < 1.0f) {
@@ -2082,9 +2090,6 @@ void CharacterRenderer::update(float deltaTime, const glm::vec3& cameraPos) {
         const bool isSkyBird = inst.cachedModel && inst.cachedModel->isSkyBird;
         const float updateRadiusSq = isSkyBird ? birdUpdateRadiusSq : animUpdateRadiusSq;
         if (distSq > updateRadiusSq && !inst.isSceneModel) continue;
-
-        // Advance global sequence timer (accumulates independently of animation wrapping)
-        inst.globalSequenceTime += deltaTime * 1000.0f;
 
         // Always advance animation time (cheap)
         if (inst.cachedModel && !inst.cachedModel->data.sequences.empty()) {

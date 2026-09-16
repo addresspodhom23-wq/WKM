@@ -1895,7 +1895,7 @@ void Renderer::update(float deltaTime) {
 
     // Update character animations (runs in parallel with M2 animation above)
     if (characterRenderer && camera) {
-        characterRenderer->update(deltaTime, camera->getPosition());
+        characterRenderer->update(deltaTime, camera->getPosition(), globalTime);
     }
 
     // Update AudioEngine (cleanup finished sounds, etc.)

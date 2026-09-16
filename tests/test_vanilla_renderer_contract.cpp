@@ -26,6 +26,8 @@ int main() {
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
     const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
+    const auto characterRenderer=read("src/rendering/character_renderer.cpp");
+    const auto characterHeader=read("include/rendering/character_renderer.hpp");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
     assert(renderer.find("classicRendering_ ? 1.0f : 0.0f") != std::string::npos);
@@ -290,6 +292,10 @@ int main() {
     assert(m2Render.find("instance.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
     assert(m2Render.find("instance.globalSequenceTime += dtMs") == std::string::npos);
     assert(m2Render.find("sharedGlobalTimeSeconds * 1000.0f") != std::string::npos);
+    assert(characterHeader.find("sharedGlobalSequenceTimeMs_") != std::string::npos);
+    assert(characterRenderer.find("inst.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
+    assert(characterRenderer.find("inst.globalSequenceTime += deltaTime") == std::string::npos);
+    assert(renderer.find("characterRenderer->update(deltaTime, camera->getPosition(), globalTime)") != std::string::npos);
 
     // Vanilla point sprites keep the authored square billboard; the BLP alpha,
     // not Kraken's synthetic radial mask, defines their silhouette.

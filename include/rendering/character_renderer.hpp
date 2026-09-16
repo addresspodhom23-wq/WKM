@@ -83,7 +83,8 @@ public:
     void playAnimation(uint32_t instanceId, uint32_t animationId, bool loop = true,
                        uint32_t oneShotReturnAnim = 0);
 
-    void update(float deltaTime, const glm::vec3& cameraPos = glm::vec3(0.0f));
+    void update(float deltaTime, const glm::vec3& cameraPos = glm::vec3(0.0f),
+                float sharedGlobalTimeSeconds = -1.0f);
 
     /** Pre-allocate GPU resources (bone SSBOs, descriptors) on main thread before parallel render. */
     void prepareRender(uint32_t frameIndex);
@@ -193,6 +194,7 @@ public:
 
 private:
     std::unordered_map<std::string, pipeline::BLPImage>* predecodedBLPCache_ = nullptr;
+    float sharedGlobalSequenceTimeMs_ = 0.0f;
     // GPU representation of M2 model
     struct M2ModelGPU {
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
@@ -241,7 +243,7 @@ private:
         uint32_t currentAnimationId = 0;
         int currentSequenceIndex = -1;  // Index into M2Model::sequences
         float animationTime = 0.0f;
-        float globalSequenceTime = 0.0f; // Separate timer for global sequences (accumulates without wrapping at sequence duration)
+        float globalSequenceTime = 0.0f; // Shared client-clock snapshot for global sequences
         bool animationLoop = true;
         uint32_t oneShotReturnAnim = 0; // Anim to resume when a one-shot ends (0 = Stand)
         bool isDead = false;  // Prevents movement while in death state
