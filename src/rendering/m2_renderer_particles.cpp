@@ -383,9 +383,35 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             continue;
         }
         if (p.emitterIndex >= 0 && static_cast<size_t>(p.emitterIndex) < numEm) {
-            p.velocity.z -= emitterGrav[p.emitterIndex] * dt;
+            const auto& em = gpu.particleEmitters[static_cast<size_t>(p.emitterIndex)];
+            const float grav = emitterGrav[p.emitterIndex];
+            const bool modelSpace =
+                vanillaRendering_ && ((em.flags & 0x10u) != 0);
+
+            if (modelSpace) {
+                // Reference simulation clamps long frames, advances on the
+                // pre-gravity velocity, then applies the closed-form half-step.
+                const float sdt = std::min(std::max(dt, 0.0f), 0.1f);
+                p.position += p.velocity * sdt;
+                if (grav != 0.0f) {
+                    p.position.z -= 0.5f * grav * sdt * sdt;
+                    p.velocity.z -= grav * sdt;
+                }
+                if (em.drag > 0.0f) {
+                    const float drag = std::min(sdt * em.drag, 1.0f);
+                    p.velocity -= drag * p.velocity;
+                }
+            } else {
+                p.velocity.z -= grav * dt;
+                if (vanillaRendering_ && em.drag > 0.0f) {
+                    const float drag = std::min(std::max(dt, 0.0f) * em.drag, 1.0f);
+                    p.velocity -= drag * p.velocity;
+                }
+                p.position += p.velocity * dt;
+            }
+        } else {
+            p.position += p.velocity * dt;
         }
-        p.position += p.velocity * dt;
         i++;
     }
 }
