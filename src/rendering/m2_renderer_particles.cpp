@@ -957,8 +957,6 @@ void M2Renderer::updateRecursiveParticles(
             firstTrackFloat(childEmitter.verticalRange, 0.0f);
         const float horizontalRange =
             firstTrackFloat(childEmitter.horizontalRange, 0.0f);
-        const float gravity =
-            firstTrackFloat(childEmitter.gravity, 0.0f);
         const float life =
             firstTrackFloat(childEmitter.lifespan, 0.0f);
         const float areaLength =
@@ -1479,12 +1477,16 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
     for (auto& [k, g] : particleGroups_) {
         g.vertexData.clear();
         g.preAllocSet = VK_NULL_HANDLE;
+        g.submissionOrder = std::numeric_limits<uint64_t>::max();
     }
     auto& groups = particleGroups_;
 
     size_t totalParticles = 0;
 
+    uint64_t particleInstanceOrder = 0;
     for (auto& inst : instances) {
+        const uint64_t instanceSortBase =
+            (particleInstanceOrder++) << 32u;
         if (inst.forcedHidden) continue;
         if (inst.particles.empty()) continue;
         if (!inst.cachedModel) continue;
@@ -1525,12 +1527,26 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 cachedTotalTiles = static_cast<uint32_t>(cachedTilesX) *
                                    static_cast<uint32_t>(cachedTilesY);
                 cachedBlendType = cachedEm->blendingType;
-                ParticleGroupKey key{.texture = cachedTex, .blendType = static_cast<uint8_t>(cachedBlendType), .tilesX = cachedTilesX, .tilesY = cachedTilesY};
+                const uint64_t orderToken = vanillaRendering_
+                    ? instanceSortBase +
+                        static_cast<uint64_t>(p.emitterIndex) * 8u
+                    : 0u;
+                ParticleGroupKey key{
+                    .texture = cachedTex,
+                    .blendType =
+                        static_cast<uint8_t>(cachedBlendType),
+                    .tilesX = cachedTilesX,
+                    .tilesY = cachedTilesY,
+                    .orderToken = orderToken
+                };
                 cachedGroup = &groups[key];
                 cachedGroup->texture = cachedTex;
                 cachedGroup->blendType = cachedBlendType;
                 cachedGroup->tilesX = cachedTilesX;
                 cachedGroup->tilesY = cachedTilesY;
+                cachedGroup->submissionOrder =
+                    std::min(cachedGroup->submissionOrder,
+                             orderToken);
                 if (cachedGroup->preAllocSet == VK_NULL_HANDLE &&
                     p.emitterIndex < static_cast<int>(gpu.particleTexSets.size())) {
                     cachedGroup->preAllocSet = gpu.particleTexSets[p.emitterIndex];
@@ -1718,7 +1734,10 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
     // Recursion children are private particle pools with their own emitter
     // definition/texture/blend state. Even when the recursion record names a
     // geometry model, Classic renders child records as particle quads.
+    uint64_t recursiveInstanceOrder = 0;
     for (auto& inst : instances) {
+        const uint64_t instanceSortBase =
+            (recursiveInstanceOrder++) << 32u;
         if (inst.forcedHidden || inst.recursiveParticles.empty() ||
             !inst.cachedModel)
             continue;
@@ -1765,18 +1784,29 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 static_cast<uint32_t>(tilesX) *
                 static_cast<uint32_t>(tilesY);
 
+            const uint64_t orderToken =
+                instanceSortBase +
+                static_cast<uint64_t>(
+                    recursive.parentEmitterIndex) * 8u +
+                1u +
+                static_cast<uint64_t>(
+                    recursive.childEmitterIndex);
             ParticleGroupKey key{
                 .texture = tex,
                 .blendType =
                     static_cast<uint8_t>(em.blendingType),
                 .tilesX = tilesX,
-                .tilesY = tilesY
+                .tilesY = tilesY,
+                .orderToken = orderToken
             };
             auto& group = groups[key];
             group.texture = tex;
             group.blendType = em.blendingType;
             group.tilesX = tilesX;
             group.tilesY = tilesY;
+            group.submissionOrder =
+                std::min(group.submissionOrder,
+                         orderToken);
             if (group.preAllocSet == VK_NULL_HANDLE)
                 group.preAllocSet = stableSet;
 
@@ -1956,10 +1986,32 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
     std::vector<PackedParticleDraw> packedDraws;
     packedDraws.reserve(groups.size());
 
+    std::vector<ParticleGroup*> frameGroups;
+    frameGroups.reserve(groups.size());
+    for (auto& [key, group] : groups) {
+        (void)key;
+        if (!group.vertexData.empty())
+            frameGroups.push_back(&group);
+    }
+    if (vanillaRendering_) {
+        // Retail keeps non-additive emitter ordering barriers. Consecutive
+        // additive ranges may be regrouped because their blend is commutative;
+        // preserving the authored order for them as well is visually equivalent
+        // and, critically, never lets an unordered_map move alpha ranges across
+        // another emitter.
+        std::stable_sort(
+            frameGroups.begin(), frameGroups.end(),
+            [](const ParticleGroup* lhs,
+               const ParticleGroup* rhs) {
+                return lhs->submissionOrder <
+                       rhs->submissionOrder;
+            });
+    }
+
     float* packed = static_cast<float*>(m2ParticleVBMapped_);
     size_t packedCount = 0;
-    for (auto& [key, group] : groups) {
-        if (group.vertexData.empty()) continue;
+    for (ParticleGroup* groupPtr : frameGroups) {
+        auto& group = *groupPtr;
         if (packedCount >= MAX_M2_RENDER_PARTICLES) break;
 
         const size_t groupCount = group.vertexData.size() / 15;

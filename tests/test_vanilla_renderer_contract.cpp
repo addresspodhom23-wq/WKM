@@ -326,6 +326,19 @@ int main() {
     assert(m2Particles.find("inheritFactor * inherited") != std::string::npos);
     assert(m2Render.find("particleEmitterOriginValid.begin()") != std::string::npos);
 
+    // Vanilla particle draw ordering must not inherit unordered_map order.
+    // Each authored emitter/pool gets a stable order token; packing follows
+    // that order so alpha ranges cannot cross another emitter barrier.
+    assert(m2Header.find("uint64_t orderToken = 0") != std::string::npos);
+    assert(m2Header.find("uint64_t submissionOrder") != std::string::npos);
+    assert(m2Particles.find("particleInstanceOrder") != std::string::npos);
+    assert(m2Particles.find("recursiveInstanceOrder") != std::string::npos);
+    assert(m2Particles.find("static_cast<uint64_t>(p.emitterIndex) * 8u") != std::string::npos);
+    assert(m2Particles.find("recursive.parentEmitterIndex) * 8u") != std::string::npos);
+    assert(m2Particles.find("std::vector<ParticleGroup*> frameGroups") != std::string::npos);
+    assert(m2Particles.find("lhs->submissionOrder <") != std::string::npos);
+    assert(m2Particles.find("for (ParticleGroup* groupPtr : frameGroups)") != std::string::npos);
+
     // Classic RecursionModel is a CPU-only child-emitter definition. Only
     // the first four usable child records are wired; no .skin is required.
     assert(m2Header.find("struct ParticleRecursionRuntime") != std::string::npos);

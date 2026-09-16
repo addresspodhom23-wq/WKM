@@ -23,6 +23,7 @@
 #include <random>
 #include <chrono>
 #include <future>
+#include <limits>
 #include <algorithm>
 
 namespace wowee {
@@ -1007,11 +1008,16 @@ private:
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
+        // Vanilla: one authored emitter/pool per key so an unordered-map
+        // lookup cannot batch across a non-additive ordering barrier.
+        // Non-Vanilla keeps zero here and retains the historical batching.
+        uint64_t orderToken = 0;
         bool operator==(const ParticleGroupKey& other) const {
             return texture == other.texture &&
                    blendType == other.blendType &&
                    tilesX == other.tilesX &&
-                   tilesY == other.tilesY;
+                   tilesY == other.tilesY &&
+                   orderToken == other.orderToken;
         }
     };
     struct ParticleGroupKeyHash {
@@ -1019,7 +1025,9 @@ private:
             size_t h1 = std::hash<uintptr_t>{}(reinterpret_cast<uintptr_t>(key.texture));
             size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
             size_t h3 = std::hash<uint8_t>{}(key.blendType);
-            return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu);
+            size_t h4 = std::hash<uint64_t>{}(key.orderToken);
+            return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu) ^
+                   (h4 * 0xc2b2ae35u);
         }
     };
     struct ParticleGroup {
@@ -1027,6 +1035,7 @@ private:
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
+        uint64_t submissionOrder = std::numeric_limits<uint64_t>::max();
         VkDescriptorSet preAllocSet = VK_NULL_HANDLE;
         std::vector<float> vertexData;
     };
