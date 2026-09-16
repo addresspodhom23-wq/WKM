@@ -285,6 +285,36 @@ constexpr uint32_t kM2BoneBillboardMask =
     kM2BoneBillboardSpherical | kM2BoneBillboardLockX |
     kM2BoneBillboardLockY | kM2BoneBillboardLockZ;
 
+/// Resolve an M2 alias sequence to the sequence that owns its animation data.
+///
+/// Vanilla flag 0x40 marks an alias and aliasNext is an index into the same
+/// sequence table. Keep the logical sequence index on the instance for its
+/// duration/variation metadata, but sample every animation track from the
+/// resolved target. Malformed/out-of-range chains and cycles fall back to the
+/// logical entry instead of walking arbitrary memory or hanging the frame.
+inline int resolveM2SequenceAlias(const M2ModelGPU& model, int sequenceIndex) {
+    if (sequenceIndex < 0 ||
+        sequenceIndex >= static_cast<int>(model.sequences.size())) {
+        return sequenceIndex;
+    }
+
+    int resolved = sequenceIndex;
+    for (size_t hop = 0; hop < model.sequences.size(); ++hop) {
+        const auto& seq = model.sequences[resolved];
+        if ((seq.flags & 0x40u) == 0) return resolved;
+
+        const int next = static_cast<int>(seq.aliasNext);
+        if (next < 0 || next >= static_cast<int>(model.sequences.size()) ||
+            next == resolved) {
+            return sequenceIndex;
+        }
+        resolved = next;
+    }
+
+    // More hops than there are sequence entries means the aliases cycle.
+    return sequenceIndex;
+}
+
 /// Bone transforms for one instance.
 ///
 /// `cameraBasisWorld` columns are right/up/forward. Vanilla 1.12 rewrites a
@@ -298,17 +328,19 @@ inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
     if (numBones == 0) return;
     instance.boneMatrices.resize(numBones);
     const auto& gsd = model.globalSequenceDurations;
+    const int sampleSequenceIndex =
+        resolveM2SequenceAlias(model, instance.currentSequenceIndex);
 
     for (size_t i = 0; i < numBones; i++) {
         const auto& bone = model.bones[i];
         glm::vec3 trans = m2_track::sampleVec3(
-            bone.translation, instance.currentSequenceIndex, instance.animTime,
+            bone.translation, sampleSequenceIndex, instance.animTime,
             instance.globalSequenceTime, gsd, glm::vec3(0.0f));
         glm::quat rot = m2_track::sampleQuat(
-            bone.rotation, instance.currentSequenceIndex, instance.animTime,
+            bone.rotation, sampleSequenceIndex, instance.animTime,
             instance.globalSequenceTime, gsd);
         glm::vec3 scl = m2_track::sampleVec3(
-            bone.scale, instance.currentSequenceIndex, instance.animTime,
+            bone.scale, sampleSequenceIndex, instance.animTime,
             instance.globalSequenceTime, gsd, glm::vec3(1.0f));
 
         if (scl.x < 0.001f) scl.x = 1.0f;

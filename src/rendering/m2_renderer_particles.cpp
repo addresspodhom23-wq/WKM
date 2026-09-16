@@ -310,6 +310,8 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
     const float simDt = vanillaRendering_
         ? std::min(std::max(dt, 0.0f), 0.1f)
         : dt;
+    const int sampleSequenceIndex =
+        resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
 
     if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
         inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
@@ -327,7 +329,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
         if (!em.enabled) continue;
 
         const float emitterVisible = m2_track::sampleFloat(
-            em.visibilityTrack, inst.currentSequenceIndex, inst.animTime,
+            em.visibilityTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gpu.globalSequenceDurations, 1.0f);
         if (emitterVisible <= 0.0f) {
             // Do not bank hidden-time emission and release it as a burst when
@@ -338,9 +340,9 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
         }
 
         float rate = interpFloat(em.emissionRate, inst.animTime, inst.globalSequenceTime,
-                                 inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                                 sampleSequenceIndex, gpu.globalSequenceDurations);
         float life = interpFloat(em.lifespan, inst.animTime, inst.globalSequenceTime,
-                                 inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                                 sampleSequenceIndex, gpu.globalSequenceDurations);
         // What the player asked to see of it, before the floor below. The order
         // is the whole point: thinning first and flooring second lets a low
         // setting take smoke, dust and spell effects down while a candle is
@@ -373,7 +375,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                     LOG_WARNING("Flame emitter idle: '", gpu.name, "' emitter=", ei,
                                 " rate=", rate, " life=", life,
                                 " animTime=", inst.animTime,
-                                " seqIdx=", inst.currentSequenceIndex,
+                                " seqIdx=", sampleSequenceIndex,
                                 " gsTime=", inst.globalSequenceTime,
                                 " rateSeqs=", em.emissionRate.sequences.size(),
                                 " lifeSeqs=", em.lifespan.sequences.size(),
@@ -436,25 +438,25 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             // spawn across their authored rectangle. Sphere emitters spawn on a
             // shell between areaLength/areaWidth and normally travel radially.
             float speed = interpFloat(em.emissionSpeed, inst.animTime, inst.globalSequenceTime,
-                                      inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                                      sampleSequenceIndex, gpu.globalSequenceDurations);
             const float speedVariation = interpFloat(
                 em.speedVariation, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             const float vRange = interpFloat(
                 em.verticalRange, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             const float hRange = interpFloat(
                 em.horizontalRange, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             const float areaLength = interpFloat(
                 em.emissionAreaLength, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             const float areaWidth = interpFloat(
                 em.emissionAreaWidth, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             const float zSource = interpFloat(
                 em.zSource, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
 
             glm::vec3 localPos = em.position;
             glm::vec3 emissionOffset(0.0f);
@@ -664,6 +666,8 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
 void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     if (!inst.cachedModel) return;
     const auto& gpu = *inst.cachedModel;
+    const int sampleSequenceIndex =
+        resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
     const size_t numEm = gpu.particleEmitters.size();
     const float simDt = vanillaRendering_
         ? std::min(std::max(dt, 0.0f), 0.1f)
@@ -704,11 +708,11 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
         const auto& pem = gpu.particleEmitters[e];
         float grav = interpFloat(
             pem.gravity, inst.animTime, inst.globalSequenceTime,
-            inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            sampleSequenceIndex, gpu.globalSequenceDurations);
         if (!vanillaRendering_ && grav == 0.0f && !gpu.isFireflyEffect) {
             const float emSpeed = interpFloat(
                 pem.emissionSpeed, inst.animTime, inst.globalSequenceTime,
-                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+                sampleSequenceIndex, gpu.globalSequenceDurations);
             grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
         }
         emitterGrav[e] = grav;
@@ -1112,6 +1116,8 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
     if (gpu.isInstancePortal) return;
 
     const auto& emitters = gpu.ribbonEmitters;
+    const int sampleSequenceIndex =
+        resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
     if (emitters.empty()) return;
 
     const float rawDt = std::isfinite(dt) ? std::max(0.0f, dt) : 0.0f;
@@ -1157,19 +1163,19 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
 
         const auto& gsd = gpu.globalSequenceDurations;
         const float visibility = m2_track::sampleFloat(
-            em.visibilityTrack, inst.currentSequenceIndex, inst.animTime,
+            em.visibilityTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 1.0f);
         const float heightAbove = std::max(0.0f, m2_track::sampleFloat(
-            em.heightAboveTrack, inst.currentSequenceIndex, inst.animTime,
+            em.heightAboveTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 0.0f));
         const float heightBelow = std::max(0.0f, m2_track::sampleFloat(
-            em.heightBelowTrack, inst.currentSequenceIndex, inst.animTime,
+            em.heightBelowTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 0.0f));
         const glm::vec3 color = m2_track::sampleVec3(
-            em.colorTrack, inst.currentSequenceIndex, inst.animTime,
+            em.colorTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, glm::vec3(1.0f));
         const float alpha = glm::clamp(m2_track::sampleFloat(
-            em.alphaTrack, inst.currentSequenceIndex, inst.animTime,
+            em.alphaTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 1.0f), 0.0f, 1.0f);
 
         // Vanilla normalizes these two scalar controls before simulation.
@@ -1283,6 +1289,8 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
         if (inst.forcedHidden) continue;
         if (!inst.cachedModel) continue;
         const auto& gpu = *inst.cachedModel;
+        const int sampleSequenceIndex =
+            resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
         if (gpu.isInstancePortal) continue;
         if (gpu.ribbonEmitters.empty()) continue;
 
@@ -1320,7 +1328,7 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
             size_t textureSlot = 0;
             if (!em.textureIndices.empty()) {
                 const float slotValue = m2_track::sampleFloat(
-                    em.textureSlotTrack, inst.currentSequenceIndex, inst.animTime,
+                    em.textureSlotTrack, sampleSequenceIndex, inst.animTime,
                     inst.globalSequenceTime, gpu.globalSequenceDurations, 0.0f);
                 const long roundedSlot = std::lround(slotValue);
                 if (roundedSlot > 0) {
@@ -1353,11 +1361,11 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
             float liveAlpha = 1.0f;
             if (vanillaRendering_) {
                 liveColor = m2_track::sampleVec3(
-                    em.colorTrack, inst.currentSequenceIndex, inst.animTime,
+                    em.colorTrack, sampleSequenceIndex, inst.animTime,
                     inst.globalSequenceTime, gpu.globalSequenceDurations,
                     glm::vec3(1.0f));
                 liveAlpha = glm::clamp(m2_track::sampleFloat(
-                    em.alphaTrack, inst.currentSequenceIndex, inst.animTime,
+                    em.alphaTrack, sampleSequenceIndex, inst.animTime,
                     inst.globalSequenceTime, gpu.globalSequenceDurations, 1.0f),
                     0.0f, 1.0f);
             }

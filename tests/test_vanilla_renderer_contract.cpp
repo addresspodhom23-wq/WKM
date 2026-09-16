@@ -288,6 +288,17 @@ int main() {
     assert(m2Loader.find("baseTime = sequenceWindows[i].first") != std::string::npos);
     assert(m2Loader.find("track.globalSequence < 0") != std::string::npos);
 
+    // Vanilla sequence flag 0x40 is an alias: animation data lives in the
+    // aliasNext target. Resolve track sampling without overwriting the logical
+    // sequence metadata, and bound the walk so corrupt/cyclic chains are safe.
+    assert(m2Internal.find("(seq.flags & 0x40u) == 0") != std::string::npos);
+    assert(m2Internal.find("seq.aliasNext") != std::string::npos);
+    assert(m2Internal.find("hop < model.sequences.size()") != std::string::npos);
+    assert(m2Internal.find("resolveM2SequenceAlias(model, instance.currentSequenceIndex)") != std::string::npos);
+    assert(m2Particles.find("resolveM2SequenceAlias(gpu, inst.currentSequenceIndex)") != std::string::npos);
+    assert(m2Render.find("resolveM2SequenceAlias(model, inst.currentSequenceIndex)") != std::string::npos);
+    assert(m2Render.find("resolveM2SequenceAlias(model, instance.currentSequenceIndex)") != std::string::npos);
+
     // One render clock owns all Classic global-sequence phases.
     assert(m2Render.find("instance.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
     assert(m2Render.find("instance.globalSequenceTime += dtMs") == std::string::npos);

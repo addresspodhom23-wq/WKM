@@ -2008,7 +2008,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             glm::vec2 uvOffset(0.0f);
                             if (tt) {
                                 glm::vec3 trans = m2_track::sampleVec3(
-                                    tt->translation, inst.currentSequenceIndex,
+                                    tt->translation, resolveM2SequenceAlias(model, inst.currentSequenceIndex),
                                     inst.animTime, inst.globalSequenceTime,
                                     model.globalSequenceDurations, glm::vec3(0.0f));
                                 uvOffset = glm::vec2(trans.x, trans.y);
@@ -2320,7 +2320,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     if (transformIdx < model.textureTransforms.size()) {
                         const auto& tt = model.textureTransforms[transformIdx];
                         glm::vec3 trans = m2_track::sampleVec3(
-                            tt.translation, instance.currentSequenceIndex,
+                            tt.translation, resolveM2SequenceAlias(model, instance.currentSequenceIndex),
                             instance.animTime, instance.globalSequenceTime,
                             model.globalSequenceDurations, glm::vec3(0.0f));
                         uvOffset = glm::vec2(trans.x, trans.y);
