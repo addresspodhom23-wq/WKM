@@ -179,6 +179,7 @@ struct M2ParticleEmitter {
     M2AnimationTrack emissionAreaWidth;
     M2AnimationTrack zSource;         // pull launch direction toward local (0,0,zSource)
     M2AnimationTrack visibilityTrack; // enabledIn: Classic byte track at record tail
+    float drag = 0.0f;                // Classic plain f32 @ +0x194
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
