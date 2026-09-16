@@ -326,6 +326,31 @@ int main() {
     assert(m2Particles.find("inheritFactor * inherited") != std::string::npos);
     assert(m2Render.find("particleEmitterOriginValid.begin()") != std::string::npos);
 
+    // Classic RecursionModel is a CPU-only child-emitter definition. Only
+    // the first four usable child records are wired; no .skin is required.
+    assert(m2Header.find("struct ParticleRecursionRuntime") != std::string::npos);
+    assert(m2Header.find("std::vector<M2RecursiveParticle> recursiveParticles") != std::string::npos);
+    assert(m2Header.find("std::vector<M2RecursiveEmitterState> recursiveEmitterStates") != std::string::npos);
+    assert(m2Renderer.find("requestedRecursion") != std::string::npos);
+    assert(m2Renderer.find("std::min<size_t>(4, runtime.model.particleEmitters.size())") != std::string::npos);
+    assert(m2Renderer.find("runtime.validEmitterIndices.push_back") != std::string::npos);
+    assert(m2Renderer.find("particleRecursionModels_.emplace") != std::string::npos);
+    assert(m2Renderer.find("M2 particle recursion has no usable child emitters") != std::string::npos);
+    assert(m2Particles.find("void M2Renderer::updateRecursiveParticles") != std::string::npos);
+    assert(m2Particles.find("parentParticle.position + local.offset") != std::string::npos);
+    assert(m2Particles.find("parentParticle.position +\n                        parentLinear * local.offset") != std::string::npos);
+    assert(m2Particles.find("inheritedFactor *\n                        parentParticle.velocity") != std::string::npos);
+    assert(m2Particles.find("particle.orientation =\n                    glm::quat(1.0f") != std::string::npos);
+    assert(m2Particles.find("recursive.particle;") != std::string::npos);
+    assert(m2Particles.find("runtime.emitterTextures") != std::string::npos);
+    assert(m2Particles.find("recursive.parentEmitterIndex") != std::string::npos);
+    assert(m2Particles.find("em.headOrTail >= 1") != std::string::npos);
+    assert(m2Render.find("updateRecursiveParticles(instance, *instance.cachedModel, deltaTime)") != std::string::npos);
+    const auto recursionEmitPos = m2Render.find("emitParticles(instance, *instance.cachedModel, deltaTime)");
+    const auto recursionUpdatePos = m2Render.find("updateRecursiveParticles(instance, *instance.cachedModel, deltaTime)");
+    assert(recursionEmitPos != std::string::npos && recursionUpdatePos != std::string::npos);
+    assert(recursionEmitPos < recursionUpdatePos);
+
     // Classic particle geometry models are M2Array strings in the emitter
     // prefix. Their tumble range is retained, integrated per particle, and the
     // geometry itself is drawn through the ordinary M2 material/depth path.

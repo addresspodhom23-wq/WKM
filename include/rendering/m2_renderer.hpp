@@ -222,6 +222,21 @@ struct M2Particle {
     uint32_t phase = 0;     // per-particle Classic twinkle LUT phase
 };
 
+struct M2RecursiveParticle {
+    M2Particle particle;
+    uint32_t runtimeId = 0;
+    uint16_t parentEmitterIndex = 0;
+    uint16_t childEmitterIndex = 0;
+};
+
+struct M2RecursiveEmitterState {
+    uint32_t runtimeId = 0;
+    uint16_t parentEmitterIndex = 0;
+    uint16_t childEmitterIndex = 0;
+    float accumulator = 0.0f;
+    uint8_t gatePrev = 0;
+};
+
 /**
  * Instance of an M2 model in the world
  */
@@ -276,6 +291,8 @@ struct M2Instance {
     std::vector<float> particleInheritAccumulators;    // Classic 30 Hz inherit sampler
     std::vector<glm::vec3> particleInheritVelocities;  // held world velocity per emitter
     std::vector<M2Particle> particles;
+    std::vector<M2RecursiveParticle> recursiveParticles;
+    std::vector<M2RecursiveEmitterState> recursiveEmitterStates;
 
     // Ribbon emitter state
     struct RibbonEdge {
@@ -859,6 +876,17 @@ private:
     std::unordered_map<std::string, uint32_t> particleGeometryModelIds_;
     std::unordered_set<std::string> failedParticleGeometryModels_;
     uint32_t nextParticleGeometryModelId_ = 0xF0000000u;
+
+    struct ParticleRecursionRuntime {
+        pipeline::M2Model model;
+        std::vector<VkTexture*> emitterTextures;
+        std::vector<VkDescriptorSet> emitterTexSets;
+        std::vector<uint16_t> validEmitterIndices;
+    };
+    std::unordered_map<std::string, uint32_t> particleRecursionModelIds_;
+    std::unordered_map<uint32_t, ParticleRecursionRuntime> particleRecursionModels_;
+    std::unordered_set<std::string> failedParticleRecursionModels_;
+    uint32_t nextParticleRecursionModelId_ = 1;
     // Grace period for model cleanup: track when a model first became instanceless.
     // Models are only evicted after 60 seconds with no instances.
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> modelUnusedSince_;
@@ -896,6 +924,8 @@ private:
     VkTexture* loadTexture(const std::string& path, uint32_t texFlags = 0);
     void ensureParticleGeometryModelsLoaded();
     [[nodiscard]] const M2ModelGPU* particleGeometryModel(const std::string& path) const;
+    [[nodiscard]] const ParticleRecursionRuntime* particleRecursionRuntime(const std::string& path) const;
+    void updateRecursiveParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt);
     std::unordered_map<std::string, pipeline::BLPImage>* predecodedBLPCache_ = nullptr;
 
     struct TextureCacheEntry {

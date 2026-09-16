@@ -767,6 +767,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
         // until the next simulation step instead of receiving a free dt jump.
         updateParticles(instance, deltaTime);
         emitParticles(instance, *instance.cachedModel, deltaTime);
+        updateRecursiveParticles(instance, *instance.cachedModel, deltaTime);
         if (!instance.cachedModel->ribbonEmitters.empty()) {
             updateRibbons(instance, *instance.cachedModel, deltaTime);
         }

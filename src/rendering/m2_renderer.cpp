@@ -554,29 +554,71 @@ const M2ModelGPU* M2Renderer::particleGeometryModel(const std::string& path) con
     return modelIt != models.end() ? &modelIt->second : nullptr;
 }
 
+const M2Renderer::ParticleRecursionRuntime*
+M2Renderer::particleRecursionRuntime(const std::string& path) const {
+    std::string key = pipeline::modelPathToM2(path);
+    std::replace(key.begin(), key.end(), '/', '\\');
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const auto idIt = particleRecursionModelIds_.find(key);
+    if (idIt == particleRecursionModelIds_.end()) return nullptr;
+    const auto runtimeIt = particleRecursionModels_.find(idIt->second);
+    return runtimeIt != particleRecursionModels_.end()
+        ? &runtimeIt->second : nullptr;
+}
+
 void M2Renderer::ensureParticleGeometryModelsLoaded() {
     if (!vanillaRendering_ || !assetManager) return;
 
-    std::vector<std::string> requested;
-    requested.reserve(16);
+    auto canonicalModelPath = [](std::string path) {
+        path = pipeline::modelPathToM2(path);
+        std::replace(path.begin(), path.end(), '/', '\\');
+        std::transform(path.begin(), path.end(), path.begin(),
+                       [](unsigned char ch) {
+                           return static_cast<char>(std::tolower(ch));
+                       });
+        return path;
+    };
+
+    std::vector<std::string> requestedGeometry;
+    std::vector<std::string> requestedRecursion;
+    requestedGeometry.reserve(16);
+    requestedRecursion.reserve(16);
+
+    // Collect before loading anything: geometry loads insert into models and
+    // must never mutate the map while it is being iterated.
     for (const auto& [id, model] : models) {
         (void)id;
         for (const auto& emitter : model.particleEmitters) {
-            if (emitter.geometryModel.empty()) continue;
-            std::string key = pipeline::modelPathToM2(emitter.geometryModel);
-            std::replace(key.begin(), key.end(), '/', '\\');
-            std::transform(key.begin(), key.end(), key.begin(),
-                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-            if (particleGeometryModelIds_.find(key) == particleGeometryModelIds_.end() &&
-                failedParticleGeometryModels_.find(key) == failedParticleGeometryModels_.end()) {
-                requested.push_back(std::move(key));
+            if (!emitter.geometryModel.empty()) {
+                std::string key = canonicalModelPath(emitter.geometryModel);
+                if (particleGeometryModelIds_.find(key) ==
+                        particleGeometryModelIds_.end() &&
+                    failedParticleGeometryModels_.find(key) ==
+                        failedParticleGeometryModels_.end()) {
+                    requestedGeometry.push_back(std::move(key));
+                }
+            }
+            if (!emitter.recursionModel.empty()) {
+                std::string key = canonicalModelPath(emitter.recursionModel);
+                if (particleRecursionModelIds_.find(key) ==
+                        particleRecursionModelIds_.end() &&
+                    failedParticleRecursionModels_.find(key) ==
+                        failedParticleRecursionModels_.end()) {
+                    requestedRecursion.push_back(std::move(key));
+                }
             }
         }
     }
-    std::sort(requested.begin(), requested.end());
-    requested.erase(std::unique(requested.begin(), requested.end()), requested.end());
 
-    for (const std::string& path : requested) {
+    auto uniquePaths = [](std::vector<std::string>& paths) {
+        std::sort(paths.begin(), paths.end());
+        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
+    };
+    uniquePaths(requestedGeometry);
+    uniquePaths(requestedRecursion);
+
+    for (const std::string& path : requestedGeometry) {
         const auto bytes = assetManager->readFileOptional(path);
         if (bytes.empty()) {
             failedParticleGeometryModels_.insert(path);
@@ -620,6 +662,111 @@ void M2Renderer::ensureParticleGeometryModelsLoaded() {
         particleGeometryModelIds_[path] = modelId;
         pinnedModelIds_.insert(modelId);
         LOG_DEBUG("M2 particle geometry loaded: ", path, " -> ", modelId);
+    }
+
+    auto firstFloat = [](const pipeline::M2AnimationTrack& track,
+                         float fallback) {
+        for (const auto& seq : track.sequences) {
+            if (!seq.floatValues.empty())
+                return seq.floatValues.front();
+        }
+        return fallback;
+    };
+    auto hasPositiveRate = [](const pipeline::M2AnimationTrack& track) {
+        for (const auto& seq : track.sequences) {
+            for (float value : seq.floatValues) {
+                if (std::isfinite(value) && value > 0.0f)
+                    return true;
+            }
+        }
+        return false;
+    };
+
+    // Recursion models are CPU emitter definitions. They intentionally do not
+    // require a .skin: Vanilla only inspects up to four particle records.
+    for (const std::string& path : requestedRecursion) {
+        const auto bytes = assetManager->readFileOptional(path);
+        if (bytes.empty()) {
+            failedParticleRecursionModels_.insert(path);
+            LOG_WARNING("M2 particle recursion missing: ", path);
+            continue;
+        }
+
+        ParticleRecursionRuntime runtime;
+        runtime.model = pipeline::M2Loader::load(bytes);
+        if (runtime.model.particleEmitters.empty()) {
+            failedParticleRecursionModels_.insert(path);
+            LOG_WARNING("M2 particle recursion has no emitters: ", path);
+            continue;
+        }
+
+        const size_t inspected =
+            std::min<size_t>(4, runtime.model.particleEmitters.size());
+        runtime.emitterTextures.resize(inspected, whiteTexture_.get());
+        runtime.emitterTexSets.resize(inspected, VK_NULL_HANDLE);
+
+        VkDevice device = vkCtx_->getDevice();
+        for (size_t ei = 0; ei < inspected; ++ei) {
+            const auto& emitter = runtime.model.particleEmitters[ei];
+            const float life = firstFloat(emitter.lifespan, 0.0f);
+            if (!(life > 0.0f) || !hasPositiveRate(emitter.emissionRate))
+                continue;
+            if (emitter.texture >= runtime.model.textures.size())
+                continue;
+
+            const auto& textureDef = runtime.model.textures[emitter.texture];
+            if (textureDef.filename.empty())
+                continue;
+
+            VkTexture* texture = loadTexture(
+                textureDef.filename, textureDef.flags);
+            if (!texture || !texture->isValid())
+                texture = whiteTexture_.get();
+            if (!texture || !texture->isValid())
+                continue;
+
+            runtime.emitterTextures[ei] = texture;
+
+            if (particleTexLayout_ && materialDescPool_) {
+                VkDescriptorSetAllocateInfo ai{
+                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+                ai.descriptorPool = materialDescPool_;
+                ai.descriptorSetCount = 1;
+                ai.pSetLayouts = &particleTexLayout_;
+                if (vkAllocateDescriptorSets(
+                        device, &ai, &runtime.emitterTexSets[ei]) == VK_SUCCESS) {
+                    VkDescriptorImageInfo imageInfo = texture->descriptorInfo();
+                    VkWriteDescriptorSet write{
+                        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                    write.dstSet = runtime.emitterTexSets[ei];
+                    write.dstBinding = 0;
+                    write.descriptorCount = 1;
+                    write.descriptorType =
+                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    write.pImageInfo = &imageInfo;
+                    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+                }
+            }
+
+            runtime.validEmitterIndices.push_back(
+                static_cast<uint16_t>(ei));
+        }
+
+        if (runtime.validEmitterIndices.empty()) {
+            for (VkDescriptorSet set : runtime.emitterTexSets) {
+                if (set)
+                    vkFreeDescriptorSets(device, materialDescPool_, 1, &set);
+            }
+            failedParticleRecursionModels_.insert(path);
+            LOG_DEBUG("M2 particle recursion has no usable child emitters: ", path);
+            continue;
+        }
+
+        const uint32_t runtimeId = nextParticleRecursionModelId_++;
+        particleRecursionModelIds_[path] = runtimeId;
+        particleRecursionModels_.emplace(runtimeId, std::move(runtime));
+        LOG_DEBUG("M2 particle recursion loaded: ", path,
+                  " -> runtime ", runtimeId);
     }
 }
 
@@ -1237,6 +1384,23 @@ void M2Renderer::shutdown() {
     particleGeometryModelIds_.clear();
     failedParticleGeometryModels_.clear();
     nextParticleGeometryModelId_ = 0xF0000000u;
+
+    // Recursion models own only stable particle texture descriptor sets; their
+    // textures remain owned by the shared texture cache.
+    for (auto& [runtimeId, runtime] : particleRecursionModels_) {
+        (void)runtimeId;
+        for (auto& set : runtime.emitterTexSets) {
+            if (set) {
+                vkFreeDescriptorSets(
+                    device, materialDescPool_, 1, &set);
+                set = VK_NULL_HANDLE;
+            }
+        }
+    }
+    particleRecursionModels_.clear();
+    particleRecursionModelIds_.clear();
+    failedParticleRecursionModels_.clear();
+    nextParticleRecursionModelId_ = 1;
 
     // Destroy instance bone buffers
     for (auto& inst : instances) {

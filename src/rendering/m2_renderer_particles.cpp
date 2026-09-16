@@ -126,6 +126,119 @@ bool sampleClassicSpline(const std::vector<glm::vec3>& points,
     return true;
 }
 
+float firstTrackFloat(const pipeline::M2AnimationTrack& track,
+                      float fallback = 0.0f) {
+    for (const auto& sequence : track.sequences) {
+        if (!sequence.floatValues.empty())
+            return sequence.floatValues.front();
+    }
+    return fallback;
+}
+
+struct ClassicLocalBirth {
+    glm::vec3 offset{0.0f};
+    glm::vec3 direction{0.0f, 0.0f, 1.0f};
+};
+
+ClassicLocalBirth sampleClassicLocalBirth(
+        const pipeline::M2ParticleEmitter& emitter,
+        float verticalRange,
+        float horizontalRange,
+        float areaLength,
+        float areaWidth,
+        float zSource,
+        std::mt19937& rng) {
+    std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
+    std::uniform_real_distribution<float> distN(-1.0f, 1.0f);
+
+    ClassicLocalBirth out;
+    bool splineSampled = false;
+
+    if (emitter.emitterType == 3 && emitter.splinePoints.size() >= 4) {
+        const float start = glm::clamp(areaLength, 0.0f, 1.0f);
+        const float finish = glm::clamp(areaWidth, 0.0f, 1.0f);
+        const float t = start + dist01(rng) * (finish - start);
+        glm::vec3 tangent(0.0f, 0.0f, 1.0f);
+        splineSampled = sampleClassicSpline(
+            emitter.splinePoints, t, out.offset, tangent);
+        if (splineSampled) {
+            if (zSource != 0.0f) {
+                out.direction =
+                    out.offset - glm::vec3(0.0f, 0.0f, zSource);
+                const float d2 = glm::dot(out.direction, out.direction);
+                out.direction = d2 > 1e-12f
+                    ? out.direction * glm::inversesqrt(d2)
+                    : glm::vec3(0.0f, 0.0f, 1.0f);
+            } else if (verticalRange != 0.0f) {
+                out.direction = rotateAroundAxis(
+                    glm::vec3(0.0f, 0.0f, 1.0f),
+                    tangent, distN(rng) * verticalRange);
+                if (horizontalRange != 0.0f)
+                    out.offset +=
+                        dist01(rng) * horizontalRange * out.direction;
+            } else {
+                out.direction = glm::vec3(0.0f);
+            }
+        }
+    }
+
+    if (!splineSampled && emitter.emitterType == 2) {
+        const float inner = std::min(areaLength, areaWidth);
+        const float outer = std::max(areaLength, areaWidth);
+        const float radius =
+            inner + dist01(rng) * std::max(0.0f, outer - inner);
+        const float latitude = distN(rng) * verticalRange;
+        const float longitude = distN(rng) * horizontalRange;
+        const float clat = std::cos(latitude);
+        const glm::vec3 shell(
+            clat * std::cos(longitude),
+            clat * std::sin(longitude),
+            std::sin(latitude));
+        out.offset = shell * radius;
+        if (zSource != 0.0f) {
+            out.direction =
+                out.offset - glm::vec3(0.0f, 0.0f, zSource);
+            const float d2 = glm::dot(out.direction, out.direction);
+            out.direction = d2 > 1e-12f
+                ? out.direction * glm::inversesqrt(d2)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+        } else {
+            out.direction = (emitter.flags & 0x100u)
+                ? glm::vec3(0.0f, 0.0f, 1.0f)
+                : shell;
+        }
+    } else if (!splineSampled && emitter.emitterType != 2) {
+        out.offset = glm::vec3(
+            areaLength * 0.5f * distN(rng),
+            areaWidth * 0.5f * distN(rng),
+            0.0f);
+        if (zSource != 0.0f) {
+            out.direction =
+                out.offset - glm::vec3(0.0f, 0.0f, zSource);
+            const float d2 = glm::dot(out.direction, out.direction);
+            out.direction = d2 > 1e-12f
+                ? out.direction * glm::inversesqrt(d2)
+                : glm::vec3(0.0f, 0.0f, 1.0f);
+        } else {
+            const float polar = distN(rng) * verticalRange;
+            const float azimuth = distN(rng) * horizontalRange;
+            const float sinPolar = std::sin(polar);
+            out.direction = glm::vec3(
+                sinPolar * std::cos(azimuth),
+                sinPolar * std::sin(azimuth),
+                std::cos(polar));
+        }
+    }
+
+    // Classic emitter kernel applies +90 degrees about local Z.
+    const auto rot90Z = [](const glm::vec3& v) {
+        return glm::vec3(-v.y, v.x, v.z);
+    };
+    out.offset = rot90Z(out.offset);
+    out.direction = rot90Z(out.direction);
+    return out;
+}
+
 } // namespace
 
 // --- M2 Particle Emitter Helpers ---
@@ -739,6 +852,261 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     }
 }
 
+void M2Renderer::updateRecursiveParticles(
+        M2Instance& inst, const M2ModelGPU& gpu, float dt) {
+    if (!vanillaRendering_ || inst.forcedHidden)
+        return;
+
+    const float simDt = std::min(std::max(dt, 0.0f), 0.1f);
+    if (!(simDt > 0.0f))
+        return;
+
+    auto canonicalModelPath = [](std::string path) {
+        path = pipeline::modelPathToM2(path);
+        std::replace(path.begin(), path.end(), '/', '\\');
+        std::transform(path.begin(), path.end(), path.begin(),
+                       [](unsigned char ch) {
+                           return static_cast<char>(std::tolower(ch));
+                       });
+        return path;
+    };
+
+    // Wire each parent emitter to the recursion model's first four usable
+    // child emitters. State is private to this parent instance/emitter pair.
+    for (size_t parentIndex = 0;
+         parentIndex < gpu.particleEmitters.size();
+         ++parentIndex) {
+        const auto& parentEmitter = gpu.particleEmitters[parentIndex];
+        if (parentEmitter.recursionModel.empty())
+            continue;
+
+        const std::string key =
+            canonicalModelPath(parentEmitter.recursionModel);
+        const auto runtimeIdIt = particleRecursionModelIds_.find(key);
+        if (runtimeIdIt == particleRecursionModelIds_.end())
+            continue;
+        const uint32_t runtimeId = runtimeIdIt->second;
+        const auto runtimeIt = particleRecursionModels_.find(runtimeId);
+        if (runtimeIt == particleRecursionModels_.end())
+            continue;
+
+        for (uint16_t childIndex :
+             runtimeIt->second.validEmitterIndices) {
+            const auto stateIt = std::find_if(
+                inst.recursiveEmitterStates.begin(),
+                inst.recursiveEmitterStates.end(),
+                [&](const M2RecursiveEmitterState& state) {
+                    return state.runtimeId == runtimeId &&
+                           state.parentEmitterIndex == parentIndex &&
+                           state.childEmitterIndex == childIndex;
+                });
+            if (stateIt == inst.recursiveEmitterStates.end()) {
+                inst.recursiveEmitterStates.push_back({
+                    .runtimeId = runtimeId,
+                    .parentEmitterIndex =
+                        static_cast<uint16_t>(parentIndex),
+                    .childEmitterIndex = childIndex,
+                    .accumulator = 0.0f,
+                    .gatePrev = 0
+                });
+            }
+        }
+    }
+
+    std::uniform_real_distribution<float> distN(-1.0f, 1.0f);
+
+    // Parent integration/emission has already completed this frame. Each child
+    // emitter now observes the complete post-birth parent pool, exactly as the
+    // Classic recursion law does.
+    for (auto& state : inst.recursiveEmitterStates) {
+        if (state.parentEmitterIndex >= gpu.particleEmitters.size())
+            continue;
+        const auto runtimeIt =
+            particleRecursionModels_.find(state.runtimeId);
+        if (runtimeIt == particleRecursionModels_.end())
+            continue;
+        const auto& runtime = runtimeIt->second;
+        if (state.childEmitterIndex >=
+            runtime.model.particleEmitters.size())
+            continue;
+
+        const auto& parentEmitter =
+            gpu.particleEmitters[state.parentEmitterIndex];
+        const auto& childEmitter =
+            runtime.model.particleEmitters[state.childEmitterIndex];
+
+        const float baseRate = firstTrackFloat(
+            childEmitter.emissionRate, 0.0f);
+        const float rate = std::max(
+            0.0f, m2_track::sampleFloat(
+                childEmitter.emissionRate, 0,
+                inst.animTime, inst.globalSequenceTime,
+                runtime.model.globalSequenceDurations,
+                baseRate));
+        const float enabled = m2_track::sampleFloat(
+            childEmitter.visibilityTrack, 0,
+            inst.animTime, inst.globalSequenceTime,
+            runtime.model.globalSequenceDurations, 1.0f);
+        const bool emitting = enabled > 0.0f && rate > 0.0f;
+
+        const float speedBase =
+            firstTrackFloat(childEmitter.emissionSpeed, 0.0f);
+        const float speedVariation =
+            firstTrackFloat(childEmitter.speedVariation, 0.0f);
+        const float verticalRange =
+            firstTrackFloat(childEmitter.verticalRange, 0.0f);
+        const float horizontalRange =
+            firstTrackFloat(childEmitter.horizontalRange, 0.0f);
+        const float gravity =
+            firstTrackFloat(childEmitter.gravity, 0.0f);
+        const float life =
+            firstTrackFloat(childEmitter.lifespan, 0.0f);
+        const float areaLength =
+            firstTrackFloat(childEmitter.emissionAreaLength, 0.0f);
+        const float areaWidth =
+            firstTrackFloat(childEmitter.emissionAreaWidth, 0.0f);
+        const float zSource =
+            firstTrackFloat(childEmitter.zSource, 0.0f);
+
+        if (!(life > 0.0f))
+            continue;
+
+        glm::mat4 parentFrame = inst.modelMatrix;
+        if (parentEmitter.bone < inst.boneMatrices.size())
+            parentFrame *= inst.boneMatrices[parentEmitter.bone];
+        const glm::mat3 parentLinear(parentFrame);
+        const bool modelSpace =
+            (parentEmitter.flags & 0x10u) != 0;
+
+        for (const auto& parentParticle : inst.particles) {
+            if (parentParticle.emitterIndex !=
+                static_cast<int>(state.parentEmitterIndex))
+                continue;
+
+            if (!emitting)
+                state.accumulator = 0.0f;
+            if ((childEmitter.flags & 0x8000u) != 0) {
+                if (emitting && state.gatePrev == 0)
+                    state.accumulator =
+                        std::floor(rate);
+            } else if (emitting) {
+                state.accumulator += rate * simDt;
+            }
+            const uint8_t gateNow = emitting ? 1 : 0;
+            state.gatePrev = gateNow;
+
+            while (state.accumulator >= 1.0f &&
+                   inst.recursiveParticles.size() <
+                       MAX_M2_PARTICLES) {
+                state.accumulator -= 1.0f;
+
+                const ClassicLocalBirth local =
+                    sampleClassicLocalBirth(
+                        childEmitter, verticalRange,
+                        horizontalRange, areaLength,
+                        areaWidth, zSource, particleRng_);
+
+                const float speed =
+                    speedBase *
+                    (1.0f + speedVariation *
+                        distN(particleRng_));
+
+                M2RecursiveParticle recursive;
+                recursive.runtimeId = state.runtimeId;
+                recursive.parentEmitterIndex =
+                    state.parentEmitterIndex;
+                recursive.childEmitterIndex =
+                    state.childEmitterIndex;
+
+                auto& particle = recursive.particle;
+                particle.emitterIndex =
+                    static_cast<int>(state.childEmitterIndex);
+                particle.life = 0.0f;
+                particle.maxLife = life;
+                particle.tileIndex = 0.0f;
+                particle.phase = particleRng_() & 0x7Fu;
+                particle.orientation =
+                    glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+                particle.angularVelocity = glm::vec3(0.0f);
+
+                if (modelSpace) {
+                    particle.position =
+                        parentParticle.position + local.offset;
+                    particle.velocity =
+                        local.direction * speed;
+                } else {
+                    particle.position =
+                        parentParticle.position +
+                        parentLinear * local.offset;
+                    particle.velocity =
+                        parentLinear * local.direction * speed;
+                }
+
+                if ((childEmitter.flags & 0x40u) != 0) {
+                    const float inheritedFactor =
+                        1.0f + speedVariation *
+                            distN(particleRng_);
+                    particle.velocity +=
+                        inheritedFactor *
+                        parentParticle.velocity;
+                }
+
+                particle.emitterOrigin =
+                    parentParticle.position;
+                inst.recursiveParticles.push_back(
+                    std::move(recursive));
+            }
+        }
+    }
+
+    // Unlike parent particles, recursion children born above are integrated on
+    // this same frame.
+    for (size_t i = 0;
+         i < inst.recursiveParticles.size();) {
+        auto& recursive = inst.recursiveParticles[i];
+        const auto runtimeIt =
+            particleRecursionModels_.find(recursive.runtimeId);
+        if (runtimeIt == particleRecursionModels_.end() ||
+            recursive.childEmitterIndex >=
+                runtimeIt->second.model.particleEmitters.size() ||
+            recursive.parentEmitterIndex >=
+                gpu.particleEmitters.size()) {
+            inst.recursiveParticles[i] =
+                inst.recursiveParticles.back();
+            inst.recursiveParticles.pop_back();
+            continue;
+        }
+
+        const auto& childEmitter =
+            runtimeIt->second.model.particleEmitters[
+                recursive.childEmitterIndex];
+        auto& particle = recursive.particle;
+        particle.life += simDt;
+        if (particle.life >= particle.maxLife) {
+            inst.recursiveParticles[i] =
+                inst.recursiveParticles.back();
+            inst.recursiveParticles.pop_back();
+            continue;
+        }
+
+        const float gravity =
+            firstTrackFloat(childEmitter.gravity, 0.0f);
+        particle.position += particle.velocity * simDt;
+        if (gravity != 0.0f) {
+            particle.position.z -=
+                0.5f * gravity * simDt * simDt;
+            particle.velocity.z -= gravity * simDt;
+        }
+        if (childEmitter.drag > 0.0f) {
+            const float drag =
+                std::min(simDt * childEmitter.drag, 1.0f);
+            particle.velocity -= drag * particle.velocity;
+        }
+
+        ++i;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Ribbon emitter simulation
 // ---------------------------------------------------------------------------
@@ -1347,6 +1715,216 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         }
     }
 
+    // Recursion children are private particle pools with their own emitter
+    // definition/texture/blend state. Even when the recursion record names a
+    // geometry model, Classic renders child records as particle quads.
+    for (auto& inst : instances) {
+        if (inst.forcedHidden || inst.recursiveParticles.empty() ||
+            !inst.cachedModel)
+            continue;
+
+        const auto& parentGpu = *inst.cachedModel;
+        for (const auto& recursive : inst.recursiveParticles) {
+            const auto runtimeIt =
+                particleRecursionModels_.find(recursive.runtimeId);
+            if (runtimeIt == particleRecursionModels_.end())
+                continue;
+            const auto& runtime = runtimeIt->second;
+            if (recursive.childEmitterIndex >=
+                    runtime.model.particleEmitters.size() ||
+                recursive.parentEmitterIndex >=
+                    parentGpu.particleEmitters.size())
+                continue;
+
+            const auto& em =
+                runtime.model.particleEmitters[
+                    recursive.childEmitterIndex];
+            const auto& parentEmitter =
+                parentGpu.particleEmitters[
+                    recursive.parentEmitterIndex];
+            const auto& p = recursive.particle;
+
+            VkTexture* tex = whiteTexture_.get();
+            VkDescriptorSet stableSet = VK_NULL_HANDLE;
+            if (recursive.childEmitterIndex <
+                runtime.emitterTextures.size()) {
+                tex = runtime.emitterTextures[
+                    recursive.childEmitterIndex];
+            }
+            if (recursive.childEmitterIndex <
+                runtime.emitterTexSets.size()) {
+                stableSet = runtime.emitterTexSets[
+                    recursive.childEmitterIndex];
+            }
+
+            const uint16_t tilesX =
+                std::max<uint16_t>(em.textureCols, 1);
+            const uint16_t tilesY =
+                std::max<uint16_t>(em.textureRows, 1);
+            const uint32_t totalTiles =
+                static_cast<uint32_t>(tilesX) *
+                static_cast<uint32_t>(tilesY);
+
+            ParticleGroupKey key{
+                .texture = tex,
+                .blendType =
+                    static_cast<uint8_t>(em.blendingType),
+                .tilesX = tilesX,
+                .tilesY = tilesY
+            };
+            auto& group = groups[key];
+            group.texture = tex;
+            group.blendType = em.blendingType;
+            group.tilesX = tilesX;
+            group.tilesY = tilesY;
+            if (group.preAllocSet == VK_NULL_HANDLE)
+                group.preAllocSet = stableSet;
+
+            const float lifeRatio =
+                p.life / std::max(p.maxLife, 0.001f);
+            const glm::vec3 color =
+                interpFBlockVec3(
+                    em.particleColor, lifeRatio);
+            const float alpha = std::min(
+                interpFBlockFloat(
+                    em.particleAlpha, lifeRatio),
+                1.0f);
+            float scale =
+                interpFBlockFloat(
+                    em.particleScale, lifeRatio);
+
+            const float twinkleNoise =
+                vanillaTwinkleNoise(
+                    em.twinkleSpeed, p.life, p.phase);
+            if (em.twinklePercent < 1.0f &&
+                twinkleNoise > em.twinklePercent)
+                continue;
+            if (std::abs(
+                    em.twinkleMax - em.twinkleMin) >= 1e-6f) {
+                scale *= glm::mix(
+                    em.twinkleMin, em.twinkleMax,
+                    twinkleNoise);
+            }
+            if ((em.flags & 0x20u) != 0)
+                scale *= inst.scale;
+
+            glm::vec3 drawPos = p.position;
+            glm::vec3 drawVelocity = p.velocity;
+            const bool modelSpace =
+                (parentEmitter.flags & 0x10u) != 0;
+            if (modelSpace) {
+                glm::mat4 liveFrame = inst.modelMatrix;
+                if (parentEmitter.bone <
+                    inst.boneMatrices.size()) {
+                    liveFrame *=
+                        inst.boneMatrices[
+                            parentEmitter.bone];
+                }
+                drawPos = glm::vec3(
+                    liveFrame *
+                    glm::vec4(p.position, 1.0f));
+                drawVelocity =
+                    glm::mat3(liveFrame) * p.velocity;
+            }
+
+            const float tLife =
+                glm::clamp(lifeRatio, 0.0f, 1.0f);
+            const float mid =
+                glm::clamp(
+                    em.lifeMidpoint, 0.001f, 1.0f);
+            const int seg = tLife <= mid ? 0 : 1;
+            float segT = seg == 0
+                ? tLife / mid
+                : (tLife - mid) /
+                    std::max(1.0f - mid, 0.001f);
+            segT = glm::clamp(segT, 0.0f, 1.0f) *
+                   0.99f + 0.005f;
+            const float repeat =
+                static_cast<float>(
+                    em.headCellRepeat[seg]);
+            const float cellT = repeat != 1.0f
+                ? segT * repeat -
+                    std::floor(segT * repeat)
+                : segT;
+
+            auto sampleCell =
+                [&](const uint16_t begin[2],
+                    const uint16_t finish[2]) {
+                    if (totalTiles <= 1)
+                        return 0.0f;
+                    const int b =
+                        static_cast<int>(begin[seg]);
+                    const int e =
+                        static_cast<int>(finish[seg]);
+                    const int baseCell =
+                        e >= b ? b : b + 1;
+                    const int span =
+                        e >= b ? e - b + 1
+                               : e - b - 1;
+                    const int authoredCell =
+                        static_cast<int>(
+                            std::floor(
+                                baseCell +
+                                span * cellT)) &
+                        0xFF;
+                    return static_cast<float>(
+                        static_cast<uint32_t>(
+                            authoredCell) %
+                        totalTiles);
+                };
+
+            float spinAngle = em.spin * p.life;
+            if (spinAngle < 0.0f &&
+                (p.phase & 0x20u) != 0)
+                spinAngle = -spinAngle;
+
+            auto appendRecord =
+                [&](float tileIndex, float spin,
+                    float tailSeconds,
+                    float tailMode) {
+                    auto& vd = group.vertexData;
+                    vd.push_back(drawPos.x);
+                    vd.push_back(drawPos.y);
+                    vd.push_back(drawPos.z);
+                    vd.push_back(color.r);
+                    vd.push_back(color.g);
+                    vd.push_back(color.b);
+                    vd.push_back(alpha);
+                    vd.push_back(scale);
+                    vd.push_back(tileIndex);
+                    vd.push_back(spin);
+                    vd.push_back(drawVelocity.x);
+                    vd.push_back(drawVelocity.y);
+                    vd.push_back(drawVelocity.z);
+                    vd.push_back(tailSeconds);
+                    vd.push_back(tailMode);
+                    ++totalParticles;
+                };
+
+            if (em.headOrTail != 1) {
+                appendRecord(
+                    sampleCell(
+                        em.headCellBegin,
+                        em.headCellEnd),
+                    spinAngle, 0.0f, 0.0f);
+            }
+            if (em.headOrTail >= 1) {
+                float tailSeconds =
+                    std::max(0.0f, em.tailTime);
+                if ((em.flags & 0x400u) != 0) {
+                    tailSeconds = std::min(
+                        tailSeconds,
+                        std::max(0.0f, p.life));
+                }
+                appendRecord(
+                    sampleCell(
+                        em.tailCellBegin,
+                        em.tailCellEnd),
+                    0.0f, tailSeconds, 1.0f);
+            }
+        }
+    }
+
     // Periodic diagnostic: spell effect particle count
     {
         static uint32_t spellParticleDiagFrame_ = 0;
@@ -1354,7 +1932,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             size_t spellPtc = 0;
             for (const auto& inst : instances) {
                 if (inst.cachedModel && inst.cachedModel->isSpellEffect)
-                    spellPtc += inst.particles.size();
+                    spellPtc += inst.particles.size() +
+                                inst.recursiveParticles.size();
             }
             if (spellPtc > 0) {
                 LOG_INFO("SpellEffect: rendering ", spellPtc, " spell particles (",
