@@ -1541,8 +1541,15 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             em.position.z = readValue<float>(m2Data, base + 0x10);
             em.bone       = readValue<uint16_t>(m2Data, base + 0x14);
             em.texture    = readValue<uint16_t>(m2Data, base + 0x16);
-            em.blendingType = readValue<uint8_t>(m2Data, base + 0x28);
-            em.emitterType  = readValue<uint8_t>(m2Data, base + 0x29);
+            if (isVanilla) {
+                em.blendingType = static_cast<uint8_t>(
+                    readValue<uint16_t>(m2Data, base + 0x28));
+                em.emitterType = static_cast<uint8_t>(
+                    readValue<uint16_t>(m2Data, base + 0x2A));
+            } else {
+                em.blendingType = readValue<uint8_t>(m2Data, base + 0x28);
+                em.emitterType  = readValue<uint8_t>(m2Data, base + 0x29);
+            }
             em.textureTileRotation = readValue<int16_t>(m2Data, base + 0x2E);
             em.textureRows = readValue<uint16_t>(m2Data, base + 0x30);
             em.textureCols = readValue<uint16_t>(m2Data, base + 0x32);
@@ -1565,13 +1572,13 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 parseTrackV(0xA4, em.gravity);             // +28 = 0xC0
                 parseTrackV(0xC0, em.lifespan);            // +28 = 0xDC
                 parseTrackV(0xDC, em.emissionRate);        // +28 = 0xF8
-                // Classic layout names these width then length. Keeping them
-                // crossed changes plane/sphere emitter shape.
-                parseTrackV(0xF8, em.emissionAreaWidth);   // +28 = 0x114
-                parseTrackV(0x114, em.emissionAreaLength); // +28 = 0x130
-                // The final Classic track is emitter visibility (byte keys),
-                // not deceleration/z-source.
-                parseTrackV(0x130, em.visibilityTrack, TrackType::BYTE_BOOL);
+                // Classic v256 keeps width/length as float tracks followed by
+                // zSource at +0x130. The on/off gate lives separately at the
+                // record tail (+0x1DC) as M2Track<uchar>.
+                parseTrackV(0xF8, em.emissionAreaLength);  // +28 = 0x114
+                parseTrackV(0x114, em.emissionAreaWidth); // +28 = 0x130
+                parseTrackV(0x130, em.zSource);           // +28 = 0x14C
+                parseTrackV(0x1DC, em.visibilityTrack, TrackType::BYTE_BOOL);
 
                 // Vanilla: NO FBlocks - color/alpha/scale are static inline values
                 // Layout (empirically confirmed from real vanilla M2 files):
@@ -1637,7 +1644,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 parseTrack(0xB0, em.emissionRate);
                 parseTrack(0xC8, em.emissionAreaLength);
                 parseTrack(0xDC, em.emissionAreaWidth);
-                parseTrack(0xF0, em.deceleration);
+                parseTrack(0xF0, em.zSource);
 
                 // Parse FBlocks (color, alpha, scale) - FBlocks are 16 bytes each
                 parseFBlock(m2Data, base + 0x104, em.particleColor, 0);
