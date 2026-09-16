@@ -312,21 +312,27 @@ void main() {
     if (unlit == 0 && !vanillaRendering)
         result += localLightContribution(FragPos, norm, texColor.rgb);
 
-    // Vanilla renderFlags bit 0x02 is Unfogged. Respect the authored state
-    // instead of forcing distance fog onto every M2 batch.
+    // Vanilla renderFlags bit 0x02 is Unfogged. Otherwise the original
+    // client chooses the fog COLOUR from the blend mode:
+    //   0/1/2 -> scene fog, 3/4 -> black, 5 -> white, 6 -> mid grey.
+    // The distance span itself remains the normal scene fog span.
     if (!(vanillaRendering && unfogged != 0)) {
         float dist = length(viewPos.xyz - FragPos);
         float fogFactor = clamp((fogParams.y - dist) / (fogParams.y - fogParams.x), 0.0, 1.0);
-        if (blendMode >= 3) {
-            // Additive. Mixing toward the fog colour would give the card's black
-            // corners the fog's colour, and additive then adds that to the scene -
-            // the whole quad shows up as a lit rectangle hanging in the air, which
-            // is what Orgrimmar's bonfire glow was doing to the wall behind it.
-            // Distance can only take an additive contribution away.
-            result *= fogFactor;
-        } else {
-            result = mix(fogColor.rgb, result, fogFactor);
+        vec3 materialFogColor = fogColor.rgb;
+        if (vanillaRendering) {
+            if (blendMode == 3 || blendMode == 4) {
+                materialFogColor = vec3(0.0);
+            } else if (blendMode == 5) {
+                materialFogColor = vec3(1.0);
+            } else if (blendMode == 6) {
+                materialFogColor = vec3(128.0 / 255.0);
+            }
+        } else if (blendMode >= 3) {
+            // Keep Kraken's non-Vanilla additive fade behaviour unchanged.
+            materialFogColor = vec3(0.0);
         }
+        result = mix(materialFogColor, result, fogFactor);
     }
 
     float outAlpha = texColor.a * vFadeAlpha;

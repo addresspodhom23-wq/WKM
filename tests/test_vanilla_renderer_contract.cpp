@@ -74,5 +74,13 @@ int main() {
     assert(vkPipeline.find("dstColorBlendFactor = VK_BLEND_FACTOR_SRC_COLOR") != std::string::npos);
     assert(m2Render.find("case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_") != std::string::npos);
     assert(m2Render.find("case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_") != std::string::npos);
+
+    // Vanilla fog colour is blend-mode dependent: Add/AddAlpha -> black,
+    // Mod -> white, Mod2x -> 128/255 grey. Unfogged still bypasses it entirely.
+    assert(m2.find("blendMode == 3 || blendMode == 4") != std::string::npos);
+    assert(m2.find("blendMode == 5") != std::string::npos);
+    assert(m2.find("vec3(1.0)") != std::string::npos);
+    assert(m2.find("blendMode == 6") != std::string::npos);
+    assert(m2.find("vec3(128.0 / 255.0)") != std::string::npos);
     return 0;
 }
