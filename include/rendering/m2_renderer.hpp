@@ -270,15 +270,21 @@ struct M2Instance {
     // Ribbon emitter state
     struct RibbonEdge {
         glm::vec3 worldPos;   // Spine world position when this edge was born
+        glm::vec3 upWorld;    // Authored ribbon cross-section axis at birth
         glm::vec3 color;      // Interpolated color at birth
         float     alpha;      // Interpolated alpha at birth
         float     heightAbove;// Half-width above spine
         float     heightBelow;// Half-width below spine
         float     age;        // Seconds since spawned
     };
-    // One deque of edges per ribbon emitter on this instance
+    // One deque of edges per ribbon emitter on this instance.
     std::vector<std::deque<RibbonEdge>> ribbonEdges;
-    std::vector<float> ribbonEdgeAccumulators; // fractional edge counter per emitter
+    std::vector<float> ribbonEdgeAccumulators; // fractional edge phase per emitter
+    // Previous live emitter pose. Vanilla inserts edge samples between the last
+    // and current pose rather than duplicating the current point after a long frame.
+    std::vector<glm::vec3> ribbonPrevSpines;
+    std::vector<glm::vec3> ribbonPrevUps;
+    std::vector<uint8_t> ribbonPoseValid;
 
     // Cached model flags (set at creation to avoid per-frame hash lookups)
     bool cachedHasAnimation = false;
