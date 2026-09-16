@@ -245,7 +245,7 @@ uint32_t M2Renderer::gatherLocalLights(const glm::vec3& cameraPos,
     return count;
 }
 
-/// The twelve main-pass pipelines, built once at startup and again after a
+/// The main-pass pipelines, built once at startup and again after a
 /// device loss.
 ///
 /// Both paths used to build them: initialize() here and recreatePipelines() in
@@ -332,16 +332,41 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     alphaTestPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true,
                                          VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
                                          /*alphaToCoverage=*/true);
-    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), false,
+    // Vanilla writes depth for every M2 batch by default, regardless of blend
+    // mode. Render flag 0x10 selects the no-write twin below.
+    alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true,
                                      VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    additiveOnePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditiveOne(), false,
+    additiveOnePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditiveOne(), true,
                                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), false,
+    additivePipeline_ = buildM2Pipeline(PipelineBuilder::blendAdditive(), true,
                                         VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    modulatePipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate(), false,
+    modulatePipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate(), true,
                                         VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
-    modulate2xPipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate2x(), false,
+    modulate2xPipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate2x(), true,
                                           VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+
+    noDepthWritePipelines_[M2_BLEND_OPAQUE] =
+        buildM2Pipeline(PipelineBuilder::blendDisabled(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    noDepthWritePipelines_[M2_BLEND_ALPHA_KEY] =
+        buildM2Pipeline(PipelineBuilder::blendAlpha(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                        /*alphaToCoverage=*/true);
+    noDepthWritePipelines_[M2_BLEND_ALPHA] =
+        buildM2Pipeline(PipelineBuilder::blendAlpha(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    noDepthWritePipelines_[M2_BLEND_ADD] =
+        buildM2Pipeline(PipelineBuilder::blendAdditiveOne(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    noDepthWritePipelines_[M2_BLEND_ADD_ALPHA] =
+        buildM2Pipeline(PipelineBuilder::blendAdditive(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    noDepthWritePipelines_[M2_BLEND_MODULATE] =
+        buildM2Pipeline(PipelineBuilder::blendModulate(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+    noDepthWritePipelines_[M2_BLEND_MODULATE2X] =
+        buildM2Pipeline(PipelineBuilder::blendModulate2x(), false,
+                        VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
 
     // --- Build particle pipelines ---
     if (particleVert.isValid() && particleFrag.isValid()) {
@@ -1130,6 +1155,7 @@ void M2Renderer::shutdown() {
     destroyPipeline(additivePipeline_);
     destroyPipeline(modulatePipeline_);
     destroyPipeline(modulate2xPipeline_);
+    for (auto& p : noDepthWritePipelines_) destroyPipeline(p);
     destroyPipeline(particlePipeline_);
     destroyPipeline(particleAdditivePipeline_);
     destroyPipeline(smokePipeline_);

@@ -1703,20 +1703,23 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                     if (forceCutout) effectiveBlendMode = 1;
 
+                    const uint8_t pipelineBlendMode =
+                        forceCutout ? M2_BLEND_OPAQUE :
+                        (effectiveBlendMode <= M2_BLEND_MODULATE2X
+                             ? effectiveBlendMode : M2_BLEND_ADD_ALPHA);
                     VkPipeline desiredPipeline;
-                    if (forceCutout) {
-                        desiredPipeline = opaquePipeline_;
-                    } else {
-                        switch (effectiveBlendMode) {
-                            case 0: desiredPipeline = opaquePipeline_; break;
-                            case 1: desiredPipeline = alphaTestPipeline_; break;
-                            case 2: desiredPipeline = alphaPipeline_; break;
-                            case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
-                            case M2_BLEND_ADD_ALPHA: desiredPipeline = additivePipeline_; break;
-                            case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_; break;
-                            case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
-                            default: desiredPipeline = additivePipeline_; break;
-                        }
+                    switch (pipelineBlendMode) {
+                        case M2_BLEND_OPAQUE: desiredPipeline = opaquePipeline_; break;
+                        case M2_BLEND_ALPHA_KEY: desiredPipeline = alphaTestPipeline_; break;
+                        case M2_BLEND_ALPHA: desiredPipeline = alphaPipeline_; break;
+                        case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
+                        case M2_BLEND_ADD_ALPHA: desiredPipeline = additivePipeline_; break;
+                        case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_; break;
+                        case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
+                        default: desiredPipeline = additivePipeline_; break;
+                    }
+                    if ((batch.materialFlags & 0x10u) != 0) {
+                        desiredPipeline = noDepthWritePipelines_[pipelineBlendMode];
                     }
                     if (desiredPipeline != currentPipeline) {
                         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
@@ -1934,14 +1937,20 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 else if (effectiveBlendMode == 4 || effectiveBlendMode == 5) effectiveBlendMode = 3;
             }
 
+            const uint8_t pipelineBlendMode =
+                effectiveBlendMode <= M2_BLEND_MODULATE2X
+                    ? effectiveBlendMode : M2_BLEND_ADD_ALPHA;
             VkPipeline desiredPipeline;
-            switch (effectiveBlendMode) {
+            switch (pipelineBlendMode) {
                 case M2_BLEND_ALPHA: desiredPipeline = alphaPipeline_; break;
                 case M2_BLEND_ADD: desiredPipeline = additiveOnePipeline_; break;
                 case M2_BLEND_ADD_ALPHA: desiredPipeline = additivePipeline_; break;
                 case M2_BLEND_MODULATE: desiredPipeline = modulatePipeline_; break;
                 case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                 default: desiredPipeline = additivePipeline_; break;
+            }
+            if ((batch.materialFlags & 0x10u) != 0) {
+                desiredPipeline = noDepthWritePipelines_[pipelineBlendMode];
             }
             if (desiredPipeline != currentPipeline) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);

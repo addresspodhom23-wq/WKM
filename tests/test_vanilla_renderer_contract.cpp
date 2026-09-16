@@ -82,5 +82,14 @@ int main() {
     assert(m2.find("vec3(1.0)") != std::string::npos);
     assert(m2.find("blendMode == 6") != std::string::npos);
     assert(m2.find("vec3(128.0 / 255.0)") != std::string::npos);
+
+    // Vanilla M2 depth writing is controlled by render flag 0x10, not by
+    // blend mode. Transparent/additive/modulate batches write depth unless
+    // their authored material explicitly disables it.
+    assert(m2Header.find("noDepthWritePipelines_[7]") != std::string::npos);
+    assert(m2Renderer.find("alphaPipeline_ = buildM2Pipeline(PipelineBuilder::blendAlpha(), true") != std::string::npos);
+    assert(m2Renderer.find("modulate2xPipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate2x(), true") != std::string::npos);
+    assert(m2Render.find("batch.materialFlags & 0x10u") != std::string::npos);
+    assert(m2Render.find("noDepthWritePipelines_[pipelineBlendMode]") != std::string::npos);
     return 0;
 }

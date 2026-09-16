@@ -545,7 +545,7 @@ public:
 
     void recreatePipelines();
 
-    /// Build the twelve main-pass pipelines. Called by initialize() and again by
+    /// Build the main-pass pipelines. Called by initialize() and again by
     /// recreatePipelines() after a device loss, which is the reason it exists:
     /// the two used to be separate copies of the same 190 lines.
     bool buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout);
@@ -648,6 +648,9 @@ private:
     VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 4: SRC_ALPHA + ONE
     VkPipeline modulatePipeline_ = VK_NULL_HANDLE;      // blend mode 5: DST_COLOR + ZERO
     VkPipeline modulate2xPipeline_ = VK_NULL_HANDLE;    // blend mode 6: DST_COLOR + SRC_COLOR
+    // Vanilla render flag 0x10 is the only authored switch that disables
+    // depth writes. One no-write twin per blend mode keeps blend math intact.
+    VkPipeline noDepthWritePipelines_[7] = {};
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
     // Shadow rendering (Phase 7)
