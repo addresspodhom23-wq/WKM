@@ -29,6 +29,9 @@ void main() {
     // Soft circular falloff for point-sprite edges.
     float edge = 1.0 - smoothstep(0.4, 0.5, length(p - 0.5));
     float alpha = texColor.a * vColor.a * edge * vFogVisibility;
-    vec3 rgb = texColor.rgb * vColor.rgb * alpha;
+    // Pipelines use straight-alpha blending (SRC_ALPHA for Blend/AddAlpha).
+    // Premultiplying RGB here and then applying SRC_ALPHA again produces
+    // alpha-squared particles: dim smoke, weak flames and undersaturated glows.
+    vec3 rgb = texColor.rgb * vColor.rgb;
     outColor = vec4(rgb, alpha);
 }
