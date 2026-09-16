@@ -1686,10 +1686,13 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
             vertexData.push_back(w1);
             vertexData.push_back(w2);
             vertexData.push_back(w3);
-            vertexData.push_back(static_cast<float>(std::min(v.boneIndices[0], uint8_t(127))));
-            vertexData.push_back(static_cast<float>(std::min(v.boneIndices[1], uint8_t(127))));
-            vertexData.push_back(static_cast<float>(std::min(v.boneIndices[2], uint8_t(127))));
-            vertexData.push_back(static_cast<float>(std::min(v.boneIndices[3], uint8_t(127))));
+            // M2 stores four full u8 bone indices. Preserve the complete
+            // authored 0..255 range; the vertex shader clamps only against
+            // this instance's actual uploaded boneCount.
+            vertexData.push_back(static_cast<float>(v.boneIndices[0]));
+            vertexData.push_back(static_cast<float>(v.boneIndices[1]));
+            vertexData.push_back(static_cast<float>(v.boneIndices[2]));
+            vertexData.push_back(static_cast<float>(v.boneIndices[3]));
         }
 
         // Upload vertex buffer to GPU

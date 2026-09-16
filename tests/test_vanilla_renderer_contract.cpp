@@ -152,5 +152,11 @@ int main() {
     assert(m2Internal.find("posedPivot") != std::string::npos);
     assert(m2Internal.find("glm::cross(camFwd, bz)") != std::string::npos);
     assert(renderer.find("camera->getViewMatrix())") != std::string::npos);
+
+    // M2 vertices carry full uint8 bone indices (0..255). Do not collapse
+    // indices 128..255 onto bone 127; the shader already clamps them against
+    // the instance's actual boneCount before indexing the palette.
+    assert(m2Renderer.find("static_cast<float>(v.boneIndices[0])") != std::string::npos);
+    assert(m2Renderer.find("uint8_t(127)") == std::string::npos);
     return 0;
 }
