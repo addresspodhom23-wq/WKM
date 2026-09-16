@@ -242,9 +242,11 @@ int main() {
     assert(m2Particles.find("const float azimuth = distN(particleRng_) * hRange") != std::string::npos);
     assert(m2Particles.find("speed *= 1.0f + speedVariation * distN(particleRng_)") != std::string::npos);
     assert(m2Particles.find("!vanillaRendering_ && std::abs(speed) < 0.01f") != std::string::npos);
-    assert(m2Particles.find("particleAdditiveOnePipeline_") != std::string::npos);
+    // Effect blend enum is not the mesh enum's mode-3 pipeline routing:
+    // Vanilla particles/ribbons use alpha-weighted additive for both 3 and 4.
+    assert(m2Particles.find("case 3:\n            case 4: desiredPipeline = particleAdditivePipeline_") != std::string::npos);
+    assert(m2Particles.find("case 3:\n                case 4: pipe = ribbonAdditivePipeline_") != std::string::npos);
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
-    assert(m2Particles.find("ribbonAdditiveOnePipeline_") != std::string::npos);
     assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
 
     // Classic v256 particle record: width/length are separate tracks and
