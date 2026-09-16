@@ -229,11 +229,18 @@ int main() {
     assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
 
-    // Vanilla effect trajectories use angular cone ranges around +Z, keep
-    // authored zero speed/gravity/curves, and distinguish all material blends.
-    assert(m2Particles.find("const float phi = (distN(particleRng_) + 1.0f) * 0.5f") != std::string::npos);
-    assert(m2Particles.find("const float theta = distN(particleRng_) * 0.5f * hRange") != std::string::npos);
-    assert(m2Particles.find("speedVariation") != std::string::npos);
+    // Vanilla effect trajectories use the authored emitter kernel: planes
+    // spawn across their rectangle, spheres across the areaLength/areaWidth
+    // shell, ranges are angles, and variation is fractional authored speed.
+    assert(m2Particles.find("if (em.emitterType == 2)") != std::string::npos);
+    assert(m2Particles.find("const float inner = std::min(areaLength, areaWidth)") != std::string::npos);
+    assert(m2Particles.find("localPos += shell * radius") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x100u)") != std::string::npos);
+    assert(m2Particles.find("areaLength * 0.5f * distN(particleRng_)") != std::string::npos);
+    assert(m2Particles.find("areaWidth  * 0.5f * distN(particleRng_)") != std::string::npos);
+    assert(m2Particles.find("const float polar = distN(particleRng_) * vRange") != std::string::npos);
+    assert(m2Particles.find("const float azimuth = distN(particleRng_) * hRange") != std::string::npos);
+    assert(m2Particles.find("speed *= 1.0f + speedVariation * distN(particleRng_)") != std::string::npos);
     assert(m2Particles.find("!vanillaRendering_ && std::abs(speed) < 0.01f") != std::string::npos);
     assert(m2Particles.find("particleAdditiveOnePipeline_") != std::string::npos);
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
@@ -263,6 +270,23 @@ int main() {
     assert(m2Particles.find("m2_track::sampleFloat(") != std::string::npos);
     assert(m2Particles.find("m2_track::sampleVec3(") != std::string::npos);
     assert(m2Particles.find("boneIdx = 0") == std::string::npos);
+
+    // Vanilla ribbon history keeps the emitter bone's cross-section axis,
+    // interpolates newly emitted edges between consecutive poses, clamps the
+    // reference lifetime/rate, and applies age-squared gravity sag.
+    assert(m2Header.find("glm::vec3 upWorld") != std::string::npos);
+    assert(m2Header.find("ribbonPrevSpines") != std::string::npos);
+    assert(m2Header.find("ribbonPoseValid") != std::string::npos);
+    assert(m2Particles.find("std::ceil(std::max(0.0f, em.edgesPerSecond))") != std::string::npos);
+    assert(m2Particles.find("std::max(0.25f, em.edgeLifetime)") != std::string::npos);
+    assert(m2Particles.find("glm::mix(\n                    inst.ribbonPrevSpines[ri], spineWorld, interpolation)") != std::string::npos);
+    assert(m2Particles.find("2.0f * em.gravity * ageBefore * simDt") != std::string::npos);
+    assert(m2Particles.find("vanillaRendering_ ? e.upWorld") != std::string::npos);
+    assert(m2Particles.find("e.age / normalizedLifetime") != std::string::npos);
+
+    // The ground-detail opaque gate must not reference a pass-local variable
+    // before it is declared; this is also the authored Vanilla cutout exception.
+    assert(m2Render.find("!(vanillaRendering_ && model.isGroundDetail)") != std::string::npos);
 
     // World-doodad fade keeps the 224/255 AlphaKey silhouette stable: object
     // fade affects source alpha/output blend, not the texel-alpha comparison.
