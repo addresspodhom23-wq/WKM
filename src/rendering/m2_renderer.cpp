@@ -435,8 +435,12 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
                 .build(device, vkCtx_->getPipelineCache());
         };
 
-        particlePipeline_ = buildParticlePipeline(PipelineBuilder::blendAlpha());
-        particleAdditivePipeline_ = buildParticlePipeline(PipelineBuilder::blendAdditive());
+        particleOpaquePipeline_      = buildParticlePipeline(PipelineBuilder::blendDisabled());
+        particlePipeline_            = buildParticlePipeline(PipelineBuilder::blendAlpha());
+        particleAdditiveOnePipeline_ = buildParticlePipeline(PipelineBuilder::blendAdditiveOne());
+        particleAdditivePipeline_    = buildParticlePipeline(PipelineBuilder::blendAdditive());
+        particleModulatePipeline_    = buildParticlePipeline(PipelineBuilder::blendModulate());
+        particleModulate2xPipeline_  = buildParticlePipeline(PipelineBuilder::blendModulate2x());
     }
 
     // --- Build smoke pipeline ---
@@ -517,8 +521,12 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
                     .build(device, vkCtx_->getPipelineCache());
             };
 
-            ribbonPipeline_         = buildRibbonPipeline(PipelineBuilder::blendAlpha());
-            ribbonAdditivePipeline_ = buildRibbonPipeline(PipelineBuilder::blendAdditive());
+            ribbonOpaquePipeline_      = buildRibbonPipeline(PipelineBuilder::blendDisabled());
+            ribbonPipeline_            = buildRibbonPipeline(PipelineBuilder::blendAlpha());
+            ribbonAdditiveOnePipeline_ = buildRibbonPipeline(PipelineBuilder::blendAdditiveOne());
+            ribbonAdditivePipeline_    = buildRibbonPipeline(PipelineBuilder::blendAdditive());
+            ribbonModulatePipeline_    = buildRibbonPipeline(PipelineBuilder::blendModulate());
+            ribbonModulate2xPipeline_  = buildRibbonPipeline(PipelineBuilder::blendModulate2x());
         }
         ribVert.destroy(); ribFrag.destroy();
     }
@@ -1195,11 +1203,19 @@ void M2Renderer::shutdown() {
     for (auto& p : noDepthWritePipelines_) destroyPipeline(p);
     for (auto& p : noDepthTestPipelines_) destroyPipeline(p);
     for (auto& p : noDepthTestNoWritePipelines_) destroyPipeline(p);
+    destroyPipeline(particleOpaquePipeline_);
     destroyPipeline(particlePipeline_);
+    destroyPipeline(particleAdditiveOnePipeline_);
     destroyPipeline(particleAdditivePipeline_);
+    destroyPipeline(particleModulatePipeline_);
+    destroyPipeline(particleModulate2xPipeline_);
     destroyPipeline(smokePipeline_);
+    destroyPipeline(ribbonOpaquePipeline_);
     destroyPipeline(ribbonPipeline_);
+    destroyPipeline(ribbonAdditiveOnePipeline_);
     destroyPipeline(ribbonAdditivePipeline_);
+    destroyPipeline(ribbonModulatePipeline_);
+    destroyPipeline(ribbonModulate2xPipeline_);
 
     destroy(device, pipelineLayout_);
     destroy(device, particlePipelineLayout_);
