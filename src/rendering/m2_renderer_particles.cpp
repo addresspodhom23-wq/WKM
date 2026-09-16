@@ -309,19 +309,15 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
         auto& edges    = inst.ribbonEdges[ri];
         auto& accum    = inst.ribbonEdgeAccumulators[ri];
 
-        // Determine bone world position for spine
-        glm::vec3 spineWorld = inst.position;
-        // Use referenced bone; fall back to bone 0 if out of range (common for spell effects
-        // where ribbon bone fields may be unset/garbage, e.g. bone=4294967295)
-        uint32_t boneIdx = em.bone;
-        if (boneIdx >= inst.boneMatrices.size() && !inst.boneMatrices.empty()) {
-            boneIdx = 0;
-        }
+        // Ribbon emitter positions are local to their authored bone. A missing
+        // / 0xFFFF bone means model space; it must not silently snap to bone 0.
+        glm::vec4 local(em.position.x, em.position.y, em.position.z, 1.0f);
+        glm::vec3 spineWorld;
+        const uint32_t boneIdx = em.bone;
         if (boneIdx < inst.boneMatrices.size()) {
-            glm::vec4 local(em.position.x, em.position.y, em.position.z, 1.0f);
-            spineWorld = glm::vec3(inst.modelMatrix * inst.boneMatrices[boneIdx] * local);
+            spineWorld = glm::vec3(
+                inst.modelMatrix * inst.boneMatrices[boneIdx] * local);
         } else {
-            glm::vec4 local(em.position.x, em.position.y, em.position.z, 1.0f);
             spineWorld = glm::vec3(inst.modelMatrix * local);
         }
 
@@ -329,25 +325,25 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
         if (std::isnan(spineWorld.x) || std::isnan(spineWorld.y) || std::isnan(spineWorld.z))
             continue;
 
-        // Evaluate animated tracks (use first available sequence key, or fallback value)
-        auto getFloatVal = [&](const pipeline::M2AnimationTrack& track, float fallback) -> float {
-            for (const auto& seq : track.sequences) {
-                if (!seq.floatValues.empty()) return seq.floatValues[0];
-            }
-            return fallback;
-        };
-        auto getVec3Val = [&](const pipeline::M2AnimationTrack& track, glm::vec3 fallback) -> glm::vec3 {
-            for (const auto& seq : track.sequences) {
-                if (!seq.vec3Values.empty()) return seq.vec3Values[0];
-            }
-            return fallback;
-        };
-
-        float visibility  = getFloatVal(em.visibilityTrack, 1.0f);
-        float heightAbove = getFloatVal(em.heightAboveTrack, 0.5f);
-        float heightBelow = getFloatVal(em.heightBelowTrack, 0.5f);
-        glm::vec3 color   = getVec3Val(em.colorTrack, glm::vec3(1.0f));
-        float alpha       = getFloatVal(em.alphaTrack, 1.0f);
+        // Sample the ribbon's authored tracks at the instance's current
+        // animation/global-sequence time. Taking key[0] made weapon trails and
+        // spell ribbons permanently inherit their first frame.
+        const auto& gsd = gpu.globalSequenceDurations;
+        float visibility = m2_track::sampleFloat(
+            em.visibilityTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gsd, 1.0f);
+        float heightAbove = std::max(0.0f, m2_track::sampleFloat(
+            em.heightAboveTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gsd, 0.0f));
+        float heightBelow = std::max(0.0f, m2_track::sampleFloat(
+            em.heightBelowTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gsd, 0.0f));
+        glm::vec3 color = m2_track::sampleVec3(
+            em.colorTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gsd, glm::vec3(1.0f));
+        float alpha = glm::clamp(m2_track::sampleFloat(
+            em.alphaTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gsd, 1.0f), 0.0f, 1.0f);
 
         // Age existing edges and remove expired ones
         for (auto& e : edges) {
