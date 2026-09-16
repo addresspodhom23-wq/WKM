@@ -291,7 +291,7 @@ void M2Renderer::removeInstance(uint32_t instanceId) {
         if (ri.cachedIsSmoke) smokeInstanceIndices_.push_back(i);
         if (ri.cachedIsInstancePortal) portalInstanceIndices_.push_back(i);
         if (ri.cachedHasParticleEmitters) particleInstanceIndices_.push_back(i);
-        if (ri.cachedHasAnimation && !ri.cachedDisableAnimation)
+        if (ri.cachedModel && authoredAnimationEnabled(*ri.cachedModel))
             animatedInstanceIndices_.push_back(i);
         else if (ri.cachedHasParticleEmitters)
             particleOnlyInstanceIndices_.push_back(i);
@@ -521,7 +521,7 @@ void M2Renderer::rebuildSpatialIndex() {
         if (inst.cachedHasParticleEmitters) {
             particleInstanceIndices_.push_back(i);
         }
-        if (inst.cachedHasAnimation && !inst.cachedDisableAnimation) {
+        if (inst.cachedModel && authoredAnimationEnabled(*inst.cachedModel)) {
             animatedInstanceIndices_.push_back(i);
         } else if (inst.cachedHasParticleEmitters) {
             particleOnlyInstanceIndices_.push_back(i);

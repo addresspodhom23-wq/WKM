@@ -402,7 +402,7 @@ public:
     /** Configure this renderer for camera-centered sky M2s before initialize(). */
     void setSkyMode(bool enabled) { skyMode_ = enabled; }
     /** Mirror Renderer::classicRendering_ for CPU-side Vanilla batch routing. */
-    void setVanillaRendering(bool enabled) { vanillaRendering_ = enabled; }
+    void setVanillaRendering(bool enabled);
     void shutdown();
 
     [[nodiscard]] bool hasModel(uint32_t modelId) const;
@@ -970,7 +970,7 @@ private:
     bool spatialIndexDirty_ = false;
 
     // Fast-path instance index lists (rebuilt in rebuildSpatialIndex / on create)
-    std::vector<size_t> animatedInstanceIndices_;   // hasAnimation && !disableAnimation
+    std::vector<size_t> animatedInstanceIndices_;   // authored animation enabled in current render mode
     std::vector<size_t> particleOnlyInstanceIndices_; // !hasAnimation && hasParticleEmitters
     std::vector<size_t> particleInstanceIndices_;    // ALL instances with particle emitters
 
@@ -1048,6 +1048,7 @@ private:
     /// Both spawn paths need it and each used to have its own copy.
     void seedInstanceAnimation(const M2ModelGPU& model, uint32_t modelId,
                                M2Instance& instance);
+    [[nodiscard]] bool authoredAnimationEnabled(const M2ModelGPU& model) const;
 
     void destroyInstanceBones(M2Instance& inst, bool defer = false);
 };

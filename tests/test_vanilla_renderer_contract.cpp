@@ -131,5 +131,14 @@ int main() {
     assert(m2Render.find("!vanillaRendering_ && model.isInstancePortal") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && currentModel->isInstancePortal") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f") != std::string::npos);
+
+    // Vanilla vegetation/cloth uses authored M2 bone animation. Kraken's
+    // procedural tree wind, player brush and banner sway stay out of this path.
+    assert(m2Header.find("authoredAnimationEnabled") != std::string::npos);
+    assert(m2Render.find("model.isFoliageLike || model.isGroundDetail || model.isHangingCloth") != std::string::npos);
+    assert(m2Render.find("if (vanillaRendering)") != std::string::npos);
+    assert(m2Render.find("pc.isFoliage = 0") != std::string::npos);
+    assert(m2Render.find("fillSway(pc, model, skyMode_, vanillaRendering_)") != std::string::npos);
+    assert(m2Render.find("(!vanillaRendering_ && foliagePass) ? 1 : 0") != std::string::npos);
     return 0;
 }

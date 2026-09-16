@@ -97,6 +97,43 @@ void M2Renderer::seedInstanceAnimation(const M2ModelGPU& model, uint32_t modelId
     }
 }
 
+bool M2Renderer::authoredAnimationEnabled(const M2ModelGPU& model) const {
+    if (!model.hasAnimation) return false;
+    if (!model.disableAnimation) return true;
+
+    // Kraken freezes foliage (and, on Android, ground-detail) so its own
+    // procedural sway owns the motion. Vanilla instead uses the M2's authored
+    // bone sequence. Keep unrelated static/safety classifications unchanged.
+    return vanillaRendering_ &&
+           (model.isFoliageLike || model.isGroundDetail || model.isHangingCloth);
+}
+
+void M2Renderer::setVanillaRendering(bool enabled) {
+    if (vanillaRendering_ == enabled) return;
+    vanillaRendering_ = enabled;
+
+    // Animation membership is cached. Rebuild only these two lists when the
+    // rendering preset changes; spatial/collision state is unaffected.
+    animatedInstanceIndices_.clear();
+    particleOnlyInstanceIndices_.clear();
+    animatedInstanceIndices_.reserve(instances.size());
+    particleOnlyInstanceIndices_.reserve(instances.size());
+
+    for (size_t i = 0; i < instances.size(); ++i) {
+        auto& instance = instances[i];
+        const M2ModelGPU* model = instance.cachedModel;
+        const bool animate = model && authoredAnimationEnabled(*model);
+        if (animate) {
+            if (instance.boneMatrices.empty()) {
+                seedInstanceAnimation(*model, instance.modelId, instance);
+            }
+            animatedInstanceIndices_.push_back(i);
+        } else if (instance.cachedHasParticleEmitters) {
+            particleOnlyInstanceIndices_.push_back(i);
+        }
+    }
+}
+
 uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
                                      const glm::vec3& rotation, float scale,
                                      bool allowPositionDedup) {
@@ -164,7 +201,7 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
 
     // Initialize animation: play first sequence (usually Stand/Idle)
     const auto& mdl = mdlRef;
-    if (mdl.hasAnimation && !mdl.disableAnimation) {
+    if (authoredAnimationEnabled(mdl)) {
         seedInstanceAnimation(mdlRef, modelId, instance);
     }
 
@@ -190,7 +227,7 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
     if (!mdlRef.particleEmitters.empty()) {
         particleInstanceIndices_.push_back(idx);
     }
-    if (mdlRef.hasAnimation && !mdlRef.disableAnimation) {
+    if (authoredAnimationEnabled(mdlRef)) {
         animatedInstanceIndices_.push_back(idx);
     } else if (!mdlRef.particleEmitters.empty()) {
         particleOnlyInstanceIndices_.push_back(idx);
@@ -259,7 +296,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     instance.recomputeCachedCullFactors();
 
     // Initialize animation
-    if (mdl2.hasAnimation && !mdl2.disableAnimation) {
+    if (authoredAnimationEnabled(mdl2)) {
         seedInstanceAnimation(mdl2, modelId, instance);
     } else {
         // A model with no skeleton can still have particle emitters, and their
@@ -291,7 +328,7 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     if (!mdl2.particleEmitters.empty()) {
         particleInstanceIndices_.push_back(idx);
     }
-    if (mdl2.hasAnimation && !mdl2.disableAnimation) {
+    if (authoredAnimationEnabled(mdl2)) {
         animatedInstanceIndices_.push_back(idx);
     } else if (!mdl2.particleEmitters.empty()) {
         particleOnlyInstanceIndices_.push_back(idx);
@@ -1222,12 +1259,19 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     // rather than switched at a threshold - a bush a foot taller than its
     // neighbour should not sway ten times less. Both ends reproduce the numbers
     // that were there: a 20-yard tree still throws 0.35 model units at the tip.
-    auto fillSway = [](M2PushConstants& pc, const M2ModelGPU& mdl, bool sky) {
+    auto fillSway = [](M2PushConstants& pc, const M2ModelGPU& mdl,
+                       bool sky, bool vanillaRendering) {
         pc.swayRefHeight = 20.0f;
         pc.swayAmp = 1.0f;
         pc.plantHeight = 0.0f;
         if (sky) {
             pc.isFoliage = -1;
+            return;
+        }
+        if (vanillaRendering) {
+            // Vanilla vegetation and cloth use authored M2 bone animation.
+            // Disable Kraken wind, player-brush and synthetic cloth sway.
+            pc.isFoliage = 0;
             return;
         }
 #ifdef __ANDROID__
@@ -1368,7 +1412,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 continue;
             }
 
-            bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
+            bool modelNeedsAnimation = authoredAnimationEnabled(model);
             const bool foliageLikeModel = model.isFoliageLike;
             const bool particleDominantEffect = !vanillaRendering_ && model.isSpellEffect &&
                 !model.particleEmitters.empty() && model.batches.size() <= 2;
@@ -1780,7 +1824,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Push constants + instanced draw
                     M2PushConstants pc;
                     pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
-                    fillSway(pc, model, skyMode_);
+                    fillSway(pc, model, skyMode_, vanillaRendering_);
                     pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
                     vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
                     vkCmdDrawIndexed(cmd, batch.indexCount, groupSize, batch.indexStart, 0, 0);
@@ -1847,7 +1891,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
         if (!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f;
 
-        bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
+        bool modelNeedsAnimation = authoredAnimationEnabled(model);
         if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
         bool needsBones = modelNeedsAnimation && !instance.boneMatrices.empty();
         if (needsBones && instance.megaBoneOffset == 0) continue;
@@ -2033,7 +2077,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             // Push constants + single-instance draw
             M2PushConstants pc;
             pc.texCoordSet = static_cast<int32_t>(batch.textureUnit);
-            fillSway(pc, model, skyMode_);
+            fillSway(pc, model, skyMode_, vanillaRendering_);
             pc.instanceDataOffset = static_cast<int32_t>(drawOffset);
             vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
             vkCmdDrawIndexed(cmd, batch.indexCount, 1, batch.indexStart, 0, 0);
@@ -2244,7 +2288,7 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 #ifdef __ANDROID__
         params.foliageSway = 0; // Match stationary vegetation in the color pass.
 #else
-        params.foliageSway = foliagePass ? 1 : 0;
+        params.foliageSway = (!vanillaRendering_ && foliagePass) ? 1 : 0;
 #endif
         params.windTime = globalTime;
         params.foliageMotionDamp = 1.0f;
