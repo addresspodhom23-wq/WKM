@@ -1632,6 +1632,33 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 if (std::isfinite(tailTime) && tailTime >= 0.0f)
                     em.tailTime = tailTime;
 
+                // Classic spline emitter payload: count/offset at +0x1D4/+0x1D8.
+                // The file stores cubic-Bezier chains as 3 control points per
+                // segment plus the shared final endpoint.
+                if (em.emitterType == 3 && base + 0x1DC <= m2Data.size()) {
+                    const uint32_t splineCount =
+                        readValue<uint32_t>(m2Data, base + 0x1D4);
+                    const uint32_t splineOffset =
+                        readValue<uint32_t>(m2Data, base + 0x1D8);
+                    const uint32_t pointCount =
+                        splineCount >= 3 ? 3u * (splineCount / 3u) + 1u : 0u;
+                    const uint64_t bytes =
+                        static_cast<uint64_t>(pointCount) * 3u * sizeof(float);
+                    if (pointCount >= 4 && pointCount <= 4096 &&
+                        splineOffset > 0 &&
+                        static_cast<uint64_t>(splineOffset) + bytes <=
+                            m2Data.size()) {
+                        em.splinePoints.reserve(pointCount);
+                        for (uint32_t p = 0; p < pointCount; ++p) {
+                            const uint32_t at = splineOffset + p * 12u;
+                            em.splinePoints.emplace_back(
+                                readValue<float>(m2Data, at + 0u),
+                                readValue<float>(m2Data, at + 4u),
+                                readValue<float>(m2Data, at + 8u));
+                        }
+                    }
+                }
+
                 // Synthesize color FBlock from static BGRA values
                 // Vanilla M2 stores 3× uint32 as BGRA (little-endian: byte0=B, byte1=G, byte2=R, byte3=A)
                 {

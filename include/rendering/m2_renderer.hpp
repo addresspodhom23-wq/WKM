@@ -211,6 +211,7 @@ struct M2ModelGPU {
 struct M2Particle {
     glm::vec3 position;
     glm::vec3 velocity;
+    glm::vec3 emitterOrigin; // birth-space sphere centre for Classic kill-outbound
     float life;        // current age in seconds
     float maxLife;     // total lifespan
     int emitterIndex;  // which emitter spawned this
@@ -266,6 +267,7 @@ struct M2Instance {
 
     // Particle emitter state
     std::vector<float> emitterAccumulators;  // fractional particle counter per emitter
+    std::vector<uint8_t> particleEmitterGatePrev; // Classic burst rising-edge state
     std::vector<M2Particle> particles;
 
     // Ribbon emitter state

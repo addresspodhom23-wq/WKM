@@ -197,7 +197,8 @@ struct M2ParticleEmitter {
     uint16_t headCellRepeat[2] = {1, 1};
     uint16_t tailCellBegin[2] = {0, 0};
     uint16_t tailCellEnd[2] = {0, 0};
-    float tailTime = 0.0f;
+    float tailTime = 0.0f;   // seconds of current velocity shown behind particle
+    std::vector<glm::vec3> splinePoints; // Classic cubic-Bezier chain, raw local Z-up
     bool enabled = true;
 };
 

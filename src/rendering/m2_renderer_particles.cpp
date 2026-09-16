@@ -46,6 +46,85 @@ float vanillaTwinkleNoise(float speed, float age, uint32_t phase) {
     return vanillaTwinkleLut()[(index + phase) & 0x7Fu];
 }
 
+glm::vec3 rotateAroundAxis(const glm::vec3& v, glm::vec3 axis, float angle) {
+    const float axisLen2 = glm::dot(axis, axis);
+    if (axisLen2 <= 1e-12f) return v;
+    axis *= glm::inversesqrt(axisLen2);
+    const float cs = std::cos(angle);
+    const float sn = std::sin(angle);
+    return v * cs + glm::cross(axis, v) * sn +
+           axis * glm::dot(axis, v) * (1.0f - cs);
+}
+
+glm::vec3 cubicBezier(const std::vector<glm::vec3>& points,
+                      size_t segment, float t) {
+    const size_t i = segment * 3;
+    const float u = 1.0f - t;
+    return u * u * u * points[i] +
+           3.0f * u * u * t * points[i + 1] +
+           3.0f * u * t * t * points[i + 2] +
+           t * t * t * points[i + 3];
+}
+
+glm::vec3 cubicBezierTangent(const std::vector<glm::vec3>& points,
+                             size_t segment, float t) {
+    const size_t i = segment * 3;
+    const float u = 1.0f - t;
+    glm::vec3 tangent =
+        3.0f * u * u * (points[i + 1] - points[i]) +
+        6.0f * u * t * (points[i + 2] - points[i + 1]) +
+        3.0f * t * t * (points[i + 3] - points[i + 2]);
+    const float len2 = glm::dot(tangent, tangent);
+    return len2 > 1e-12f
+        ? tangent * glm::inversesqrt(len2)
+        : glm::vec3(0.0f, 0.0f, 1.0f);
+}
+
+bool sampleClassicSpline(const std::vector<glm::vec3>& points,
+                         float normalized,
+                         glm::vec3& position,
+                         glm::vec3& tangent) {
+    if (points.size() < 4) return false;
+    const size_t segments = (points.size() - 1) / 3;
+    if (segments == 0) return false;
+
+    constexpr int kChords = 16;
+    std::vector<float> lengths(segments * kChords + 1, 0.0f);
+    glm::vec3 previous = points.front();
+    float total = 0.0f;
+    for (size_t s = 0; s < segments; ++s) {
+        for (int chord = 1; chord <= kChords; ++chord) {
+            const glm::vec3 at =
+                cubicBezier(points, s, static_cast<float>(chord) / kChords);
+            total += glm::length(at - previous);
+            lengths[s * kChords + chord] = total;
+            previous = at;
+        }
+    }
+
+    if (total <= 1e-6f) {
+        position = points.front();
+        tangent = glm::vec3(0.0f, 0.0f, 1.0f);
+        return true;
+    }
+
+    const float target = glm::clamp(normalized, 0.0f, 1.0f) * total;
+    size_t hi = 1;
+    while (hi < lengths.size() && lengths[hi] < target) ++hi;
+    hi = std::min(hi, lengths.size() - 1);
+    const size_t lo = hi - 1;
+    const float span = lengths[hi] - lengths[lo];
+    const float chordT = span > 1e-6f
+        ? (target - lengths[lo]) / span : 0.0f;
+    const size_t segment =
+        std::min(segments - 1, lo / static_cast<size_t>(kChords));
+    const float local =
+        (static_cast<float>(lo % kChords) + chordT) / kChords;
+    position = cubicBezier(points, segment, local);
+    tangent = cubicBezierTangent(points, segment, local);
+    return true;
+}
+
 } // namespace
 
 // --- M2 Particle Emitter Helpers ---
@@ -117,6 +196,9 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
     if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
         inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
     }
+    if (inst.particleEmitterGatePrev.size() != gpu.particleEmitters.size()) {
+        inst.particleEmitterGatePrev.resize(gpu.particleEmitters.size(), 0);
+    }
 
     std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
     std::uniform_real_distribution<float> distN(-1.0f, 1.0f);
@@ -133,6 +215,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             // Do not bank hidden-time emission and release it as a burst when
             // the authored visibility track turns the emitter back on.
             inst.emitterAccumulators[ei] = 0.0f;
+            inst.particleEmitterGatePrev[ei] = 0;
             continue;
         }
 
@@ -179,10 +262,23 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                                 " rateGlobalSeq=", em.emissionRate.globalSequence);
                 }
             }
+            if (vanillaRendering_)
+                inst.particleEmitterGatePrev[ei] = 0;
             continue;
         }
 
-        inst.emitterAccumulators[ei] += rate * dt;
+        if (vanillaRendering_ && (em.flags & 0x8000u) != 0) {
+            // Classic burst emitters interpret rate as a COUNT and fire only
+            // on the rising edge of the enabled/rate gate.
+            if (inst.particleEmitterGatePrev[ei] == 0)
+                inst.emitterAccumulators[ei] =
+                    std::floor(std::max(0.0f, rate));
+            else
+                inst.emitterAccumulators[ei] = 0.0f;
+            inst.particleEmitterGatePrev[ei] = 1;
+        } else {
+            inst.emitterAccumulators[ei] += rate * dt;
+        }
 
         while (inst.emitterAccumulators[ei] >= 1.0f && inst.particles.size() < MAX_M2_PARTICLES) {
             inst.emitterAccumulators[ei] -= 1.0f;
@@ -228,7 +324,35 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             glm::vec3 dir(0.0f, 0.0f, 1.0f);
 
             if (vanillaRendering_) {
-                if (em.emitterType == 2) {
+                if (em.emitterType == 3 && em.splinePoints.size() >= 4) {
+                    const float splineStart = glm::clamp(areaLength, 0.0f, 1.0f);
+                    const float splineEnd = glm::clamp(areaWidth, 0.0f, 1.0f);
+                    const float splineT =
+                        splineStart + dist01(particleRng_) *
+                        (splineEnd - splineStart);
+                    glm::vec3 tangent(0.0f, 0.0f, 1.0f);
+                    if (sampleClassicSpline(
+                            em.splinePoints, splineT,
+                            emissionOffset, tangent)) {
+                        if (zSource != 0.0f) {
+                            dir = emissionOffset -
+                                  glm::vec3(0.0f, 0.0f, zSource);
+                            const float d2 = glm::dot(dir, dir);
+                            dir = d2 > 1e-12f
+                                ? dir * glm::inversesqrt(d2)
+                                : glm::vec3(0.0f, 0.0f, 1.0f);
+                        } else if (vRange != 0.0f) {
+                            dir = rotateAroundAxis(
+                                glm::vec3(0.0f, 0.0f, 1.0f),
+                                tangent, distN(particleRng_) * vRange);
+                            if (hRange != 0.0f)
+                                emissionOffset +=
+                                    dist01(particleRng_) * hRange * dir;
+                        } else {
+                            dir = glm::vec3(0.0f);
+                        }
+                    }
+                } else if (em.emitterType == 2) {
                     // Sphere: areaLength/areaWidth are min/max shell radius.
                     const float inner = std::min(areaLength, areaWidth);
                     const float outer = std::max(areaLength, areaWidth);
@@ -312,10 +436,14 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                 // entire lifetime instead of freezing the birth transform.
                 p.position = localPos;
                 p.velocity = dir * speed;
+                p.emitterOrigin = em.position;
             } else {
                 p.position = glm::vec3(
                     inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
                 p.velocity = rotMat * dir * speed;
+                p.emitterOrigin = glm::vec3(
+                    inst.modelMatrix * boneXform *
+                    glm::vec4(em.position, 1.0f));
             }
 
             // Kraken-only fallback for models whose authored/external animation
@@ -416,6 +544,7 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             const float grav = emitterGrav[p.emitterIndex];
             const bool modelSpace =
                 vanillaRendering_ && ((em.flags & 0x10u) != 0);
+            const glm::vec3 stepVelocity = p.velocity;
 
             if (modelSpace) {
                 // Reference simulation clamps long frames, advances on the
@@ -437,6 +566,16 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
                     p.velocity -= drag * p.velocity;
                 }
                 p.position += p.velocity * dt;
+            }
+
+            // Classic Sphere flag 0x80 terminates an inward stream when it
+            // crosses the centre and its pre-gravity velocity points outward.
+            if (vanillaRendering_ && em.emitterType == 2 &&
+                (em.flags & 0x80u) != 0 &&
+                glm::dot(stepVelocity, p.position - p.emitterOrigin) > 0.0f) {
+                inst.particles[i] = inst.particles.back();
+                inst.particles.pop_back();
+                continue;
             }
         } else {
             p.position += p.velocity * dt;

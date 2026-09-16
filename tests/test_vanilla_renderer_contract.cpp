@@ -297,6 +297,25 @@ int main() {
     assert(m2Particles.find("inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f)") != std::string::npos);
     assert(m2Particles.find("std::min(sdt * em.drag, 1.0f)") != std::string::npos);
 
+    // Classic spline emitters carry a cubic-Bezier chain at +0x1D4/+0x1D8.
+    // areaLength/areaWidth choose a normalized interval along arc length.
+    assert(m2Loader.find("base + 0x1D4") != std::string::npos);
+    assert(m2Loader.find("base + 0x1D8") != std::string::npos);
+    assert(m2LoaderHeader.find("splinePoints") != std::string::npos);
+    assert(m2Particles.find("sampleClassicSpline") != std::string::npos);
+    assert(m2Particles.find("cubicBezierTangent") != std::string::npos);
+    assert(m2Particles.find("rotateAroundAxis") != std::string::npos);
+    assert(m2Particles.find("splineStart + dist01(particleRng_)") != std::string::npos);
+
+    // Burst flag 0x8000 fires rate-as-count only on the gate's rising edge.
+    // Sphere flag 0x80 kills an inward stream once it crosses the birth centre.
+    assert(m2Header.find("particleEmitterGatePrev") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x8000u) != 0") != std::string::npos);
+    assert(m2Particles.find("std::floor(std::max(0.0f, rate))") != std::string::npos);
+    assert(m2Header.find("glm::vec3 emitterOrigin") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x80u) != 0") != std::string::npos);
+    assert(m2Particles.find("p.position - p.emitterOrigin") != std::string::npos);
+
     // Classic head/tail routing: 1 is tail-only, >=2 draws both. Tails use
     // the authored tail-cell ramp and extend opposite current velocity for
     // TailTime seconds; flag 0x400 clamps the streak to current particle age.
@@ -330,7 +349,7 @@ int main() {
     assert(m2ParticleVert.find("layout(location = 4) in float aSpin") != std::string::npos);
     assert(m2ParticleVert.find("float cs = cos(aSpin)") != std::string::npos);
     assert(m2Renderer.find("pBind.stride = 15 * sizeof(float)") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 10 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
 
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
