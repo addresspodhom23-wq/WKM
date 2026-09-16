@@ -656,6 +656,7 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
     size_t keySize;
     if (type == TrackType::FLOAT) keySize = sizeof(float);
     else if (type == TrackType::FIXED16) keySize = sizeof(int16_t);
+    else if (type == TrackType::BYTE_BOOL) keySize = sizeof(uint8_t);
     else if (type == TrackType::VEC3) keySize = sizeof(float) * 3;
     else keySize = compressedQuat ? sizeof(int16_t) * 4 : sizeof(float) * 4;
     if (disk.ofsKeys + disk.nKeys * keySize > data.size()) return;
@@ -690,6 +691,12 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         for (int16_t v : raw) {
             allFloatKeys.push_back(std::clamp(static_cast<float>(v) / 32767.0f, 0.0f, 1.0f));
         }
+    } else if (type == TrackType::BYTE_BOOL) {
+        auto raw = readArray<uint8_t>(data, disk.ofsKeys, disk.nKeys);
+        allFloatKeys.reserve(raw.size());
+        for (uint8_t v : raw) {
+            allFloatKeys.push_back(v != 0 ? 1.0f : 0.0f);
+        }
     } else if (type == TrackType::VEC3) {
         allVec3Keys = readArray<Vec3Disk>(data, disk.ofsKeys, disk.nKeys);
     } else if (compressedQuat) {
@@ -719,7 +726,8 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         uint32_t keyEnd = std::min(end, disk.nKeys);
         uint32_t keyCount = keyEnd - start;
 
-        if (type == TrackType::FLOAT || type == TrackType::FIXED16) {
+        if (type == TrackType::FLOAT || type == TrackType::FIXED16 ||
+            type == TrackType::BYTE_BOOL) {
             track.sequences[i].floatValues.assign(
                 allFloatKeys.begin() + start, allFloatKeys.begin() + start + keyCount);
         } else if (type == TrackType::VEC3) {
@@ -1621,99 +1629,130 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
         } // end size check
     }
 
-    // Parse ribbon emitters (WotLK only; vanilla format TBD).
-    // WotLK M2RibbonEmitter = 0xAC (172) bytes per entry.
-    static constexpr uint32_t RIBBON_SIZE_WOTLK = 0xAC;
+    // Parse ribbon emitters.
+    // Build 5875 / Classic uses a 0xE0-byte record with 28-byte
+    // M2TrackDiskVanilla tracks. WotLK uses 0xAC with 20-byte tracks.
+    // The fixed prefix (id, uint16 bone + padding, position, texture/material
+    // arrays) is shared, but every field after 0x24 moves with the track stride.
+    static constexpr uint32_t RIBBON_SIZE_WOTLK  = 0xAC;
+    static constexpr uint32_t RIBBON_SIZE_VANILLA = 0xE0;
     if (header.nRibbonEmitters > 0 && header.ofsRibbonEmitters > 0 &&
-        header.nRibbonEmitters < 64 && header.version >= 264) {
+        header.nRibbonEmitters < 64) {
+
+        const bool isVanillaRibbon = (header.version < 264);
+        const uint32_t ribbonSize =
+            isVanillaRibbon ? RIBBON_SIZE_VANILLA : RIBBON_SIZE_WOTLK;
 
         if (static_cast<size_t>(header.ofsRibbonEmitters) +
-                static_cast<size_t>(header.nRibbonEmitters) * RIBBON_SIZE_WOTLK <= m2Data.size()) {
+                static_cast<size_t>(header.nRibbonEmitters) * ribbonSize <= m2Data.size()) {
 
-            // Build sequence flags for parseAnimTrack
             std::vector<uint32_t> ribSeqFlags;
-            ribSeqFlags.reserve(model.sequences.size());
-            for (const auto& seq : model.sequences) {
-                ribSeqFlags.push_back(seq.flags);
+            if (!isVanillaRibbon) {
+                ribSeqFlags.reserve(model.sequences.size());
+                for (const auto& seq : model.sequences) {
+                    ribSeqFlags.push_back(seq.flags);
+                }
             }
 
             for (uint32_t ri = 0; ri < header.nRibbonEmitters; ri++) {
-                uint32_t base = header.ofsRibbonEmitters + ri * RIBBON_SIZE_WOTLK;
+                const uint32_t base = header.ofsRibbonEmitters + ri * ribbonSize;
 
                 M2RibbonEmitter rib;
-                rib.ribbonId     = readValue<int32_t>(m2Data, base + 0x00);
-                rib.bone         = readValue<uint32_t>(m2Data, base + 0x04);
-                rib.position.x   = readValue<float>(m2Data, base + 0x08);
-                rib.position.y   = readValue<float>(m2Data, base + 0x0C);
-                rib.position.z   = readValue<float>(m2Data, base + 0x10);
+                rib.ribbonId   = readValue<int32_t>(m2Data, base + 0x00);
+                // Both Classic and modern records store a uint16 bone index
+                // followed by a uint16 padding field. Reading uint32 here folds
+                // padding into the bone and sends the emitter to a bogus matrix.
+                rib.bone       = readValue<uint16_t>(m2Data, base + 0x04);
+                rib.position.x = readValue<float>(m2Data, base + 0x08);
+                rib.position.y = readValue<float>(m2Data, base + 0x0C);
+                rib.position.z = readValue<float>(m2Data, base + 0x10);
 
-                // textureIndices M2Array (0x14): count + offset → first element = texture lookup index
+                // textureIndices M2Array (0x14): first entry is a direct
+                // texture-array index. Texture-slot animation is handled by
+                // the renderer separately; keep slot 0 as the base texture.
                 {
-                    uint32_t nTex = readValue<uint32_t>(m2Data, base + 0x14);
-                    uint32_t ofsTex = readValue<uint32_t>(m2Data, base + 0x18);
+                    const uint32_t nTex = readValue<uint32_t>(m2Data, base + 0x14);
+                    const uint32_t ofsTex = readValue<uint32_t>(m2Data, base + 0x18);
                     if (nTex > 0 && ofsTex + sizeof(uint16_t) <= m2Data.size()) {
                         rib.textureIndex = readValue<uint16_t>(m2Data, ofsTex);
                     }
                 }
 
-                // materialIndices M2Array (0x1C): count + offset → first element = material index
+                // materialIndices M2Array (0x1C): preserve the first authored
+                // material lookup for blend-state selection.
                 {
-                    uint32_t nMat = readValue<uint32_t>(m2Data, base + 0x1C);
-                    uint32_t ofsMat = readValue<uint32_t>(m2Data, base + 0x20);
+                    const uint32_t nMat = readValue<uint32_t>(m2Data, base + 0x1C);
+                    const uint32_t ofsMat = readValue<uint32_t>(m2Data, base + 0x20);
                     if (nMat > 0 && ofsMat + sizeof(uint16_t) <= m2Data.size()) {
                         rib.materialIndex = readValue<uint16_t>(m2Data, ofsMat);
                     }
                 }
 
-                // colorTrack M2TrackDisk at 0x24 (vec3 RGB 0..1)
-                if (base + 0x24 + sizeof(M2TrackDisk) <= m2Data.size()) {
-                    M2TrackDisk disk = readValue<M2TrackDisk>(m2Data, base + 0x24);
-                    parseAnimTrack(m2Data, disk, rib.colorTrack, TrackType::VEC3, ribSeqFlags);
+                auto parseRibbonTrack = [&](uint32_t off,
+                                            M2AnimationTrack& track,
+                                            TrackType type) {
+                    if (isVanillaRibbon) {
+                        if (base + off + sizeof(M2TrackDiskVanilla) <= m2Data.size()) {
+                            parseAnimTrackVanilla(
+                                m2Data,
+                                readValue<M2TrackDiskVanilla>(m2Data, base + off),
+                                track, type);
+                        }
+                    } else if (base + off + sizeof(M2TrackDisk) <= m2Data.size()) {
+                        parseAnimTrack(
+                            m2Data,
+                            readValue<M2TrackDisk>(m2Data, base + off),
+                            track, type, ribSeqFlags);
+                    }
+                };
+
+                if (isVanillaRibbon) {
+                    // m2RibbonClassic_t, sizeof == 0xE0:
+                    // color 0x24, alpha 0x40, above 0x5C, below 0x78,
+                    // scalar fields 0x94..0xA3, texture-slot 0xA4,
+                    // visibility 0xC0, priority plane 0xDC.
+                    parseRibbonTrack(0x24, rib.colorTrack,       TrackType::VEC3);
+                    parseRibbonTrack(0x40, rib.alphaTrack,       TrackType::FIXED16);
+                    parseRibbonTrack(0x5C, rib.heightAboveTrack, TrackType::FLOAT);
+                    parseRibbonTrack(0x78, rib.heightBelowTrack, TrackType::FLOAT);
+
+                    rib.edgesPerSecond = readValue<float>(m2Data, base + 0x94);
+                    rib.edgeLifetime   = readValue<float>(m2Data, base + 0x98);
+                    rib.gravity        = readValue<float>(m2Data, base + 0x9C);
+                    rib.textureRows    = readValue<uint16_t>(m2Data, base + 0xA0);
+                    rib.textureCols    = readValue<uint16_t>(m2Data, base + 0xA2);
+
+                    parseRibbonTrack(0xC0, rib.visibilityTrack, TrackType::BYTE_BOOL);
+                } else {
+                    parseRibbonTrack(0x24, rib.colorTrack,       TrackType::VEC3);
+                    parseRibbonTrack(0x38, rib.alphaTrack,       TrackType::FIXED16);
+                    parseRibbonTrack(0x4C, rib.heightAboveTrack, TrackType::FLOAT);
+                    parseRibbonTrack(0x60, rib.heightBelowTrack, TrackType::FLOAT);
+
+                    rib.edgesPerSecond = readValue<float>(m2Data, base + 0x74);
+                    rib.edgeLifetime   = readValue<float>(m2Data, base + 0x78);
+                    rib.gravity        = readValue<float>(m2Data, base + 0x7C);
+                    rib.textureRows    = readValue<uint16_t>(m2Data, base + 0x80);
+                    rib.textureCols    = readValue<uint16_t>(m2Data, base + 0x82);
+
+                    parseRibbonTrack(0x98, rib.visibilityTrack, TrackType::BYTE_BOOL);
                 }
 
-                // alphaTrack M2TrackDisk at 0x38 (fixed16: int16/32767)
-                // Same nested-array layout as parseAnimTrack but keys are int16.
-                if (base + 0x38 + sizeof(M2TrackDisk) <= m2Data.size()) {
-                    parseAnimTrack(m2Data, readValue<M2TrackDisk>(m2Data, base + 0x38),
-                                   rib.alphaTrack, TrackType::FIXED16, ribSeqFlags);
-                }
-
-                // heightAboveTrack M2TrackDisk at 0x4C (float)
-                if (base + 0x4C + sizeof(M2TrackDisk) <= m2Data.size()) {
-                    M2TrackDisk disk = readValue<M2TrackDisk>(m2Data, base + 0x4C);
-                    parseAnimTrack(m2Data, disk, rib.heightAboveTrack, TrackType::FLOAT, ribSeqFlags);
-                }
-
-                // heightBelowTrack M2TrackDisk at 0x60 (float)
-                if (base + 0x60 + sizeof(M2TrackDisk) <= m2Data.size()) {
-                    M2TrackDisk disk = readValue<M2TrackDisk>(m2Data, base + 0x60);
-                    parseAnimTrack(m2Data, disk, rib.heightBelowTrack, TrackType::FLOAT, ribSeqFlags);
-                }
-
-                rib.edgesPerSecond = readValue<float>(m2Data, base + 0x74);
-                rib.edgeLifetime   = readValue<float>(m2Data, base + 0x78);
-                rib.gravity        = readValue<float>(m2Data, base + 0x7C);
-                rib.textureRows    = readValue<uint16_t>(m2Data, base + 0x80);
-                rib.textureCols    = readValue<uint16_t>(m2Data, base + 0x82);
                 if (rib.textureRows == 0) rib.textureRows = 1;
                 if (rib.textureCols == 0) rib.textureCols = 1;
 
-                // Clamp to sane values
-                if (rib.edgesPerSecond < 1.0f  || rib.edgesPerSecond > 200.0f) rib.edgesPerSecond = 15.0f;
-                if (rib.edgeLifetime   < 0.05f || rib.edgeLifetime   > 10.0f)  rib.edgeLifetime   = 0.5f;
-
-                // visibilityTrack M2TrackDisk at 0x98 - keys are uint8 (0/1), NOT float.
-                // Must read as uint8 and convert to float, else 0x01 reads as
-                // float ~1.4e-45 which fails the visibility > 0.5 check.
-                if (base + 0x98 + sizeof(M2TrackDisk) <= m2Data.size()) {
-                    parseAnimTrack(m2Data, readValue<M2TrackDisk>(m2Data, base + 0x98),
-                                   rib.visibilityTrack, TrackType::BYTE_BOOL, ribSeqFlags);
+                // Keep corrupt records from exploding per-instance state, but
+                // do not replace valid authored values in the normal range.
+                if (!std::isfinite(rib.edgesPerSecond) ||
+                    rib.edgesPerSecond < 0.0f || rib.edgesPerSecond > 10000.0f) {
+                    rib.edgesPerSecond = 0.0f;
                 }
-
-                // Skip garbage emitters (common M2 artifact: alternating emitters
-                // have bone=UINT_MAX or other invalid state)
-                if (rib.bone == 0xFFFFFFFF) {
-                    continue;
+                if (!std::isfinite(rib.edgeLifetime) ||
+                    rib.edgeLifetime < 0.0f || rib.edgeLifetime > 60.0f) {
+                    rib.edgeLifetime = 0.0f;
+                }
+                if (!std::isfinite(rib.gravity)) {
+                    rib.gravity = 0.0f;
                 }
 
                 model.ribbonEmitters.push_back(std::move(rib));
