@@ -279,6 +279,12 @@ int main() {
     assert(m2Loader.find("ranges.push_back({.start = 0, .end = disk.nTimestamps - 1})") != std::string::npos);
     assert(m2Loader.find("static_cast<size_t>(last) + 1") != std::string::npos);
     assert(m2Loader.find("const size_t end = static_cast<size_t>(keyLast) + 1") != std::string::npos);
+    // Sequence-local time begins at the animation's authored start timestamp,
+    // not at the first key. Otherwise a deliberately delayed first key fires
+    // at t=0 and Classic animations drift from the 1.12 timeline.
+    assert(m2Loader.find("hasAuthoredRanges && i < sequenceWindows.size()") != std::string::npos);
+    assert(m2Loader.find("baseTime = sequenceWindows[i].first") != std::string::npos);
+    assert(m2Loader.find("track.globalSequence < 0") != std::string::npos);
 
     // Vanilla point sprites keep the authored square billboard; the BLP alpha,
     // not Kraken's synthetic radial mask, defines their silhouette.
