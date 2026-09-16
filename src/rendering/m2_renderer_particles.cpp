@@ -165,38 +165,75 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             p.maxLife = life;
             p.tileIndex = 0.0f;
 
-            // Position: emitter position transformed by bone matrix
-            glm::vec3 localPos = em.position;
             glm::mat4 boneXform = glm::mat4(1.0f);
             if (em.bone < inst.boneMatrices.size()) {
                 boneXform = inst.boneMatrices[em.bone];
             }
-            glm::vec3 worldPos = glm::vec3(inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
-            p.position = worldPos;
 
-            // M2 stores launch speed plus a variation, and vertical/horizontal
-            // ranges as angular cone ranges in radians around authored +Z.
+            // M2 stores launch speed plus a fractional variation. Plane emitters
+            // spawn across their authored rectangle. Sphere emitters spawn on a
+            // shell between areaLength/areaWidth and normally travel radially.
             float speed = interpFloat(em.emissionSpeed, inst.animTime, inst.globalSequenceTime,
                                       inst.currentSequenceIndex, gpu.globalSequenceDurations);
             const float speedVariation = interpFloat(
                 em.speedVariation, inst.animTime, inst.globalSequenceTime,
                 inst.currentSequenceIndex, gpu.globalSequenceDurations);
-            float vRange = interpFloat(em.verticalRange, inst.animTime, inst.globalSequenceTime,
-                                       inst.currentSequenceIndex, gpu.globalSequenceDurations);
-            float hRange = interpFloat(em.horizontalRange, inst.animTime, inst.globalSequenceTime,
-                                       inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float vRange = interpFloat(
+                em.verticalRange, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float hRange = interpFloat(
+                em.horizontalRange, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float areaLength = interpFloat(
+                em.emissionAreaLength, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float areaWidth = interpFloat(
+                em.emissionAreaWidth, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
 
+            glm::vec3 localPos = em.position;
             glm::vec3 dir(0.0f, 0.0f, 1.0f);
+
             if (vanillaRendering_) {
-                const float phi = (distN(particleRng_) + 1.0f) * 0.5f *
-                                  std::max(0.0f, vRange);
-                const float theta = distN(particleRng_) * 0.5f * hRange;
-                const float sinPhi = std::sin(phi);
-                dir = glm::vec3(sinPhi * std::cos(theta),
-                                sinPhi * std::sin(theta),
-                                std::cos(phi));
-                speed = std::max(0.0f, speed +
-                    (dist01(particleRng_) - 0.5f) * speedVariation);
+                if (em.emitterType == 2) {
+                    // Sphere: areaLength/areaWidth are min/max shell radius.
+                    const float inner = std::min(areaLength, areaWidth);
+                    const float outer = std::max(areaLength, areaWidth);
+                    const float radius = inner + dist01(particleRng_) *
+                                         std::max(0.0f, outer - inner);
+                    const float latitude = distN(particleRng_) * vRange;
+                    const float longitude = distN(particleRng_) * hRange;
+                    const float clat = std::cos(latitude);
+                    const glm::vec3 shell(
+                        clat * std::cos(longitude),
+                        clat * std::sin(longitude),
+                        std::sin(latitude));
+
+                    localPos += shell * radius;
+                    // 0x100 is the authored "sphere up" behaviour. Otherwise
+                    // velocity follows the radial shell direction; negative
+                    // authored speed therefore produces a converging emitter.
+                    dir = (em.flags & 0x100u) ? glm::vec3(0.0f, 0.0f, 1.0f)
+                                             : shell;
+                } else {
+                    // Plane (and rare spline fallback): uniform rectangle in
+                    // emitter-local XY, then a symmetric cone around local +Z.
+                    localPos += glm::vec3(
+                        areaLength * 0.5f * distN(particleRng_),
+                        areaWidth  * 0.5f * distN(particleRng_),
+                        0.0f);
+                    const float polar = distN(particleRng_) * vRange;
+                    const float azimuth = distN(particleRng_) * hRange;
+                    const float sinPolar = std::sin(polar);
+                    dir = glm::vec3(
+                        sinPolar * std::cos(azimuth),
+                        sinPolar * std::sin(azimuth),
+                        std::cos(polar));
+                }
+
+                // Variation is a fraction of the authored speed. Do not clamp:
+                // negative speed is intentional for inward-moving sphere FX.
+                speed *= 1.0f + speedVariation * distN(particleRng_);
             } else {
                 // Preserve Kraken's historical non-Vanilla spread behaviour.
                 dir.x += distN(particleRng_) * hRange;
@@ -206,7 +243,10 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                 if (lenSq > 0.001f * 0.001f) dir *= glm::inversesqrt(lenSq);
             }
 
-            // Transform direction by bone + model orientation (rotation only)
+            p.position = glm::vec3(
+                inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
+
+            // Transform direction by bone + model orientation (rotation only).
             glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
             p.velocity = rotMat * dir * speed;
 
