@@ -187,22 +187,27 @@ struct M2ParticleEmitter {
 // Ribbon emitter definition parsed from M2 (WotLK format)
 struct M2RibbonEmitter {
     int32_t  ribbonId   = 0;
-    uint32_t bone       = 0;        // Bone that drives the ribbon spine
+    uint16_t bone       = 0xFFFF;   // Bone that drives the ribbon spine
     glm::vec3 position{0.0f};       // Offset from bone pivot
 
-    uint16_t textureIndex  = 0;     // First texture lookup index
-    uint16_t materialIndex = 0;     // First material lookup index (blend mode)
+    // Ribbons carry arrays, not one batch-style lookup. texSlotTrack selects
+    // which authored texture slot is active for the current animation frame.
+    std::vector<uint16_t> textureIndices;   // direct indices into textures[]
+    std::vector<uint16_t> materialIndices;  // direct indices into materials[]
+    uint16_t materialFlags = 0;
+    uint16_t blendMode = 2;                 // resolved from materialIndices[0]
 
     // Animated tracks
     M2AnimationTrack colorTrack;       // RGB 0..1
     M2AnimationTrack alphaTrack;       // float 0..1 (stored as fixed16 on disk)
     M2AnimationTrack heightAboveTrack; // Half-width above bone
     M2AnimationTrack heightBelowTrack; // Half-width below bone
-    M2AnimationTrack visibilityTrack;  // 0=hidden, 1=visible
+    M2AnimationTrack textureSlotTrack; // authored textureIndices[] slot (uint16)
+    M2AnimationTrack visibilityTrack;  // 0=hidden, 1=visible (byte)
 
     float edgesPerSecond = 15.0f;   // How many edge points are generated per second
     float edgeLifetime   = 0.5f;    // Seconds before edges expire
-    float gravity        = 0.0f;    // Downward pull on edges per s²
+    float gravity        = 0.0f;
     uint16_t textureRows = 1;
     uint16_t textureCols = 1;
 };
