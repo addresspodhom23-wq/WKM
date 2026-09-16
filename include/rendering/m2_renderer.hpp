@@ -215,6 +215,7 @@ struct M2Particle {
     float maxLife;     // total lifespan
     int emitterIndex;  // which emitter spawned this
     float tileIndex = 0.0f; // texture atlas tile index
+    uint32_t phase = 0;     // per-particle Classic twinkle LUT phase
 };
 
 /**
