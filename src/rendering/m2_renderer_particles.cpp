@@ -547,7 +547,7 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
                 case 0:
                 case 1: pipe = ribbonOpaquePipeline_; break;
                 case 2: pipe = ribbonPipeline_; break;
-                case 3: pipe = ribbonAdditiveOnePipeline_; break;
+                case 3:
                 case 4: pipe = ribbonAdditivePipeline_; break;
                 case 5: pipe = ribbonModulatePipeline_; break;
                 case 6: pipe = ribbonModulate2xPipeline_; break;
@@ -894,7 +894,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             case 0:
             case 1: desiredPipeline = particleOpaquePipeline_; break;
             case 2: desiredPipeline = particlePipeline_; break;
-            case 3: desiredPipeline = particleAdditiveOnePipeline_; break;
+            case 3:
             case 4: desiredPipeline = particleAdditivePipeline_; break;
             case 5: desiredPipeline = particleModulatePipeline_; break;
             case 6: desiredPipeline = particleModulate2xPipeline_; break;
