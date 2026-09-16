@@ -177,8 +177,8 @@ struct M2ParticleEmitter {
     M2AnimationTrack emissionRate;
     M2AnimationTrack emissionAreaLength;
     M2AnimationTrack emissionAreaWidth;
-    M2AnimationTrack deceleration;   // modern z-source/deceleration compatibility path
-    M2AnimationTrack visibilityTrack; // Classic/modern emitter visibility (byte keys)
+    M2AnimationTrack zSource;         // pull launch direction toward local (0,0,zSource)
+    M2AnimationTrack visibilityTrack; // enabledIn: Classic byte track at record tail
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
