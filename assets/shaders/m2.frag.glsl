@@ -110,7 +110,12 @@ float bayerDither4x4(ivec2 p) {
 }
 
 void main() {
-    vec4 texColor = hasTexture != 0 ? texture(uTexture, TexCoord) : vec4(1.0);
+    const bool vanillaRendering = shadowParams.w > 0.5;
+    const float detailDoodadLodBias =
+        (vanillaRendering && alphaTest == 3) ? 0.25 : 0.0;
+    vec4 texColor = hasTexture != 0
+        ? texture(uTexture, TexCoord, detailDoodadLodBias)
+        : vec4(1.0);
     // The batch's authored colour. A glow card is painted white and coloured
     // here - Orgrimmar's bonfire carries (1.0, 0.329, 0.0) - so without it
     // every fire in the world burns white.
@@ -138,12 +143,10 @@ void main() {
         return;
     }
 
-    const bool vanillaRendering = shadowParams.w > 0.5;
-
     // Vanilla draws back faces only for materials carrying the authored
     // TwoSided flag. The shared Vulkan pipeline stays cull-none, so reproduce
     // that per-material raster state here.
-    if (vanillaRendering && twoSided == 0 && !gl_FrontFacing) {
+    if (vanillaRendering && alphaTest != 3 && twoSided == 0 && !gl_FrontFacing) {
         discard;
     }
 
@@ -168,6 +171,17 @@ void main() {
         // trust = 0 at alpha 0, trust = 1 at alpha ~0.9
         float trust = smoothstep(0.0, 0.9, texColor.a);
         texColor.rgb = mix(mipColor, texColor.rgb, trust);
+    }
+
+    if (vanillaRendering && alphaTest == 3) {
+        // Vanilla detail doodads use the 64x8 stage-1 fade texture filled by
+        // 0x6b2320. Camera-space texgen maps 52.5→70 yd to u=0→1; bilinear
+        // sampling its 64 alpha texels is this quantised ramp.
+        float zEye = -(view * vec4(FragPos, 1.0)).z;
+        float u = (zEye - 52.5) / 17.5;
+        float detailRamp =
+            clamp((254.0 - 256.0 * u) / 255.0, 0.0, 252.0 / 255.0);
+        texColor.a *= detailRamp;
     }
 
     float alphaCutoff = 0.5;
@@ -196,7 +210,7 @@ void main() {
         // fade weight. That makes a fading cutout erode from its soft edges
         // instead of staying solid until it suddenly disappears.
         float alphaForTest = texColor.a;
-        if (vanillaRendering && blendMode == 1) {
+        if (vanillaRendering && blendMode == 1 && alphaTest != 3) {
             alphaForTest *= vFadeAlpha;
         }
         if (alphaForTest < alphaCutoff) discard;

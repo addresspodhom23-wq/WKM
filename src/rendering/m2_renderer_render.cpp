@@ -559,7 +559,10 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     // its own, so this list is mostly grass that nothing can see; the sequences
     // loop, so one that resumes from a stale time is indistinguishable from one
     // that never stopped.
-    const float clutterAnimCutoffSq = (groundDetailMaxDistance_ > 0.0f)
+    // Vanilla detail doodads are clipped by their own view-space 70 yd
+    // raster ramp, not by Kraken's radial Ground Clutter Radius.
+    const float clutterAnimCutoffSq =
+        (!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f)
         ? (groundDetailMaxDistance_ * groundDetailMaxDistance_) : 0.0f;
 
     for (size_t idx : animatedInstanceIndices_) {
@@ -639,7 +642,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
         float effectiveMaxDistSq = rendering::m2InstanceMaxDistSq(
             cachedMaxRenderDistSq_, instance.cachedEffectiveMaxDistSqFactor,
             false, 0.0f, viewDistanceAbsolute_,
-            instance.cachedIsGroundDetail, groundDetailMaxDistance_);
+            instance.cachedIsGroundDetail,
+            vanillaRendering_ ? 0.0f : groundDetailMaxDistance_);
         if (instance.cachedIsSkyBird) {
             constexpr float kBirdMaxDistSq =
                 rendering::M2_SKY_BIRD_MAX_RENDER_DISTANCE *
@@ -921,7 +925,8 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
                 maxRenderDistanceSq, inst.cachedEffectiveMaxDistSqFactor,
                 inst.isGameObject, rendering::M2_GAME_OBJECT_MIN_RENDER_DISTANCE,
                 viewDistanceAbsolute_,
-                inst.cachedIsGroundDetail, groundDetailMaxDistance_);
+                inst.cachedIsGroundDetail,
+                vanillaRendering_ ? 0.0f : groundDetailMaxDistance_);
             if (inst.cachedIsSkyBird && inst.cachedHasAnimation && !inst.cachedDisableAnimation) {
                 constexpr float kBirdMaxDistSq =
                     rendering::M2_SKY_BIRD_MAX_RENDER_DISTANCE *
@@ -1161,7 +1166,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 maxRenderDistanceSq, instance.cachedEffectiveMaxDistSqFactor,
                 instance.isGameObject, rendering::M2_GAME_OBJECT_MIN_RENDER_DISTANCE,
                 viewDistanceAbsolute_,
-                instance.cachedIsGroundDetail, groundDetailMaxDistance_);
+                instance.cachedIsGroundDetail,
+            vanillaRendering_ ? 0.0f : groundDetailMaxDistance_);
 
             if (forceNoCull_) {
                 if (!instance.cachedIsValid) continue;
@@ -1198,6 +1204,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             VisibleEntry visible{.index = i, .modelId = instance.modelId, .distSq = distSq, .effectiveMaxDistSq = effectiveMaxDistSq};
             out.opaque.push_back(visible);
             if (instance.cachedModel &&
+                !(vanillaRendering_ && instance.cachedModel->isGroundDetail) &&
                 (instance.cachedModel->hasTransparentBatches ||
                  (!vanillaRendering_ && instance.cachedModel->isSpellEffect))) {
                 out.transparent.push_back(visible);
@@ -1477,10 +1484,15 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 // authored-radius buckets. Kraken's adaptive fade stays outside
                 // the Vanilla renderer; detail doodads have their own 70 yd law.
                 float instanceFadeAlpha = 1.0f;
-                if (vanillaRendering_ && !skyMode_ && !model.isGroundDetail) {
-                    instanceFadeAlpha =
-                        vanillaWorldDoodadFadeAlpha(instance, model, camPos);
-                    if (instanceFadeAlpha <= 0.0f) continue;
+                if (vanillaRendering_ && !skyMode_) {
+                    if (!model.isGroundDetail) {
+                        instanceFadeAlpha =
+                            vanillaWorldDoodadFadeAlpha(instance, model, camPos);
+                        if (instanceFadeAlpha <= 0.0f) continue;
+                    }
+                    // Detail doodads keep per-instance alpha at 1. Their exact
+                    // 64-texel 52.5→70 yd ramp is evaluated per fragment from
+                    // view-space Z in m2.frag.glsl.
                 } else {
                     float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
                     float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;
@@ -1735,7 +1747,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Opaque gate - transparent glow cards were handled above so their
                     // sprites are generated before the mesh moves to pass 2.
                     const bool rawTransparent =
-                        (batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect);
+                        !vanillaGroundDetailCutout &&
+                        ((batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect));
                     if (rawTransparent) continue;
 
                     // Particle-dominant effects: emission geometry - skip opaque
@@ -1840,7 +1853,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     if (forceCutout) effectiveBlendMode = 1;
 
                     const bool vanillaFadeBlend =
-                        vanillaRendering_ && groupFading &&
+                        vanillaRendering_ &&
+                        (groupFading || vanillaGroundDetailCutout) &&
                         effectiveBlendMode <= M2_BLEND_ALPHA_KEY;
                     const uint8_t pipelineBlendMode =
                         vanillaFadeBlend ? M2_BLEND_ALPHA :
@@ -1858,8 +1872,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                         case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                         default: desiredPipeline = additivePipeline_; break;
                     }
-                    const bool noDepthWrite = (batch.materialFlags & 0x10u) != 0;
-                    const bool noDepthTest = (batch.materialFlags & 0x08u) != 0;
+                    // The Vanilla detail-doodad pass owns its depth state:
+                    // depth test ON and depth write ON for every tuft, regardless
+                    // of the source M2 render flags.
+                    const bool noDepthWrite =
+                        !vanillaGroundDetailCutout && (batch.materialFlags & 0x10u) != 0;
+                    const bool noDepthTest =
+                        !vanillaGroundDetailCutout && (batch.materialFlags & 0x08u) != 0;
                     if (noDepthTest) {
                         desiredPipeline = noDepthWrite
                             ? noDepthTestNoWritePipelines_[pipelineBlendMode]
@@ -1962,10 +1981,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
         // Match the opaque/cutout pass's instance alpha law.
         float instanceFadeAlpha = 1.0f;
-        if (vanillaRendering_ && !skyMode_ && !model.isGroundDetail) {
-            instanceFadeAlpha =
-                vanillaWorldDoodadFadeAlpha(instance, model, camPos);
-            if (instanceFadeAlpha <= 0.0f) continue;
+        if (vanillaRendering_ && !skyMode_) {
+            if (!model.isGroundDetail) {
+                instanceFadeAlpha =
+                    vanillaWorldDoodadFadeAlpha(instance, model, camPos);
+                if (instanceFadeAlpha <= 0.0f) continue;
+            }
         } else {
             float fadeFrac = model.disableAnimation ? 0.55f : fadeStartFraction;
             float fadeStartDistSq = entry.effectiveMaxDistSq * fadeFrac * fadeFrac;

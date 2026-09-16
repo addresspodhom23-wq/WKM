@@ -208,5 +208,21 @@ int main() {
     // Kraken's 40/80/150 mesh-profile switch stays out of Vanilla.
     assert(m2Render.find("if (!vanillaRendering_) {\n                    uint16_t desiredLOD = 0;") != std::string::npos);
     assert(m2.find("if (!vanillaRendering && blendMode <= 1) texColor.a = 1.0") != std::string::npos);
+
+    // Vanilla detail-doodad pass: +0.25 mip bias, view-space quantised
+    // 52.5→70 yd ramp, 128/255 alpha ref, two-sided, alpha blended,
+    // depth-test/write ON regardless of the source M2 render flags.
+    assert(m2.find("(vanillaRendering && alphaTest == 3) ? 0.25 : 0.0") != std::string::npos);
+    assert(m2.find("alphaTest != 3 && twoSided == 0 && !gl_FrontFacing") != std::string::npos);
+    assert(m2.find("float zEye = -(view * vec4(FragPos, 1.0)).z") != std::string::npos);
+    assert(m2.find("float u = (zEye - 52.5) / 17.5") != std::string::npos);
+    assert(m2.find("clamp((254.0 - 256.0 * u) / 255.0, 0.0, 252.0 / 255.0)") != std::string::npos);
+    assert(m2.find("alphaCutoff = 128.0 / 255.0") != std::string::npos);
+    assert(m2Render.find("(groupFading || vanillaGroundDetailCutout)") != std::string::npos);
+    assert(m2Render.find("!vanillaGroundDetailCutout && (batch.materialFlags & 0x10u) != 0") != std::string::npos);
+    assert(m2Render.find("!vanillaGroundDetailCutout && (batch.materialFlags & 0x08u) != 0") != std::string::npos);
+    assert(m2Render.find("!(vanillaRendering_ && instance.cachedModel->isGroundDetail)") != std::string::npos);
+    assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
     return 0;
 }
