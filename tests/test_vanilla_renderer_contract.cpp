@@ -229,6 +229,17 @@ int main() {
     assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
 
+    // Vanilla effect trajectories use angular cone ranges around +Z, keep
+    // authored zero speed/gravity/curves, and distinguish all material blends.
+    assert(m2Particles.find("const float phi = (distN(particleRng_) + 1.0f) * 0.5f") != std::string::npos);
+    assert(m2Particles.find("const float theta = distN(particleRng_) * 0.5f * hRange") != std::string::npos);
+    assert(m2Particles.find("speedVariation") != std::string::npos);
+    assert(m2Particles.find("!vanillaRendering_ && std::abs(speed) < 0.01f") != std::string::npos);
+    assert(m2Particles.find("particleAdditiveOnePipeline_") != std::string::npos);
+    assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
+    assert(m2Particles.find("ribbonAdditiveOnePipeline_") != std::string::npos);
+    assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
+
     // Classic v256 particle record: width/length are separate tracks and
     // the final 0x130 Classic track is byte-valued emitter visibility.
     assert(m2Loader.find("EMITTER_SIZE_VANILLA = 0x1F8") != std::string::npos);
