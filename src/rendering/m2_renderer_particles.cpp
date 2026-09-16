@@ -519,11 +519,6 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
     static const bool kNoRibbons = envFlagEnabled("WOWEE_M2_NO_RIBBONS");
     if (kNoRibbons) return;
 
-    // Build camera right vector for billboard orientation
-    // For ribbons we orient the quad strip along the spine with screen-space up.
-    // Simple approach: use world-space Z=up for the ribbon cross direction.
-    const glm::vec3 upWorld(0.0f, 0.0f, 1.0f);
-
     float* dst     = static_cast<float*>(ribbonVBMapped_);
     size_t written = 0;
 
@@ -591,41 +586,65 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
                 continue;
             }
 
+            const float normalizedLifetime = std::isfinite(em.edgeLifetime)
+                ? std::max(0.25f, em.edgeLifetime) : 0.25f;
+            glm::vec3 liveColor(1.0f);
+            float liveAlpha = 1.0f;
+            if (vanillaRendering_) {
+                liveColor = m2_track::sampleVec3(
+                    em.colorTrack, inst.currentSequenceIndex, inst.animTime,
+                    inst.globalSequenceTime, gpu.globalSequenceDurations,
+                    glm::vec3(1.0f));
+                liveAlpha = glm::clamp(m2_track::sampleFloat(
+                    em.alphaTrack, inst.currentSequenceIndex, inst.animTime,
+                    inst.globalSequenceTime, gpu.globalSequenceDurations, 1.0f),
+                    0.0f, 1.0f);
+            }
+
             uint32_t firstVert = static_cast<uint32_t>(written);
 
-            // Emit triangle strip: 2 verts per edge (top + bottom)
+            // Emit triangle strip: 2 verts per edge (top + bottom).
             for (size_t ei = 0; ei < edges.size(); ei++) {
                 if (written + 2 > MAX_RIBBON_VERTS) break;
                 const auto& e = edges[ei];
-                float t = (em.edgeLifetime > 0.0f)
-                          ? 1.0f - (e.age / em.edgeLifetime) : 1.0f;
-                float a = e.alpha * t;
-                float u = static_cast<float>(ei) / static_cast<float>(edges.size() - 1);
+                const glm::vec3 edgeAxis =
+                    vanillaRendering_ ? e.upWorld : glm::vec3(0.0f, 0.0f, 1.0f);
+                const glm::vec3 edgeColor =
+                    vanillaRendering_ ? liveColor : e.color;
+                const float a = vanillaRendering_
+                    ? liveAlpha
+                    : e.alpha * ((em.edgeLifetime > 0.0f)
+                        ? std::max(0.0f, 1.0f - e.age / em.edgeLifetime) : 1.0f);
+                // Vanilla maps ribbon U from edge age/lifetime rather than by
+                // current deque index, so dropped/late frames do not stretch the
+                // entire texture across a shorter strip.
+                const float u = vanillaRendering_
+                    ? glm::clamp(e.age / normalizedLifetime, 0.0f, 1.0f)
+                    : static_cast<float>(ei) /
+                      static_cast<float>(edges.size() - 1);
 
-                // Top vertex (above spine along upWorld)
-                glm::vec3 top = e.worldPos + upWorld * e.heightAbove;
+                glm::vec3 top = e.worldPos + edgeAxis * e.heightAbove;
                 dst[written * 9 + 0] = top.x;
                 dst[written * 9 + 1] = top.y;
                 dst[written * 9 + 2] = top.z;
-                dst[written * 9 + 3] = e.color.r;
-                dst[written * 9 + 4] = e.color.g;
-                dst[written * 9 + 5] = e.color.b;
+                dst[written * 9 + 3] = edgeColor.r;
+                dst[written * 9 + 4] = edgeColor.g;
+                dst[written * 9 + 5] = edgeColor.b;
                 dst[written * 9 + 6] = a;
                 dst[written * 9 + 7] = u;
-                dst[written * 9 + 8] = 0.0f; // v = top
+                dst[written * 9 + 8] = 0.0f;
                 written++;
 
-                // Bottom vertex (below spine)
-                glm::vec3 bot = e.worldPos - upWorld * e.heightBelow;
+                glm::vec3 bot = e.worldPos - edgeAxis * e.heightBelow;
                 dst[written * 9 + 0] = bot.x;
                 dst[written * 9 + 1] = bot.y;
                 dst[written * 9 + 2] = bot.z;
-                dst[written * 9 + 3] = e.color.r;
-                dst[written * 9 + 4] = e.color.g;
-                dst[written * 9 + 5] = e.color.b;
+                dst[written * 9 + 3] = edgeColor.r;
+                dst[written * 9 + 4] = edgeColor.g;
+                dst[written * 9 + 5] = edgeColor.b;
                 dst[written * 9 + 6] = a;
                 dst[written * 9 + 7] = u;
-                dst[written * 9 + 8] = 1.0f; // v = bottom
+                dst[written * 9 + 8] = 1.0f;
                 written++;
             }
 
