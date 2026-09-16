@@ -53,7 +53,6 @@ constexpr float M2_LOOP_VARIATION_TIMER_MIN_MS = 4000.0f;
 constexpr float M2_LOOP_VARIATION_TIMER_MAX_MS = 10000.0f;
 constexpr float M2_IDLE_VARIATION_TIMER_MIN_MS = 2000.0f;
 constexpr float M2_IDLE_VARIATION_TIMER_MAX_MS = 6000.0f;
-constexpr float M2_DEFAULT_PARTICLE_ANIM_MS    = 3333.0f;
 
 // ---------------------------------------------------------------------------
 // HiZ occlusion culling

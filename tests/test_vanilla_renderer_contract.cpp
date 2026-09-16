@@ -297,6 +297,15 @@ int main() {
     assert(characterRenderer.find("inst.globalSequenceTime += deltaTime") == std::string::npos);
     assert(renderer.find("characterRenderer->update(deltaTime, camera->getPosition(), globalTime)") != std::string::npos);
 
+    // Particle-only tracks use the same authored sequence duration as skeletal
+    // M2s. No 3333 ms/10000 ms synthetic clocks are allowed.
+    assert(m2Render.find("seedInstanceTimeline(mdlRef, instance)") != std::string::npos);
+    assert(m2Render.find("seedInstanceTimeline(mdl2, instance)") != std::string::npos);
+    assert(m2Render.find("const float duration = instance.animDuration") != std::string::npos);
+    assert(m2Render.find("kParticleWrapMs") == std::string::npos);
+    assert(m2Render.find("randFloat(0.0f, 10000.0f)") == std::string::npos);
+    assert(m2Render.find("M2_DEFAULT_PARTICLE_ANIM_MS") == std::string::npos);
+
     // Vanilla point sprites keep the authored square billboard; the BLP alpha,
     // not Kraken's synthetic radial mask, defines their silhouette.
     assert(m2ParticleFrag.find("push.vanillaRendering != 0") != std::string::npos);

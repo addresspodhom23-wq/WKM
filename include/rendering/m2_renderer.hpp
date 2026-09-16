@@ -1136,6 +1136,7 @@ private:
     /// Starts a new instance's animation and seeds its bones from a
     /// sibling of the same model, so it draws on the frame it spawns.
     /// Both spawn paths need it and each used to have its own copy.
+    void seedInstanceTimeline(const M2ModelGPU& model, M2Instance& instance);
     void seedInstanceAnimation(const M2ModelGPU& model, uint32_t modelId,
                                M2Instance& instance);
     [[nodiscard]] bool authoredAnimationEnabled(const M2ModelGPU& model) const;

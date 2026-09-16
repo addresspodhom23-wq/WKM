@@ -103,15 +103,22 @@ float vanillaWorldDoodadFadeAlpha(const M2Instance& instance,
 /// none until the next one; copying them from a sibling of the same model
 /// draws it immediately. A seed entry pointing at an instance that has since
 /// gone is dropped rather than followed.
+void M2Renderer::seedInstanceTimeline(const M2ModelGPU& model,
+                                      M2Instance& instance) {
+    if (model.sequences.empty()) return;
+    instance.currentSequenceIndex = 0;
+    instance.idleSequenceIndex = 0;
+    instance.animDuration = static_cast<float>(model.sequences[0].duration);
+    instance.animTime = static_cast<float>(
+        randRange(std::max(1u, model.sequences[0].duration)));
+    instance.variationTimer = randFloat(
+        rendering::M2_VARIATION_TIMER_MIN_MS,
+        rendering::M2_VARIATION_TIMER_MAX_MS);
+}
+
 void M2Renderer::seedInstanceAnimation(const M2ModelGPU& model, uint32_t modelId,
                                        M2Instance& instance) {
-        if (!model.sequences.empty()) {
-            instance.currentSequenceIndex = 0;
-            instance.idleSequenceIndex = 0;
-            instance.animDuration = static_cast<float>(model.sequences[0].duration);
-            instance.animTime = static_cast<float>(randRange(std::max(1u, model.sequences[0].duration)));
-            instance.variationTimer = randFloat(rendering::M2_VARIATION_TIMER_MIN_MS, rendering::M2_VARIATION_TIMER_MAX_MS);
-        }
+    seedInstanceTimeline(model, instance);
 
     auto seedIt = boneSeedInstanceByModel_.find(modelId);
     if (seedIt != boneSeedInstanceByModel_.end()) {
@@ -241,10 +248,14 @@ uint32_t M2Renderer::createInstance(uint32_t modelId, const glm::vec3& position,
     instance.cachedModel = &mdlRef;
     instance.recomputeCachedCullFactors();
 
-    // Initialize animation: play first sequence (usually Stand/Idle)
+    // Every M2 sequence clock uses the authored first-sequence duration.
+    // Bone animation is a separate capability: particle-only/static models still
+    // need the same sequence timeline for visibility/rate/UV tracks.
     const auto& mdl = mdlRef;
     if (authoredAnimationEnabled(mdl)) {
         seedInstanceAnimation(mdlRef, modelId, instance);
+    } else {
+        seedInstanceTimeline(mdlRef, instance);
     }
 
     // Register in dedup map before pushing (uses original position, not ground-adjusted)
@@ -338,20 +349,11 @@ uint32_t M2Renderer::createInstanceWithMatrix(uint32_t modelId, const glm::mat4&
     instance.cachedModel = &mdl2;
     instance.recomputeCachedCullFactors();
 
-    // Initialize animation
+    // Initialize the same authored timeline as the position-based spawn path.
     if (authoredAnimationEnabled(mdl2)) {
         seedInstanceAnimation(mdl2, modelId, instance);
     } else {
-        // A model with no skeleton can still have particle emitters, and their
-        // rate and lifespan tracks are sampled at animTime. Starting every
-        // instance at zero puts a courtyard of identical torches in lockstep,
-        // so the phase is spread.
-        //
-        // createInstance above does not do this, so doodads spawned by
-        // position keep the lockstep this avoids. Which of the two is right is
-        // a question for whoever next looks at particle timing; they differ
-        // today and this is the difference.
-        instance.animTime = randFloat(0.0f, 10000.0f);
+        seedInstanceTimeline(mdl2, instance);
     }
 
     // Register in dedup map
@@ -547,17 +549,16 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
             skyDiagAnimTime_ = sky.animTime;
         }
     }
-    // Wrap animTime for particle-only instances so emission rate tracks keep looping.
-    // 3333ms chosen as a safe wrap period: long enough to cover the longest known M2
-    // particle emission cycle (~3s for torch/campfire effects) while preventing float
-    // precision loss that accumulates over hours of runtime.
-    static constexpr float kParticleWrapMs = 3333.0f;
+    // Particle-only M2s still use the model's authored animation timeline.
+    // Do not invent a generic cycle: loop only when the M2 provides a sequence
+    // duration. Global-sequence tracks use sharedGlobalSequenceTimeMs_ instead.
     for (size_t idx : particleOnlyInstanceIndices_) {
         if (idx >= instances.size()) continue;
         auto& instance = instances[idx];
-        // Use iterative subtraction instead of fmod() to preserve precision
-        while (instance.animTime > kParticleWrapMs) {
-            instance.animTime -= kParticleWrapMs;
+        const float duration = instance.animDuration;
+        if (duration <= 0.0f) continue;
+        while (instance.animTime >= duration) {
+            instance.animTime -= duration;
         }
     }
 
@@ -602,10 +603,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
             }
         }
 
-        // Handle animation looping / variation transitions
-        if (instance.animDuration <= 0.0f && instance.cachedHasParticleEmitters) {
-            instance.animDuration = rendering::M2_DEFAULT_PARTICLE_ANIM_MS;
-        }
+        // Handle animation looping / variation transitions.
+        // A zero authored duration stays zero; do not synthesize a particle cycle.
         if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
             if (instance.holdAtEnd) {
                 // Stay on the last frame. A door's open sequence ends with the
