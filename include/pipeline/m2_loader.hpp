@@ -182,6 +182,12 @@ struct M2ParticleEmitter {
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
+    float lifeMidpoint = 0.5f;
+    // Classic head-quad flipbook ramps. Segment 0 covers birth->midpoint,
+    // segment 1 midpoint->death; repeat=1 is one authored pass.
+    uint16_t headCellBegin[2] = {0, 0};
+    uint16_t headCellEnd[2] = {0, 0};
+    uint16_t headCellRepeat[2] = {1, 1};
     bool enabled = true;
 };
 
