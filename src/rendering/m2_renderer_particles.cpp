@@ -423,16 +423,32 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
 
             const auto& em = gpu.ribbonEmitters[ri];
 
-            // Select blend pipeline based on material blend mode
-            bool additive = false;
-            if (em.materialIndex < gpu.batches.size()) {
-                additive = (gpu.batches[em.materialIndex].blendMode >= 3);
-            }
+            // Ribbon materialIndices[] point into the M2 material table; the
+            // loader already resolved that authored blend mode onto the emitter.
+            // Add/AddAlpha use the additive family, ordinary Blend uses alpha.
+            const bool additive = (em.blendMode == 3 || em.blendMode == 4);
             VkPipeline pipe = additive ? ribbonAdditivePipeline_ : ribbonPipeline_;
 
-            // Descriptor set for texture
-            VkDescriptorSet texSet = (ri < gpu.ribbonTexSets.size())
-                                     ? gpu.ribbonTexSets[ri] : VK_NULL_HANDLE;
+            // textureSlotTrack selects a slot in the ribbon's direct
+            // textureIndices[] array. This is animation/global-sequence aware.
+            size_t textureSlot = 0;
+            if (!em.textureIndices.empty()) {
+                const float slotValue = m2_track::sampleFloat(
+                    em.textureSlotTrack, inst.currentSequenceIndex, inst.animTime,
+                    inst.globalSequenceTime, gpu.globalSequenceDurations, 0.0f);
+                const long roundedSlot = std::lround(slotValue);
+                if (roundedSlot > 0) {
+                    textureSlot = std::min<size_t>(
+                        static_cast<size_t>(roundedSlot),
+                        em.textureIndices.size() - 1);
+                }
+            }
+
+            VkDescriptorSet texSet = VK_NULL_HANDLE;
+            if (ri < gpu.ribbonTexSets.size() &&
+                textureSlot < gpu.ribbonTexSets[ri].size()) {
+                texSet = gpu.ribbonTexSets[ri][textureSlot];
+            }
             if (!texSet) {
                 if (gpu.isSpellEffect) {
                     static bool ribbonTexWarn = false;
