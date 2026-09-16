@@ -1594,6 +1594,12 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     midpoint = 0.5f;
                 em.lifeMidpoint = midpoint;
 
+                if (base + 0x198 <= m2Data.size()) {
+                    const float drag = readValue<float>(m2Data, base + 0x194);
+                    if (std::isfinite(drag) && drag >= 0.0f)
+                        em.drag = drag;
+                }
+
                 // Classic head-quad flipbook cell ramps:
                 // A {begin,end,repeat} at 0x168..0x16C and
                 // B {begin,end,repeat} at 0x16E..0x172.
