@@ -106,5 +106,13 @@ int main() {
     assert(m2.find("blendMode == 1") != std::string::npos);
     assert(m2.find("224.0 / 255.0") != std::string::npos);
     assert(m2.find("alphaForTest *= vFadeAlpha") != std::string::npos);
+
+    // Vanilla batch routing must keep the authored M2 blend mode. Kraken's
+    // spell/forge promotion to additive is a non-Vanilla visual fallback only.
+    assert(m2Header.find("setVanillaRendering") != std::string::npos);
+    assert(renderer.find("m2Renderer->setVanillaRendering(classicRendering_)") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && (model.isSpellEffect || fireEffectModel)") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && (model.isSpellEffect || batch.forgeFireCard)") != std::string::npos);
+    assert(m2Render.find("(batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect)") != std::string::npos);
     return 0;
 }

@@ -401,6 +401,8 @@ public:
                     pipeline::AssetManager* assets);
     /** Configure this renderer for camera-centered sky M2s before initialize(). */
     void setSkyMode(bool enabled) { skyMode_ = enabled; }
+    /** Mirror Renderer::classicRendering_ for CPU-side Vanilla batch routing. */
+    void setVanillaRendering(bool enabled) { vanillaRendering_ = enabled; }
     void shutdown();
 
     [[nodiscard]] bool hasModel(uint32_t modelId) const;
@@ -984,6 +986,7 @@ private:
     static constexpr size_t MAX_M2_PARTICLES = 4000;
     std::mt19937 particleRng_{123};
     bool skyMode_ = false;
+    bool vanillaRendering_ = false;
     // What the sky-model clock diagnostic last reported, so it prints on a
     // restart or once a second rather than every frame. See M2Renderer::update.
     uint32_t skyDiagInstanceId_ = 0;

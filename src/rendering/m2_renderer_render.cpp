@@ -1113,7 +1113,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             VisibleEntry visible{.index = i, .modelId = instance.modelId, .distSq = distSq, .effectiveMaxDistSq = effectiveMaxDistSq};
             out.opaque.push_back(visible);
             if (instance.cachedModel &&
-                (instance.cachedModel->hasTransparentBatches || instance.cachedModel->isSpellEffect)) {
+                (instance.cachedModel->hasTransparentBatches ||
+                 (!vanillaRendering_ && instance.cachedModel->isSpellEffect))) {
                 out.transparent.push_back(visible);
             }
         }
@@ -1369,7 +1370,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
             const bool foliageLikeModel = model.isFoliageLike;
-            const bool particleDominantEffect = model.isSpellEffect &&
+            const bool particleDominantEffect = !vanillaRendering_ && model.isSpellEffect &&
                 !model.particleEmitters.empty() && model.batches.size() <= 2;
 
             // Collect per-instance data for this model group
@@ -1608,7 +1609,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
                     // Opaque gate - transparent glow cards were handled above so their
                     // sprites are generated before the mesh moves to pass 2.
-                    const bool rawTransparent = (batch.blendMode >= 2) || model.isSpellEffect;
+                    const bool rawTransparent =
+                        (batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect);
                     if (rawTransparent) continue;
 
                     // Particle-dominant effects: emission geometry - skip opaque
@@ -1697,7 +1699,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                          batch.colorKeyBlack);
 
                     uint8_t effectiveBlendMode = batch.blendMode;
-                    if (model.isSpellEffect || fireEffectModel) {
+                    if (!vanillaRendering_ && (model.isSpellEffect || fireEffectModel)) {
                         if (effectiveBlendMode <= 1) effectiveBlendMode = 3;
                         else if (effectiveBlendMode == 4 || effectiveBlendMode == 5) effectiveBlendMode = 3;
                     }
@@ -1801,7 +1803,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             currentModel = instance.cachedModel;
             if (!currentModel) continue;
             if (currentModel->isInstancePortal) continue;
-            if (!currentModel->hasTransparentBatches && !currentModel->isSpellEffect) continue;
+            if (!currentModel->hasTransparentBatches &&
+                !(!vanillaRendering_ && currentModel->isSpellEffect)) continue;
             if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
             currentModelValid = true;
             VkDeviceSize vbOff = 0;
@@ -1836,7 +1839,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         uint16_t targetLOD = desiredLOD;
         if (desiredLOD > 0 && !(model.availableLODs & (1u << desiredLOD))) targetLOD = 0;
 
-        const bool particleDominantEffect = model.isSpellEffect &&
+        const bool particleDominantEffect = !vanillaRendering_ && model.isSpellEffect &&
             !model.particleEmitters.empty() && model.batches.size() <= 2;
 
         for (const auto& batch : model.batches) {
@@ -1847,7 +1850,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             // Pass 2 gate: only transparent/additive batches
             {
-                const bool rawTransparent = (batch.blendMode >= 2) || model.isSpellEffect;
+                const bool rawTransparent =
+                    (batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect);
                 if (!rawTransparent) continue;
             }
 
@@ -1936,7 +1940,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             // Pipeline selection
             uint8_t effectiveBlendMode = batch.blendMode;
-            if (model.isSpellEffect || batch.forgeFireCard) {
+            if (!vanillaRendering_ && (model.isSpellEffect || batch.forgeFireCard)) {
                 // Matches the opaque pass: a forge's flame cards are additive,
                 // the forge itself is not.
                 if (effectiveBlendMode <= 1) effectiveBlendMode = 3;

@@ -489,6 +489,12 @@ void Renderer::updatePerFrameUBO() {
         1.0f / static_cast<float>(SHADOW_MAP_SIZE),
         classicRendering_ ? 1.0f : 0.0f);
 
+    // The shaders get the same flag through shadowParams.w. M2 also needs it
+    // on the CPU because pass membership/pipeline selection happens before the
+    // fragment shader sees a material.
+    if (m2Renderer) m2Renderer->setVanillaRendering(classicRendering_);
+    if (skyboxModelRenderer_) skyboxModelRenderer_->setVanillaRendering(classicRendering_);
+
     for (uint32_t i = 0; i < MAX_LOCAL_LIGHTS; ++i) {
         currentFrameData.localLightPosRadius[i] = glm::vec4(0.0f);
         currentFrameData.localLightColorIntensity[i] = glm::vec4(0.0f);
