@@ -18,6 +18,7 @@ int main() {
     const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
     const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
     const auto m2Particles=read("src/rendering/m2_renderer_particles.cpp");
+    const auto m2ParticleFrag=read("assets/shaders/m2_particle.frag.glsl");
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
     const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
@@ -234,7 +235,8 @@ int main() {
     // shell, ranges are angles, and variation is fractional authored speed.
     assert(m2Particles.find("if (em.emitterType == 2)") != std::string::npos);
     assert(m2Particles.find("const float inner = std::min(areaLength, areaWidth)") != std::string::npos);
-    assert(m2Particles.find("localPos += shell * radius") != std::string::npos);
+    assert(m2Particles.find("emissionOffset = shell * radius") != std::string::npos);
+    assert(m2Particles.find("localPos += emissionOffset") != std::string::npos);
     assert(m2Particles.find("(em.flags & 0x100u)") != std::string::npos);
     assert(m2Particles.find("areaLength * 0.5f * distN(particleRng_)") != std::string::npos);
     assert(m2Particles.find("areaWidth  * 0.5f * distN(particleRng_)") != std::string::npos);
@@ -248,6 +250,11 @@ int main() {
     assert(m2Particles.find("case 3:\n                case 4: pipe = ribbonAdditivePipeline_") != std::string::npos);
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
     assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
+
+    // Particle fragment output is straight-alpha. Blend/AddAlpha pipelines
+    // apply SRC_ALPHA; premultiplying RGB here would apply alpha twice.
+    assert(m2ParticleFrag.find("vec3 rgb = texColor.rgb * vColor.rgb;") != std::string::npos);
+    assert(m2ParticleFrag.find("texColor.rgb * vColor.rgb * alpha") == std::string::npos);
 
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
