@@ -251,6 +251,16 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                     }
                 }
 
+                // The 1.12 emitter kernel prepends R(+Z,90°) before the
+                // bone/model transform. This is observable on non-square plane
+                // emitters and on rotating model-space effects.
+                auto rot90Z = [](const glm::vec3& v) {
+                    return glm::vec3(-v.y, v.x, v.z);
+                };
+                emissionOffset = rot90Z(emissionOffset);
+                dir = rot90Z(dir);
+                localPos = em.position + emissionOffset;
+
                 // Variation is a fraction of the authored speed. Do not clamp:
                 // negative speed is intentional for inward-moving sphere FX.
                 speed *= 1.0f + speedVariation * distN(particleRng_);
@@ -263,12 +273,21 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                 if (lenSq > 0.001f * 0.001f) dir *= glm::inversesqrt(lenSq);
             }
 
-            p.position = glm::vec3(
-                inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
-
-            // Transform direction by bone + model orientation (rotation only).
+            const bool modelSpace =
+                vanillaRendering_ && ((em.flags & 0x10u) != 0);
             glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
-            p.velocity = rotMat * dir * speed;
+            if (modelSpace) {
+                // Keep position/velocity in emitter-bone local space. The live
+                // bone matrix is applied again at draw time, which is what makes
+                // portal/swirl particles ride the rotating frame for their
+                // entire lifetime instead of freezing the birth transform.
+                p.position = localPos;
+                p.velocity = dir * speed;
+            } else {
+                p.position = glm::vec3(
+                    inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
+                p.velocity = rotMat * dir * speed;
+            }
 
             // Kraken-only fallback for models whose authored/external animation
             // data is incomplete. Vanilla mode must keep zero speed as zero.
