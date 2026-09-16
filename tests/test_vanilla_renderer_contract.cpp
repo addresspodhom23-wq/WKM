@@ -169,5 +169,10 @@ int main() {
     assert(m2Internal.find("case 0x06u: // ignore parent rotation and scale") != std::string::npos);
     assert(m2Internal.find("(parentArm & 0x01u) == 0") != std::string::npos);
     assert(m2Internal.find("translation = posedPivot - basis * bone.pivot") != std::string::npos);
+
+    // Vanilla material 0x04 is two-sided rasterization, not two-sided
+    // lighting: back faces keep the exact same authored normal.
+    assert(m2.find("!vanillaRendering && foliageTwoSided && !gl_FrontFacing") != std::string::npos);
+    assert(m2.find("if (foliageTwoSided && !gl_FrontFacing) norm = -norm") == std::string::npos);
     return 0;
 }

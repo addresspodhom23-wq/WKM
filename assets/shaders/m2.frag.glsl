@@ -222,7 +222,10 @@ void main() {
 
     vec3 norm = normalize(Normal);
     bool foliageTwoSided = vanillaRendering ? (twoSided != 0) : (alphaTest == 2);
-    if (foliageTwoSided && !gl_FrontFacing) norm = -norm;
+    // Vanilla does not enable two-sided lighting. Material 0x04 only disables
+    // back-face culling; both faces use the same submitted/authored normal.
+    // Keep Kraken's historical back-face normal flip only outside Vanilla.
+    if (!vanillaRendering && foliageTwoSided && !gl_FrontFacing) norm = -norm;
 
     // Detail normal perturbation (foliage only) - UV-based only so wind doesn't cause flicker
     if (isFoliage && !classicVegetation && !vanillaRendering) {
