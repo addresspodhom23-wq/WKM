@@ -190,8 +190,12 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             const float areaWidth = interpFloat(
                 em.emissionAreaWidth, inst.animTime, inst.globalSequenceTime,
                 inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float zSource = interpFloat(
+                em.zSource, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
 
             glm::vec3 localPos = em.position;
+            glm::vec3 emissionOffset(0.0f);
             glm::vec3 dir(0.0f, 0.0f, 1.0f);
 
             if (vanillaRendering_) {
@@ -209,26 +213,42 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                         clat * std::sin(longitude),
                         std::sin(latitude));
 
-                    localPos += shell * radius;
-                    // 0x100 is the authored "sphere up" behaviour. Otherwise
-                    // velocity follows the radial shell direction; negative
-                    // authored speed therefore produces a converging emitter.
-                    dir = (em.flags & 0x100u) ? glm::vec3(0.0f, 0.0f, 1.0f)
-                                             : shell;
+                    emissionOffset = shell * radius;
+                    localPos += emissionOffset;
+                    if (zSource != 0.0f) {
+                        dir = emissionOffset - glm::vec3(0.0f, 0.0f, zSource);
+                        const float d2 = glm::dot(dir, dir);
+                        dir = d2 > 1e-12f ? dir * glm::inversesqrt(d2)
+                                         : glm::vec3(0.0f, 0.0f, 1.0f);
+                    } else {
+                        // 0x100 is the authored sphere-up behaviour. Otherwise
+                        // velocity follows the radial shell direction; negative
+                        // authored speed therefore produces a converging emitter.
+                        dir = (em.flags & 0x100u)
+                            ? glm::vec3(0.0f, 0.0f, 1.0f) : shell;
+                    }
                 } else {
                     // Plane (and rare spline fallback): uniform rectangle in
                     // emitter-local XY, then a symmetric cone around local +Z.
-                    localPos += glm::vec3(
+                    emissionOffset = glm::vec3(
                         areaLength * 0.5f * distN(particleRng_),
                         areaWidth  * 0.5f * distN(particleRng_),
                         0.0f);
-                    const float polar = distN(particleRng_) * vRange;
-                    const float azimuth = distN(particleRng_) * hRange;
-                    const float sinPolar = std::sin(polar);
-                    dir = glm::vec3(
-                        sinPolar * std::cos(azimuth),
-                        sinPolar * std::sin(azimuth),
-                        std::cos(polar));
+                    localPos += emissionOffset;
+                    if (zSource != 0.0f) {
+                        dir = emissionOffset - glm::vec3(0.0f, 0.0f, zSource);
+                        const float d2 = glm::dot(dir, dir);
+                        dir = d2 > 1e-12f ? dir * glm::inversesqrt(d2)
+                                         : glm::vec3(0.0f, 0.0f, 1.0f);
+                    } else {
+                        const float polar = distN(particleRng_) * vRange;
+                        const float azimuth = distN(particleRng_) * hRange;
+                        const float sinPolar = std::sin(polar);
+                        dir = glm::vec3(
+                            sinPolar * std::cos(azimuth),
+                            sinPolar * std::sin(azimuth),
+                            std::cos(polar));
+                    }
                 }
 
                 // Variation is a fraction of the authored speed. Do not clamp:
@@ -272,7 +292,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             const uint32_t tilesX = std::max<uint16_t>(em.textureCols, 1);
             const uint32_t tilesY = std::max<uint16_t>(em.textureRows, 1);
             const uint32_t totalTiles = tilesX * tilesY;
-            if ((em.flags & kParticleFlagTiled) && totalTiles > 1) {
+            if (!vanillaRendering_ && (em.flags & kParticleFlagTiled) && totalTiles > 1) {
                 if (em.flags & kParticleFlagRandomized) {
                     distTile = std::uniform_int_distribution<int>(0, static_cast<int>(totalTiles - 1));
                     p.tileIndex = static_cast<float>(distTile(particleRng_));
