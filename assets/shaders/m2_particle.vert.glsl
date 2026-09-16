@@ -17,6 +17,7 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec4 aColor;
 layout(location = 2) in float aSize;
 layout(location = 3) in float aTile;
+layout(location = 4) in float aSpin;
 
 layout(location = 0) out vec4 vColor;
 layout(location = 1) out float vTile;
@@ -34,6 +35,10 @@ void main() {
         vec2( 1.0,  1.0)
     );
     vec2 corner = corners[gl_VertexIndex & 3];
+    float cs = cos(aSpin);
+    float sn = sin(aSpin);
+    corner = vec2(cs * corner.x - sn * corner.y,
+                  sn * corner.x + cs * corner.y);
 
     vec4 centerView = view * vec4(aPos, 1.0);
     vec4 vertexView = centerView + vec4(corner * aSize, 0.0, 0.0);

@@ -14,11 +14,39 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <random>
 
 namespace wowee {
 namespace rendering {
+
+namespace {
+
+const std::array<float, 128>& vanillaTwinkleLut() {
+    static const std::array<float, 128> lut = [] {
+        std::array<float, 128> out{};
+        uint32_t s = 0xC0FFEE11u;
+        for (float& value : out) {
+            s ^= s << 13;
+            s ^= s >> 17;
+            s ^= s << 5;
+            value = static_cast<float>(s & 0x00FFFFFFu) / 16777215.0f;
+        }
+        return out;
+    }();
+    return lut;
+}
+
+float vanillaTwinkleNoise(float speed, float age, uint32_t phase) {
+    const float w = speed * age;
+    const uint32_t index = std::isfinite(w)
+        ? static_cast<uint32_t>(glm::clamp(w, 0.0f, 255.0f))
+        : 0u;
+    return vanillaTwinkleLut()[(index + phase) & 0x7Fu];
+}
+
+} // namespace
 
 // --- M2 Particle Emitter Helpers ---
 
@@ -164,6 +192,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             p.life = 0.0f;
             p.maxLife = life;
             p.tileIndex = 0.0f;
+            p.phase = particleRng_() & 0x7Fu;
 
             glm::mat4 boneXform = glm::mat4(1.0f);
             if (em.bone < inst.boneMatrices.size()) {
@@ -860,6 +889,16 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);
             float rawScale = interpFBlockFloat(em.particleScale, lifeRatio);
 
+            float twinkleNoise = 0.0f;
+            if (vanillaRendering_) {
+                twinkleNoise = vanillaTwinkleNoise(
+                    em.twinkleSpeed, p.life, p.phase);
+                if (em.twinklePercent < 1.0f &&
+                    twinkleNoise > em.twinklePercent) {
+                    continue;
+                }
+            }
+
             if (!vanillaRendering_ &&
                 !gpu.isSpellEffect && !gpu.isFireflyEffect && !gpu.isLanternLike &&
                 !gpu.isTorch && !gpu.isBrazierOrFire && !gpu.isKoboldFlame) {
@@ -883,6 +922,18 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             }
 
             float scale = rawScale;
+            if (vanillaRendering_) {
+                // Degenerate twinkle ranges (0/0 and 1/1 alike) mean steady
+                // scale. Otherwise the deterministic LUT modulates authored size.
+                if (std::abs(em.twinkleMax - em.twinkleMin) >= 1e-6f) {
+                    scale *= glm::mix(
+                        em.twinkleMin, em.twinkleMax, twinkleNoise);
+                }
+                // Vanilla applies placement scale to particle half-size only
+                // when the emitter authors the 0x20 inherit-scale flag.
+                if ((em.flags & 0x20u) != 0)
+                    scale *= inst.scale;
+            }
             if (!vanillaRendering_ && gpu.isSpellEffect) {
                 scale = std::max(rawScale * 1.5f, 0.15f);
             } else if (!vanillaRendering_ && !gpu.isFireflyEffect) {
@@ -954,6 +1005,14 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 }
             }
             vd.push_back(tileIndex);
+
+            float spinAngle = 0.0f;
+            if (vanillaRendering_ && em.spin != 0.0f) {
+                spinAngle = em.spin * p.life;
+                if (spinAngle < 0.0f && (p.phase & 0x20u) != 0)
+                    spinAngle = -spinAngle;
+            }
+            vd.push_back(spinAngle);
             totalParticles++;
         }
     }
@@ -994,13 +1053,13 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         if (group.vertexData.empty()) continue;
         if (packedCount >= MAX_M2_RENDER_PARTICLES) break;
 
-        const size_t groupCount = group.vertexData.size() / 9;
+        const size_t groupCount = group.vertexData.size() / 10;
         const size_t count = std::min(
             groupCount, MAX_M2_RENDER_PARTICLES - packedCount);
         if (count == 0) continue;
 
-        memcpy(packed + packedCount * 9, group.vertexData.data(),
-               count * 9 * sizeof(float));
+        memcpy(packed + packedCount * 10, group.vertexData.data(),
+               count * 10 * sizeof(float));
         packedDraws.push_back({
             .group = &group,
             .firstInstance = static_cast<uint32_t>(packedCount),

@@ -184,6 +184,7 @@ struct M2ParticleEmitter {
     float twinklePercent = 1.0f;      // hard draw gate @ +0x184
     float twinkleMin = 1.0f;          // size range @ +0x188
     float twinkleMax = 1.0f;          // size range @ +0x18C
+    float spin = 0.0f;               // authored head-quad spin rate @ +0x198
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps

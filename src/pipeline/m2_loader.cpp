@@ -1605,10 +1605,13 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     if (std::isfinite(twMin)) em.twinkleMin = twMin;
                     if (std::isfinite(twMax)) em.twinkleMax = twMax;
                 }
-                if (base + 0x198 <= m2Data.size()) {
+                if (base + 0x19C <= m2Data.size()) {
                     const float drag = readValue<float>(m2Data, base + 0x194);
+                    const float spin = readValue<float>(m2Data, base + 0x198);
                     if (std::isfinite(drag) && drag >= 0.0f)
                         em.drag = drag;
+                    if (std::isfinite(spin))
+                        em.spin = spin;
                 }
 
                 // Classic head-quad flipbook cell ramps:

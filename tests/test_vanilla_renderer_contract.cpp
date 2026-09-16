@@ -262,8 +262,8 @@ int main() {
     assert(m2ParticleVert.find("corner * aSize") != std::string::npos);
     assert(m2Renderer.find("pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE") != std::string::npos);
     assert(m2Renderer.find("VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 9 * sizeof(float)") != std::string::npos);
-    assert(m2Particles.find("packed + packedCount * 9") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 10 * sizeof(float)") != std::string::npos);
+    assert(m2Particles.find("packed + packedCount * 10") != std::string::npos);
     assert(m2Particles.find("vkCmdDraw(cmd, 4, draw.instanceCount, 0, draw.firstInstance)") != std::string::npos);
     assert(m2Particles.find("memcpy(m2ParticleVBMapped_") == std::string::npos);
 
@@ -296,6 +296,24 @@ int main() {
     assert(m2Particles.find("p.velocity = dir * speed") != std::string::npos);
     assert(m2Particles.find("inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f)") != std::string::npos);
     assert(m2Particles.find("std::min(sdt * em.drag, 1.0f)") != std::string::npos);
+
+    // Classic twinkle is a per-particle deterministic LUT phase and can
+    // hard-gate a quad; authored head spin rotates the camera billboard. Placement
+    // scale affects particle half-size only under emitter flag 0x20.
+    assert(m2Loader.find("base + 0x180") != std::string::npos);
+    assert(m2Loader.find("base + 0x198") != std::string::npos);
+    assert(m2LoaderHeader.find("twinkleSpeed") != std::string::npos);
+    assert(m2LoaderHeader.find("float spin = 0.0f") != std::string::npos);
+    assert(m2Particles.find("vanillaTwinkleLut") != std::string::npos);
+    assert(m2Particles.find("p.phase = particleRng_() & 0x7Fu") != std::string::npos);
+    assert(m2Particles.find("twinkleNoise > em.twinklePercent") != std::string::npos);
+    assert(m2Particles.find("em.twinkleMax - em.twinkleMin") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x20u) != 0") != std::string::npos);
+    assert(m2Particles.find("spinAngle = em.spin * p.life") != std::string::npos);
+    assert(m2ParticleVert.find("layout(location = 4) in float aSpin") != std::string::npos);
+    assert(m2ParticleVert.find("float cs = cos(aSpin)") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 10 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 10 * sizeof(float)") != std::string::npos);
 
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
