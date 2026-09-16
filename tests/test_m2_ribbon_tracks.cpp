@@ -56,10 +56,12 @@ TEST_CASE("a ribbon model's tracks parse into usable ranges", "[m2][ribbon]") {
     }
 
     const M2Model model = M2Loader::load(data);
-    if (model.ribbonEmitters.empty()) {
-        SUCCEED("model carries no ribbon emitters; nothing to check here");
-        return;
-    }
+    INFO("M2 version " << model.version);
+    REQUIRE(model.version < 264);
+    // This known Vanilla spell asset carries ribbon emitters. Treat an empty
+    // result as a parser regression instead of silently skipping the test:
+    // before Classic 0xE0 records were supported this branch always passed.
+    REQUIRE_FALSE(model.ribbonEmitters.empty());
 
     bool sawAlpha = false;
     bool sawVisibility = false;
@@ -98,10 +100,9 @@ TEST_CASE("ribbon track sequences line up with their timestamps",
     }
 
     const M2Model model = M2Loader::load(data);
-    if (model.ribbonEmitters.empty()) {
-        SUCCEED("model carries no ribbon emitters; nothing to check here");
-        return;
-    }
+    INFO("M2 version " << model.version);
+    REQUIRE(model.version < 264);
+    REQUIRE_FALSE(model.ribbonEmitters.empty());
 
     for (const auto& ribbon : model.ribbonEmitters) {
         for (const auto* track : {&ribbon.alphaTrack, &ribbon.visibilityTrack}) {
