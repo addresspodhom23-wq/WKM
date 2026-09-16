@@ -103,10 +103,10 @@ int main() {
     assert(m2Render.find("noDepthTestPipelines_[pipelineBlendMode]") != std::string::npos);
 
     // Vanilla M2 AlphaKey (blend mode 1) uses the pre-Cata 224/255 alpha
-    // reference and applies the instance/world fade before the comparison.
+    // reference. World-doodad fade changes source/output alpha but keeps the
+    // authored cutout silhouette stable.
     assert(m2.find("blendMode == 1") != std::string::npos);
     assert(m2.find("224.0 / 255.0") != std::string::npos);
-    assert(m2.find("alphaForTest *= vFadeAlpha") != std::string::npos);
 
     // Vanilla batch routing must keep the authored M2 blend mode. Kraken's
     // spell/forge promotion to additive is a non-Vanilla visual fallback only.
@@ -171,9 +171,12 @@ int main() {
     assert(m2Internal.find("translation = posedPivot - basis * bone.pivot") != std::string::npos);
 
     // Vanilla material 0x04 is two-sided rasterization, not two-sided
-    // lighting: back faces keep the exact same authored normal.
+    // lighting: back faces keep the exact same authored normal and diffuse
+    // remains max(N.L, 0), never abs(N.L).
     assert(m2.find("!vanillaRendering && foliageTwoSided && !gl_FrontFacing") != std::string::npos);
     assert(m2.find("if (foliageTwoSided && !gl_FrontFacing) norm = -norm") == std::string::npos);
+    assert(m2.find("float diff = (!vanillaRendering && foliageTwoSided)") != std::string::npos);
+    assert(m2.find("float diff = foliageTwoSided ? abs(nDotL)") == std::string::npos);
 
     // Vanilla Model2.bls accepts authored zero normals. They remain zero so
     // directional lighting vanishes and the ambient/DC term survives.
