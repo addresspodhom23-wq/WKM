@@ -166,7 +166,11 @@ void main() {
     }
 
     float alphaCutoff = 0.5;
-    if (alphaTest == 2) {
+    if (vanillaRendering && blendMode == 1) {
+        // WoW 1.12 / pre-Cata AlphaKey uses the fixed-function reference
+        // 224/255, not the later ~0.5 threshold.
+        alphaCutoff = 224.0 / 255.0;
+    } else if (alphaTest == 2) {
         alphaCutoff = 0.4;
     } else if (alphaTest == 3) {
         alphaCutoff = 0.25;
@@ -181,10 +185,14 @@ void main() {
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
     if ((classicVegetation || vanillaRendering) && alphaTest != 0) {
-        // Vanilla uses the authored alpha mask directly. Keep fractional alpha
-        // only for actual blended materials; opaque/cutout passes become solid
-        // after the cutoff.
-        if (texColor.a < alphaCutoff) discard;
+        // Vanilla AlphaKey tests texel alpha after the object's authored/world
+        // fade weight. That makes a fading cutout erode from its soft edges
+        // instead of staying solid until it suddenly disappears.
+        float alphaForTest = texColor.a;
+        if (vanillaRendering && blendMode == 1) {
+            alphaForTest *= vFadeAlpha;
+        }
+        if (alphaForTest < alphaCutoff) discard;
         if (blendMode <= 1) texColor.a = 1.0;
     } else if (alphaTest != 0) {
         // Screen-space sharpened alpha: rescale so the cutoff maps to the

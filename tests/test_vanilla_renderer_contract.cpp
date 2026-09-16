@@ -100,5 +100,11 @@ int main() {
     assert(m2Render.find("batch.materialFlags & 0x08u") != std::string::npos);
     assert(m2Render.find("noDepthTestNoWritePipelines_[pipelineBlendMode]") != std::string::npos);
     assert(m2Render.find("noDepthTestPipelines_[pipelineBlendMode]") != std::string::npos);
+
+    // Vanilla M2 AlphaKey (blend mode 1) uses the pre-Cata 224/255 alpha
+    // reference and applies the instance/world fade before the comparison.
+    assert(m2.find("blendMode == 1") != std::string::npos);
+    assert(m2.find("224.0 / 255.0") != std::string::npos);
+    assert(m2.find("alphaForTest *= vFadeAlpha") != std::string::npos);
     return 0;
 }
