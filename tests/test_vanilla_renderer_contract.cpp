@@ -262,8 +262,8 @@ int main() {
     assert(m2ParticleVert.find("corner * aSize") != std::string::npos);
     assert(m2Renderer.find("pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE") != std::string::npos);
     assert(m2Renderer.find("VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
-    assert(m2Particles.find("packed + packedCount * 15") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 21 * sizeof(float)") != std::string::npos);
+    assert(m2Particles.find("packed + packedCount * 21") != std::string::npos);
     assert(m2Particles.find("vkCmdDraw(cmd, 4, draw.instanceCount, 0, draw.firstInstance)") != std::string::npos);
     assert(m2Particles.find("memcpy(m2ParticleVBMapped_") == std::string::npos);
 
@@ -338,6 +338,26 @@ int main() {
     assert(m2Particles.find("std::vector<ParticleGroup*> frameGroups") != std::string::npos);
     assert(m2Particles.find("lhs->submissionOrder <") != std::string::npos);
     assert(m2Particles.find("for (ParticleGroup* groupPtr : frameGroups)") != std::string::npos);
+
+    // Classic 0x08 fog policy and 0x1000 emitter-plane heads.
+    assert(m2Header.find("uint8_t fogPolicy = 1") != std::string::npos);
+    assert(m2Particles.find("(cachedEm->flags & 0x08u) != 0") != std::string::npos);
+    assert(m2Particles.find("cachedBlendType == 3 || cachedBlendType == 4") != std::string::npos);
+    assert(m2Particles.find("(cachedEm->flags & 0x1000u) != 0") != std::string::npos);
+    assert(m2Particles.find("glm::vec3(0.0f, 1.0f, 0.0f)") != std::string::npos);
+    assert(m2Particles.find("glm::vec3(-1.0f, 0.0f, 0.0f)") != std::string::npos);
+    assert(m2Particles.find("cachedPlaneRight") != std::string::npos);
+    assert(m2Particles.find(".fogPolicy = static_cast<int>(group.fogPolicy)") != std::string::npos);
+    assert(m2Renderer.find("pushRange.size = 20") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 21 * sizeof(float)") != std::string::npos);
+    assert(m2ParticleVert.find("layout(location = 8) in vec3 aPlaneRight") != std::string::npos);
+    assert(m2ParticleVert.find("layout(location = 9) in vec3 aPlaneUp") != std::string::npos);
+    assert(m2ParticleVert.find("Classic flag 0x1000") != std::string::npos);
+    assert(m2ParticleFrag.find("int fogPolicy") != std::string::npos);
+    assert(m2ParticleFrag.find("push.fogPolicy == 2 ? vec3(0.0) : fogColor.rgb") != std::string::npos);
+    assert(m2ParticleFrag.find("alpha *= vFogVisibility") != std::string::npos);
+    assert(m2ParticleFrag.find("if (push.vanillaRendering != 0)") != std::string::npos);
+    assert(m2ParticleFrag.find("float alpha = texColor.a * vColor.a * edge;") != std::string::npos);
 
     // Classic RecursionModel is a CPU-only child-emitter definition. Only
     // the first four usable child records are wired; no .skin is required.
@@ -424,8 +444,8 @@ int main() {
     assert(m2Particles.find("sampleCell(em.tailCellBegin, em.tailCellEnd)") != std::string::npos);
     assert(m2ParticleVert.find("-aVelocity * max(aTailSeconds, 0.0)") != std::string::npos);
     assert(m2ParticleVert.find("projectedLen2 < 7.7e-4") != std::string::npos);
-    assert(m2Renderer.find("pBind.stride = 15 * sizeof(float)") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 21 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 21 * sizeof(float)") != std::string::npos);
 
     // Classic twinkle is a per-particle deterministic LUT phase and can
     // hard-gate a quad; authored head spin rotates the camera billboard. Placement
@@ -442,8 +462,8 @@ int main() {
     assert(m2Particles.find("spinAngle = em.spin * p.life") != std::string::npos);
     assert(m2ParticleVert.find("layout(location = 4) in float aSpin") != std::string::npos);
     assert(m2ParticleVert.find("float cs = cos(aSpin)") != std::string::npos);
-    assert(m2Renderer.find("pBind.stride = 15 * sizeof(float)") != std::string::npos);
-    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 15 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("pBind.stride = 21 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 21 * sizeof(float)") != std::string::npos);
 
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.

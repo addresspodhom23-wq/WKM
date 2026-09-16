@@ -1502,6 +1502,9 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         uint16_t cachedTilesX = 1, cachedTilesY = 1;
         uint32_t cachedTotalTiles = 1;
         uint16_t cachedBlendType = 0;
+        uint8_t cachedFogPolicy = 1;
+        glm::vec3 cachedPlaneRight(0.0f);
+        glm::vec3 cachedPlaneUp(0.0f);
         const pipeline::M2ParticleEmitter* cachedEm = nullptr;
         ParticleGroup* cachedGroup = nullptr;
         // animFrame depends only on inst.animTime + totalTiles, so it's also
@@ -1527,6 +1530,34 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 cachedTotalTiles = static_cast<uint32_t>(cachedTilesX) *
                                    static_cast<uint32_t>(cachedTilesY);
                 cachedBlendType = cachedEm->blendingType;
+                cachedFogPolicy = vanillaRendering_
+                    ? ((cachedEm->flags & 0x08u) != 0
+                        ? 0u
+                        : ((cachedBlendType == 3 || cachedBlendType == 4)
+                            ? 2u : 1u))
+                    : 1u;
+
+                cachedPlaneRight = glm::vec3(0.0f);
+                cachedPlaneUp = glm::vec3(0.0f);
+                if (vanillaRendering_ &&
+                    (cachedEm->flags & 0x1000u) != 0) {
+                    glm::mat4 liveFrame = inst.modelMatrix;
+                    if (cachedEm->bone < inst.boneMatrices.size())
+                        liveFrame *= inst.boneMatrices[cachedEm->bone];
+                    glm::vec3 right =
+                        glm::mat3(liveFrame) * glm::vec3(0.0f, 1.0f, 0.0f);
+                    glm::vec3 up =
+                        glm::mat3(liveFrame) * glm::vec3(-1.0f, 0.0f, 0.0f);
+                    const float rightLen = glm::length(right);
+                    const float upLen = glm::length(up);
+                    if (rightLen > 1e-8f && upLen > 1e-8f) {
+                        cachedPlaneRight =
+                            (right / rightLen) * inst.scale;
+                        cachedPlaneUp =
+                            (up / upLen) * inst.scale;
+                    }
+                }
+
                 const uint64_t orderToken = vanillaRendering_
                     ? instanceSortBase +
                         static_cast<uint64_t>(p.emitterIndex) * 8u
@@ -1537,6 +1568,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                         static_cast<uint8_t>(cachedBlendType),
                     .tilesX = cachedTilesX,
                     .tilesY = cachedTilesY,
+                    .fogPolicy = cachedFogPolicy,
                     .orderToken = orderToken
                 };
                 cachedGroup = &groups[key];
@@ -1544,6 +1576,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 cachedGroup->blendType = cachedBlendType;
                 cachedGroup->tilesX = cachedTilesX;
                 cachedGroup->tilesY = cachedTilesY;
+                cachedGroup->fogPolicy = cachedFogPolicy;
                 cachedGroup->submissionOrder =
                     std::min(cachedGroup->submissionOrder,
                              orderToken);
@@ -1692,7 +1725,9 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             }
 
             auto appendRecord = [&](float tileIndex, float spin,
-                                    float tailSeconds, float tailMode) {
+                                    float tailSeconds, float tailMode,
+                                    const glm::vec3& planeRight,
+                                    const glm::vec3& planeUp) {
                 auto& vd = cachedGroup->vertexData;
                 vd.push_back(drawPos.x);
                 vd.push_back(drawPos.y);
@@ -1709,6 +1744,12 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 vd.push_back(drawVelocity.z);
                 vd.push_back(tailSeconds);
                 vd.push_back(tailMode);
+                vd.push_back(planeRight.x);
+                vd.push_back(planeRight.y);
+                vd.push_back(planeRight.z);
+                vd.push_back(planeUp.x);
+                vd.push_back(planeUp.y);
+                vd.push_back(planeUp.z);
                 totalParticles++;
             };
 
@@ -1716,7 +1757,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             const bool drawTail = vanillaRendering_ && em.headOrTail >= 1;
 
             if (drawHead)
-                appendRecord(headTileIndex, spinAngle, 0.0f, 0.0f);
+                appendRecord(headTileIndex, spinAngle, 0.0f, 0.0f,
+                             cachedPlaneRight, cachedPlaneUp);
 
             if (drawTail) {
                 const float tailTileIndex =
@@ -1726,7 +1768,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 float tailSeconds = std::max(0.0f, em.tailTime);
                 if ((em.flags & 0x400u) != 0)
                     tailSeconds = std::min(tailSeconds, std::max(0.0f, p.life));
-                appendRecord(tailTileIndex, 0.0f, tailSeconds, 1.0f);
+                appendRecord(tailTileIndex, 0.0f, tailSeconds, 1.0f,
+                             glm::vec3(0.0f), glm::vec3(0.0f));
             }
         }
     }
@@ -1784,6 +1827,30 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 static_cast<uint32_t>(tilesX) *
                 static_cast<uint32_t>(tilesY);
 
+            const uint8_t fogPolicy =
+                (em.flags & 0x08u) != 0
+                    ? 0u
+                    : ((em.blendingType == 3 ||
+                        em.blendingType == 4) ? 2u : 1u);
+
+            glm::vec3 planeRight(0.0f);
+            glm::vec3 planeUp(0.0f);
+            if ((em.flags & 0x1000u) != 0) {
+                glm::mat4 liveFrame = inst.modelMatrix;
+                if (parentEmitter.bone < inst.boneMatrices.size())
+                    liveFrame *= inst.boneMatrices[parentEmitter.bone];
+                glm::vec3 right =
+                    glm::mat3(liveFrame) * glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::vec3 up =
+                    glm::mat3(liveFrame) * glm::vec3(-1.0f, 0.0f, 0.0f);
+                const float rightLen = glm::length(right);
+                const float upLen = glm::length(up);
+                if (rightLen > 1e-8f && upLen > 1e-8f) {
+                    planeRight = (right / rightLen) * inst.scale;
+                    planeUp = (up / upLen) * inst.scale;
+                }
+            }
+
             const uint64_t orderToken =
                 instanceSortBase +
                 static_cast<uint64_t>(
@@ -1797,6 +1864,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                     static_cast<uint8_t>(em.blendingType),
                 .tilesX = tilesX,
                 .tilesY = tilesY,
+                .fogPolicy = fogPolicy,
                 .orderToken = orderToken
             };
             auto& group = groups[key];
@@ -1804,6 +1872,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             group.blendType = em.blendingType;
             group.tilesX = tilesX;
             group.tilesY = tilesY;
+            group.fogPolicy = fogPolicy;
             group.submissionOrder =
                 std::min(group.submissionOrder,
                          orderToken);
@@ -1911,7 +1980,9 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             auto appendRecord =
                 [&](float tileIndex, float spin,
                     float tailSeconds,
-                    float tailMode) {
+                    float tailMode,
+                    const glm::vec3& headPlaneRight,
+                    const glm::vec3& headPlaneUp) {
                     auto& vd = group.vertexData;
                     vd.push_back(drawPos.x);
                     vd.push_back(drawPos.y);
@@ -1928,6 +1999,12 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                     vd.push_back(drawVelocity.z);
                     vd.push_back(tailSeconds);
                     vd.push_back(tailMode);
+                    vd.push_back(headPlaneRight.x);
+                    vd.push_back(headPlaneRight.y);
+                    vd.push_back(headPlaneRight.z);
+                    vd.push_back(headPlaneUp.x);
+                    vd.push_back(headPlaneUp.y);
+                    vd.push_back(headPlaneUp.z);
                     ++totalParticles;
                 };
 
@@ -1936,7 +2013,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                     sampleCell(
                         em.headCellBegin,
                         em.headCellEnd),
-                    spinAngle, 0.0f, 0.0f);
+                    spinAngle, 0.0f, 0.0f,
+                    planeRight, planeUp);
             }
             if (em.headOrTail >= 1) {
                 float tailSeconds =
@@ -1950,7 +2028,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                     sampleCell(
                         em.tailCellBegin,
                         em.tailCellEnd),
-                    0.0f, tailSeconds, 1.0f);
+                    0.0f, tailSeconds, 1.0f,
+                    glm::vec3(0.0f), glm::vec3(0.0f));
             }
         }
     }
@@ -2014,13 +2093,13 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         auto& group = *groupPtr;
         if (packedCount >= MAX_M2_RENDER_PARTICLES) break;
 
-        const size_t groupCount = group.vertexData.size() / 15;
+        const size_t groupCount = group.vertexData.size() / 21;
         const size_t count = std::min(
             groupCount, MAX_M2_RENDER_PARTICLES - packedCount);
         if (count == 0) continue;
 
-        memcpy(packed + packedCount * 15, group.vertexData.data(),
-               count * 15 * sizeof(float));
+        memcpy(packed + packedCount * 21, group.vertexData.data(),
+               count * 21 * sizeof(float));
         packedDraws.push_back({
             .group = &group,
             .firstInstance = static_cast<uint32_t>(packedCount),
@@ -2106,11 +2185,13 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             float tileX, tileY;
             int alphaKey;
             int vanillaRendering;
+            int fogPolicy;
         } pc = {
             .tileX = static_cast<float>(group.tilesX),
             .tileY = static_cast<float>(group.tilesY),
             .alphaKey = (blendType == 1) ? 1 : 0,
-            .vanillaRendering = vanillaRendering_ ? 1 : 0
+            .vanillaRendering = vanillaRendering_ ? 1 : 0,
+            .fogPolicy = static_cast<int>(group.fogPolicy)
         };
         vkCmdPushConstants(cmd, particlePipelineLayout_,
                            VK_SHADER_STAGE_FRAGMENT_BIT, 0,

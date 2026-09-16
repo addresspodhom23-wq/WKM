@@ -21,6 +21,8 @@ layout(location = 4) in float aSpin;
 layout(location = 5) in vec3 aVelocity;
 layout(location = 6) in float aTailSeconds;
 layout(location = 7) in float aTailMode;
+layout(location = 8) in vec3 aPlaneRight;
+layout(location = 9) in vec3 aPlaneUp;
 
 layout(location = 0) out vec4 vColor;
 layout(location = 1) out float vTile;
@@ -61,9 +63,20 @@ void main() {
     } else {
         float cs = cos(aSpin);
         float sn = sin(aSpin);
-        corner = vec2(cs * corner.x - sn * corner.y,
-                      sn * corner.x + cs * corner.y);
-        vertexView = centerView + vec4(corner * aSize, 0.0, 0.0);
+        vec2 spun = vec2(cs * corner.x - sn * corner.y,
+                         sn * corner.x + cs * corner.y);
+
+        // Classic flag 0x1000 pins the head quad to the live emitter plane.
+        // Zero plane vectors mean the ordinary camera-facing billboard path.
+        if (dot(aPlaneRight, aPlaneRight) > 1e-10 &&
+            dot(aPlaneUp, aPlaneUp) > 1e-10) {
+            vec3 rightView = mat3(view) * aPlaneRight;
+            vec3 upView = mat3(view) * aPlaneUp;
+            vertexView = centerView + vec4(
+                (rightView * spun.x + upView * spun.y) * aSize, 0.0);
+        } else {
+            vertexView = centerView + vec4(spun * aSize, 0.0, 0.0);
+        }
     }
     gl_Position = projection * vertexView;
 

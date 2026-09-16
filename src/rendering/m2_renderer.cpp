@@ -409,18 +409,20 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     if (particleVert.isValid() && particleFrag.isValid()) {
         VkVertexInputBindingDescription pBind{};
         pBind.binding = 0;
-        pBind.stride = 15 * sizeof(float); // pos3 + color4 + size + tile + spin + velocity3 + tailTime + mode
+        pBind.stride = 21 * sizeof(float); // pos3 + color4 + size + tile + spin + velocity3 + tailTime + mode + planeRight3 + planeUp3
         pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::vector<VkVertexInputAttributeDescription> pAttrs = {
-            {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0},                    // position
+            {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0},                     // position
             {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 3 * sizeof(float)}, // color
             {.location = 2, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 7 * sizeof(float)},          // size
             {.location = 3, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 8 * sizeof(float)},          // tile
             {.location = 4, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 9 * sizeof(float)},          // spin angle
-            {.location = 5, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 10 * sizeof(float)},      // world velocity
-            {.location = 6, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 13 * sizeof(float)},            // tail seconds
-            {.location = 7, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 14 * sizeof(float)},            // tail mode
+            {.location = 5, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 10 * sizeof(float)},   // world velocity
+            {.location = 6, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 13 * sizeof(float)},         // tail seconds
+            {.location = 7, .binding = 0, .format = VK_FORMAT_R32_SFLOAT, .offset = 14 * sizeof(float)},         // tail mode
+            {.location = 8, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 15 * sizeof(float)},   // emitter-plane right
+            {.location = 9, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 18 * sizeof(float)},   // emitter-plane up
         };
 
         auto buildParticlePipeline = [&](VkPipelineColorBlendAttachmentState blend) -> VkPipeline {
@@ -1225,13 +1227,13 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
     }
 
     // Particle pipeline layout: set 0 = perFrame, set 1 = particleTex
-    // Push constant: vec2 tileCount + int alphaKey + int vanillaRendering (16 bytes)
+    // Push constant: vec2 tileCount + alphaKey + vanillaRendering + fogPolicy (20 bytes)
     {
         VkDescriptorSetLayout setLayouts[] = {perFrameLayout, particleTexLayout_};
         VkPushConstantRange pushRange{};
         pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         pushRange.offset = 0;
-        pushRange.size = 16; // vec2 + int + int
+        pushRange.size = 20; // vec2 + int + int + int
 
         VkPipelineLayoutCreateInfo ci{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         ci.setLayoutCount = 2;
@@ -1279,7 +1281,7 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
 
         // M2 particle INSTANCE buffer. It spans all visible emitters in the
         // frame; MAX_M2_PARTICLES is only the per-instance simulation ceiling.
-        bci.size = MAX_M2_RENDER_PARTICLES * 15 * sizeof(float);
+        bci.size = MAX_M2_RENDER_PARTICLES * 21 * sizeof(float);
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &m2ParticleVB_, &m2ParticleVBAlloc_, &allocInfo);
         m2ParticleVBMapped_ = allocInfo.pMappedData;
 

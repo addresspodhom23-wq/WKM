@@ -1008,6 +1008,7 @@ private:
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
+        uint8_t fogPolicy = 1; // Classic: 0=off, 1=scene colour, 2=black
         // Vanilla: one authored emitter/pool per key so an unordered-map
         // lookup cannot batch across a non-additive ordering barrier.
         // Non-Vanilla keeps zero here and retains the historical batching.
@@ -1017,6 +1018,7 @@ private:
                    blendType == other.blendType &&
                    tilesX == other.tilesX &&
                    tilesY == other.tilesY &&
+                   fogPolicy == other.fogPolicy &&
                    orderToken == other.orderToken;
         }
     };
@@ -1026,8 +1028,9 @@ private:
             size_t h2 = std::hash<uint32_t>{}((static_cast<uint32_t>(key.tilesX) << 16) | key.tilesY);
             size_t h3 = std::hash<uint8_t>{}(key.blendType);
             size_t h4 = std::hash<uint64_t>{}(key.orderToken);
+            size_t h5 = std::hash<uint8_t>{}(key.fogPolicy);
             return h1 ^ (h2 * 0x9e3779b9u) ^ (h3 * 0x85ebca6bu) ^
-                   (h4 * 0xc2b2ae35u);
+                   (h4 * 0xc2b2ae35u) ^ (h5 * 0x27d4eb2du);
         }
     };
     struct ParticleGroup {
@@ -1035,6 +1038,7 @@ private:
         uint8_t blendType;
         uint16_t tilesX;
         uint16_t tilesY;
+        uint8_t fogPolicy = 1;
         uint64_t submissionOrder = std::numeric_limits<uint64_t>::max();
         VkDescriptorSet preAllocSet = VK_NULL_HANDLE;
         std::vector<float> vertexData;
