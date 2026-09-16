@@ -19,6 +19,7 @@ int main() {
     const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
+    const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
 
     assert(frame.find("w = Vanilla 1.12 renderer") != std::string::npos);
     assert(renderer.find("classicRendering_ ? 1.0f : 0.0f") != std::string::npos);
@@ -140,5 +141,16 @@ int main() {
     assert(m2Render.find("pc.isFoliage = 0") != std::string::npos);
     assert(m2Render.find("fillSway(pc, model, skyMode_, vanillaRendering_)") != std::string::npos);
     assert(m2Render.find("(!vanillaRendering_ && foliagePass) ? 1 : 0") != std::string::npos);
+
+    // Vanilla billboard bones use the shared camera/view basis, not a
+    // per-pivot look-at, and all four authored flag arms are recognized.
+    assert(m2Internal.find("kM2BoneBillboardSpherical = 0x08") != std::string::npos);
+    assert(m2Internal.find("kM2BoneBillboardLockX     = 0x10") != std::string::npos);
+    assert(m2Internal.find("kM2BoneBillboardLockY     = 0x20") != std::string::npos);
+    assert(m2Internal.find("kM2BoneBillboardLockZ     = 0x40") != std::string::npos);
+    assert(m2Internal.find("const glm::mat3* cameraBasisWorld") != std::string::npos);
+    assert(m2Internal.find("posedPivot") != std::string::npos);
+    assert(m2Internal.find("glm::cross(camFwd, bz)") != std::string::npos);
+    assert(renderer.find("camera->getViewMatrix())") != std::string::npos);
     return 0;
 }

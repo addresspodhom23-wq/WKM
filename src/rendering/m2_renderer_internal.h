@@ -275,21 +275,24 @@ inline glm::vec3 closestPointOnTriangle(const glm::vec3& p,
 // Defined in m2_renderer_instance.cpp (inline thread_local causes LLD linker
 // errors on Windows ARM64, so the definitions live in the single TU that uses them).
 
-/// M2 bone flags this renderer acts on.
-///
-/// A bone marked spherical billboard carries geometry that must always face
-/// the camera: glow cards, flame sprites, the halo on a lamp. The flag was
-/// loaded and never read, so those cards rendered at whatever angle the artist
-/// left them at and cut through the model they belong to. Orgrimmar's bonfire
-/// keeps its glow on bone 0, flagged 0x8.
-constexpr uint32_t kM2BoneSphericalBillboard = 0x8;
+/// M2 billboard bone flags used by the 1.12 palette replacement.
+/// 0x08 is spherical; 0x10/0x20/0x40 lock the authored X/Y/Z axis.
+constexpr uint32_t kM2BoneBillboardSpherical = 0x08;
+constexpr uint32_t kM2BoneBillboardLockX     = 0x10;
+constexpr uint32_t kM2BoneBillboardLockY     = 0x20;
+constexpr uint32_t kM2BoneBillboardLockZ     = 0x40;
+constexpr uint32_t kM2BoneBillboardMask =
+    kM2BoneBillboardSpherical | kM2BoneBillboardLockX |
+    kM2BoneBillboardLockY | kM2BoneBillboardLockZ;
 
 /// Bone transforms for one instance.
 ///
-/// `cameraPosWorld` is what a billboard bone turns toward; pass nullptr and
-/// those bones keep their authored orientation.
+/// `cameraBasisWorld` columns are right/up/forward. Vanilla 1.12 rewrites a
+/// billboard bone from this shared VIEW basis after its ordinary authored
+/// parent/TRS composition; it does not aim each bone from its pivot at the
+/// camera position.
 inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
-                                const glm::vec3* cameraPosWorld = nullptr) {
+                                const glm::mat3* cameraBasisWorld = nullptr) {
     ZoneScopedN("M2::computeBoneMatrices");
     size_t numBones = std::min(model.bones.size(), size_t(kMaxBonesPerInstance));
     if (numBones == 0) return;
@@ -314,44 +317,77 @@ inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
 
         glm::mat4 local = glm::translate(glm::mat4(1.0f), bone.pivot);
         local = glm::translate(local, trans);
-        if (cameraPosWorld && (bone.flags & kM2BoneSphericalBillboard) != 0) {
-            // Turn the bone to face the camera instead of using its authored
-            // rotation. Everything is done in model space, so the instance's
-            // own rotation and scale still apply on top.
-            //
-            // M2 model space is X forward, Y left, Z up, and a card is
-            // authored in the plane facing +X, so that axis is the one aimed
-            // at the viewer.
-            const glm::vec3 camModel =
-                glm::vec3(instance.invModelMatrix * glm::vec4(*cameraPosWorld, 1.0f));
-            glm::vec3 toCamera = camModel - bone.pivot;
-            const float len2 = glm::dot(toCamera, toCamera);
-            if (len2 > 1e-8f) {
-                toCamera *= glm::inversesqrt(len2);
-                // Up is model +Z unless the view is nearly along it, where the
-                // cross product collapses and the card would spin.
-                glm::vec3 up(0.0f, 0.0f, 1.0f);
-                if (std::abs(toCamera.z) > 0.999f) up = glm::vec3(0.0f, 1.0f, 0.0f);
-                const glm::vec3 right = glm::normalize(glm::cross(up, toCamera));
-                const glm::vec3 trueUp = glm::cross(toCamera, right);
-                glm::mat4 face(1.0f);
-                face[0] = glm::vec4(toCamera, 0.0f);
-                face[1] = glm::vec4(right, 0.0f);
-                face[2] = glm::vec4(trueUp, 0.0f);
-                local *= face;
-            } else {
-                local *= glm::toMat4(rot);
-            }
-        } else {
-            local *= glm::toMat4(rot);
-        }
+        local *= glm::toMat4(rot);
         local = glm::scale(local, scl);
         local = glm::translate(local, -bone.pivot);
 
+        glm::mat4 composed = local;
         if (bone.parentBone >= 0 && static_cast<size_t>(bone.parentBone) < numBones) {
-            instance.boneMatrices[i] = instance.boneMatrices[bone.parentBone] * local;
+            composed = instance.boneMatrices[bone.parentBone] * local;
+        }
+
+        if (cameraBasisWorld && (bone.flags & kM2BoneBillboardMask) != 0) {
+            // Convert the camera's shared world-space view basis into this
+            // instance's model space. Direction vectors use w=0 so placement
+            // translation cannot leak into billboard orientation.
+            const glm::mat3 invModel(instance.invModelMatrix);
+            auto modelDir = [&](const glm::vec3& worldDir, const glm::vec3& fallback) {
+                glm::vec3 v = invModel * worldDir;
+                const float l2 = glm::dot(v, v);
+                return l2 > 1e-10f ? v * glm::inversesqrt(l2) : fallback;
+            };
+            const glm::vec3 camRight = modelDir((*cameraBasisWorld)[0], glm::vec3(0, -1, 0));
+            const glm::vec3 camUp    = modelDir((*cameraBasisWorld)[1], glm::vec3(0, 0, 1));
+            const glm::vec3 camFwd   = modelDir((*cameraBasisWorld)[2], glm::vec3(-1, 0, 0));
+
+            // Preserve the ordinary composed pivot and per-axis scale. The
+            // reference replaces the palette basis, not the bone's position or
+            // authored scale (Lightwell's non-uniform lock-Z scale depends on it).
+            const glm::vec3 posedPivot = glm::vec3(composed * glm::vec4(bone.pivot, 1.0f));
+            const glm::vec3 preX(composed[0]);
+            const glm::vec3 preY(composed[1]);
+            const glm::vec3 preZ(composed[2]);
+            const glm::vec3 axisScale(
+                std::max(glm::length(preX), 1e-6f),
+                std::max(glm::length(preY), 1e-6f),
+                std::max(glm::length(preZ), 1e-6f));
+
+            auto unitOr = [](const glm::vec3& v, const glm::vec3& fallback) {
+                const float l2 = glm::dot(v, v);
+                return l2 > 1e-10f ? v * glm::inversesqrt(l2) : fallback;
+            };
+
+            glm::vec3 bx, by, bz;
+            if ((bone.flags & kM2BoneBillboardSpherical) != 0) {
+                // X toward viewer, Y screen-right, Z screen-up.
+                bx = -camFwd;
+                by = camRight;
+                bz = camUp;
+            } else if ((bone.flags & kM2BoneBillboardLockX) != 0) {
+                bx = unitOr(preX, -camFwd);
+                bz = unitOr(glm::cross(camFwd, bx), camUp);
+                by = unitOr(glm::cross(bz, bx), camRight);
+            } else if ((bone.flags & kM2BoneBillboardLockY) != 0) {
+                by = unitOr(preY, camRight);
+                bx = unitOr(glm::cross(camFwd, by), -camFwd);
+                bz = unitOr(glm::cross(bx, by), camUp);
+            } else {
+                // Lock-Z (0x40): keep authored model up and spin in-plane.
+                bz = unitOr(preZ, camUp);
+                by = unitOr(glm::cross(camFwd, bz), camRight);
+                bx = unitOr(glm::cross(by, bz), -camFwd);
+            }
+
+            glm::mat4 basis(1.0f);
+            basis[0] = glm::vec4(bx * axisScale.x, 0.0f);
+            basis[1] = glm::vec4(by * axisScale.y, 0.0f);
+            basis[2] = glm::vec4(bz * axisScale.z, 0.0f);
+            instance.boneMatrices[i] =
+                glm::translate(glm::mat4(1.0f), posedPivot) *
+                basis *
+                glm::translate(glm::mat4(1.0f), -bone.pivot);
         } else {
-            instance.boneMatrices[i] = local;
+            instance.boneMatrices[i] = composed;
         }
     }
     instance.bonesDirty[0] = instance.bonesDirty[1] = true;

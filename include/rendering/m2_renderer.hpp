@@ -424,7 +424,8 @@ public:
     uint32_t createInstanceWithMatrix(uint32_t modelId, const glm::mat4& modelMatrix,
                                        const glm::vec3& position);
 
-    void update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection);
+    void update(float deltaTime, const glm::vec3& cameraPos,
+                const glm::mat4& viewProjection, const glm::mat4& viewMatrix);
 
     /**
      * Render all visible instances (Vulkan)
@@ -1001,8 +1002,10 @@ private:
     uint32_t skyDiagLastOpaque_ = 0xFFFFFFFFu;
     uint32_t skyDiagLastTransparent_ = 0xFFFFFFFFu;
 
-    // Cached camera state from update() for frustum-culling bones
+    // Cached camera state from update() for frustum-culling and billboard bones.
     glm::vec3 cachedCamPos_ = glm::vec3(0.0f);
+    // Columns: camera right, up, forward in world space.
+    glm::mat3 cachedCameraBasisWorld_{1.0f};
     float cachedMaxRenderDistSq_ = 0.0f;
     float smoothedRenderDist_ = 1000.0f;  // Smoothed render distance to prevent flickering
     /// The distance as asked for, kept so the scale can be rebuilt when the

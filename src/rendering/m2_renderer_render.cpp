@@ -90,7 +90,7 @@ void M2Renderer::seedInstanceAnimation(const M2ModelGPU& model, uint32_t modelId
 
     // No sibling to copy from, so pay for the bones now.
     if (instance.boneMatrices.empty()) {
-        computeBoneMatrices(model, instance, &cachedCamPos_);
+        computeBoneMatrices(model, instance, &cachedCameraBasisWorld_);
     }
     if (!instance.boneMatrices.empty()) {
         boneSeedInstanceByModel_.emplace(modelId, instance.id);
@@ -354,7 +354,8 @@ static bool skyBatchAllowed(bool skyMode, std::size_t index) {
     return maxBatch < 0 || static_cast<int>(index) < maxBatch;
 }
 
-void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::mat4& viewProjection) {
+void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
+                        const glm::mat4& viewProjection, const glm::mat4& viewMatrix) {
     ZoneScopedN("M2Renderer::update");
     if (spatialIndexDirty_) {
         rebuildSpatialIndex();
@@ -362,8 +363,14 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
 
     float dtMs = deltaTime * 1000.0f;
 
-    // Cache camera state for frustum-culling bone computation
+    // Cache camera state for frustum culling and the Vanilla billboard
+    // palette replacement. Billboard orientation is the camera VIEW basis,
+    // shared by every billboard bone; it is not a pivot-to-camera look-at.
     cachedCamPos_ = cameraPos;
+    const glm::mat4 cameraWorld = glm::inverse(viewMatrix);
+    cachedCameraBasisWorld_[0] = glm::normalize(glm::vec3(cameraWorld[0]));   // right
+    cachedCameraBasisWorld_[1] = glm::normalize(glm::vec3(cameraWorld[1]));   // up
+    cachedCameraBasisWorld_[2] = glm::normalize(-glm::vec3(cameraWorld[2]));  // forward
     // Never past the ground. The density constants are how far models are
     // worth drawing, not how far there is anything to draw them on: the
     // terrain and the WMOs stop at the view distance itself, so a doodad
@@ -635,7 +642,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                 if (i >= instances.size()) continue;
                 auto& inst = instances[i];
                 if (!inst.cachedModel) continue;
-                computeBoneMatrices(*inst.cachedModel, inst, &cachedCamPos_);
+                computeBoneMatrices(*inst.cachedModel, inst, &cachedCameraBasisWorld_);
             }
         } else {
             // Parallel - dispatch across worker threads
@@ -649,7 +656,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                     if (i >= instances.size()) continue;
                     auto& inst = instances[i];
                     if (!inst.cachedModel) continue;
-                    computeBoneMatrices(*inst.cachedModel, inst, &cachedCamPos_);
+                    computeBoneMatrices(*inst.cachedModel, inst, &cachedCameraBasisWorld_);
                 }
             } else {
                 const size_t chunkSize = animCount / numThreads;
@@ -661,7 +668,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos, const glm::
                         if (idx >= instances.size()) continue;
                         auto& inst = instances[idx];
                         if (!inst.cachedModel) continue;
-                        computeBoneMatrices(*inst.cachedModel, inst, &cachedCamPos_);
+                        computeBoneMatrices(*inst.cachedModel, inst, &cachedCameraBasisWorld_);
                     }
                 };
 
