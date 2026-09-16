@@ -249,14 +249,28 @@ int main() {
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
     assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
 
-    // Classic v256 particle record: width/length are separate tracks and
-    // the final 0x130 Classic track is byte-valued emitter visibility.
+    // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
+    // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
     assert(m2Loader.find("EMITTER_SIZE_VANILLA = 0x1F8") != std::string::npos);
-    assert(m2Loader.find("parseTrackV(0xF8, em.emissionAreaWidth)") != std::string::npos);
-    assert(m2Loader.find("parseTrackV(0x114, em.emissionAreaLength)") != std::string::npos);
-    assert(m2Loader.find("parseTrackV(0x130, em.visibilityTrack, TrackType::BYTE_BOOL)") != std::string::npos);
+    assert(m2Loader.find("readValue<uint16_t>(m2Data, base + 0x28)") != std::string::npos);
+    assert(m2Loader.find("readValue<uint16_t>(m2Data, base + 0x2A)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0xF8, em.emissionAreaLength)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0x114, em.emissionAreaWidth)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0x130, em.zSource)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0x1DC, em.visibilityTrack, TrackType::BYTE_BOOL)") != std::string::npos);
+    assert(m2Particles.find("em.zSource") != std::string::npos);
     assert(m2Particles.find("em.visibilityTrack") != std::string::npos);
     assert(m2Particles.find("inst.emitterAccumulators[ei] = 0.0f") != std::string::npos);
+
+    // Classic flipbook cells are authored in the particle record tail and
+    // sampled from each particle's own normalized life, never a model clock.
+    assert(m2Loader.find("base + 0x168") != std::string::npos);
+    assert(m2Loader.find("base + 0x172") != std::string::npos);
+    assert(m2Header.find("headCellBegin[2]") != std::string::npos);
+    assert(m2Header.find("headCellRepeat[2]") != std::string::npos);
+    assert(m2Particles.find("const float tLife = glm::clamp(lifeRatio") != std::string::npos);
+    assert(m2Particles.find("const int authoredCell") != std::string::npos);
+    assert(m2Particles.find("static_cast<uint32_t>(authoredCell) % cachedTotalTiles") != std::string::npos);
 
     // Build-5875 ribbon emitters are 0xE0-byte records with Classic 28-byte
     // tracks. Their texture/material fields are arrays, and the animated
