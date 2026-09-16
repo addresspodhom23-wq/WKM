@@ -750,10 +750,19 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
         // Distance cull: only update particles within visible range
         glm::vec3 toCam = instance.position - cachedCamPos_;
         float distSq = glm::dot(toCam, toCam);
-        if (distSq > cachedMaxRenderDistSq_) continue;
+        if (distSq > cachedMaxRenderDistSq_) {
+            // No catch-up motion when the pool returns to simulation range.
+            // Re-initialize follow/inherit origin history on the next live frame.
+            std::fill(instance.particleEmitterOriginValid.begin(),
+                      instance.particleEmitterOriginValid.end(), 0);
+            continue;
+        }
         if (!instance.cachedModel) continue;
-        emitParticles(instance, *instance.cachedModel, deltaTime);
+        // Classic advances the particles that were already alive first,
+        // then emits births. A freshly born particle therefore remains age 0
+        // until the next simulation step instead of receiving a free dt jump.
         updateParticles(instance, deltaTime);
+        emitParticles(instance, *instance.cachedModel, deltaTime);
         if (!instance.cachedModel->ribbonEmitters.empty()) {
             updateRibbons(instance, *instance.cachedModel, deltaTime);
         }

@@ -1595,16 +1595,19 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     midpoint = 0.5f;
                 em.lifeMidpoint = midpoint;
 
-                if (base + 0x190 <= m2Data.size()) {
+                if (base + 0x194 <= m2Data.size()) {
                     const float speed = readValue<float>(m2Data, base + 0x180);
                     const float percent = readValue<float>(m2Data, base + 0x184);
                     const float twMin = readValue<float>(m2Data, base + 0x188);
                     const float twMax = readValue<float>(m2Data, base + 0x18C);
+                    const float inheritScale = readValue<float>(m2Data, base + 0x190);
                     if (std::isfinite(speed)) em.twinkleSpeed = speed;
                     if (std::isfinite(percent))
                         em.twinklePercent = std::clamp(percent, 0.0f, 1.0f);
                     if (std::isfinite(twMin)) em.twinkleMin = twMin;
                     if (std::isfinite(twMax)) em.twinkleMax = twMax;
+                    if (std::isfinite(inheritScale))
+                        em.inheritScale = inheritScale;
                 }
                 if (base + 0x19C <= m2Data.size()) {
                     const float drag = readValue<float>(m2Data, base + 0x194);
@@ -1657,6 +1660,17 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                                 readValue<float>(m2Data, at + 8u));
                         }
                     }
+                }
+
+                if (base + 0x1D4 <= m2Data.size()) {
+                    const float fs1 = readValue<float>(m2Data, base + 0x1C4);
+                    const float fc1 = readValue<float>(m2Data, base + 0x1C8);
+                    const float fs2 = readValue<float>(m2Data, base + 0x1CC);
+                    const float fc2 = readValue<float>(m2Data, base + 0x1D0);
+                    if (std::isfinite(fs1)) em.followSpeed1 = fs1;
+                    if (std::isfinite(fc1)) em.followScale1 = fc1;
+                    if (std::isfinite(fs2)) em.followSpeed2 = fs2;
+                    if (std::isfinite(fc2)) em.followScale2 = fc2;
                 }
 
                 // Synthesize color FBlock from static BGRA values

@@ -181,6 +181,11 @@ struct M2ParticleEmitter {
     M2AnimationTrack zSource;         // pull launch direction toward local (0,0,zSource)
     M2AnimationTrack visibilityTrack; // enabledIn: Classic byte track at record tail
     float drag = 0.0f;                // Classic plain f32 @ +0x194
+    float inheritScale = 0.0f;        // Classic plain f32 @ +0x190
+    float followSpeed1 = 0.0f;        // Classic follow curve @ +0x1C4
+    float followScale1 = 0.0f;        // Classic follow curve @ +0x1C8
+    float followSpeed2 = 0.0f;        // Classic follow curve @ +0x1CC
+    float followScale2 = 0.0f;        // Classic follow curve @ +0x1D0
     float twinkleSpeed = 0.0f;        // Classic plain f32 @ +0x180
     float twinklePercent = 1.0f;      // hard draw gate @ +0x184
     float twinkleMin = 1.0f;          // size range @ +0x188

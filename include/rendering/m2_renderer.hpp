@@ -268,6 +268,10 @@ struct M2Instance {
     // Particle emitter state
     std::vector<float> emitterAccumulators;  // fractional particle counter per emitter
     std::vector<uint8_t> particleEmitterGatePrev; // Classic burst rising-edge state
+    std::vector<glm::vec3> particleEmitterPrevOrigins; // previous live world origin per emitter
+    std::vector<uint8_t> particleEmitterOriginValid;   // whether previous origin is initialized
+    std::vector<float> particleInheritAccumulators;    // Classic 30 Hz inherit sampler
+    std::vector<glm::vec3> particleInheritVelocities;  // held world velocity per emitter
     std::vector<M2Particle> particles;
 
     // Ribbon emitter state

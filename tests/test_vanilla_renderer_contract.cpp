@@ -295,7 +295,36 @@ int main() {
     assert(m2Particles.find("p.position = localPos") != std::string::npos);
     assert(m2Particles.find("p.velocity = dir * speed") != std::string::npos);
     assert(m2Particles.find("inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f)") != std::string::npos);
-    assert(m2Particles.find("std::min(sdt * em.drag, 1.0f)") != std::string::npos);
+    assert(m2Particles.find("std::min(simDt * em.drag, 1.0f)") != std::string::npos);
+
+    // Classic particle simulation advances the existing pool before births
+    // and clamps emission/integration/follow/inherit to a 0.1 s step.
+    const auto particleUpdatePos = m2Render.find("updateParticles(instance, deltaTime)");
+    const auto particleEmitPos = m2Render.find("emitParticles(instance, *instance.cachedModel, deltaTime)");
+    assert(particleUpdatePos != std::string::npos);
+    assert(particleEmitPos != std::string::npos);
+    assert(particleUpdatePos < particleEmitPos);
+    assert(m2Particles.find("std::min(std::max(dt, 0.0f), 0.1f)") != std::string::npos);
+    assert(m2Particles.find("rate * simDt") != std::string::npos);
+    assert(m2Particles.find("p.life += simDt") != std::string::npos);
+
+    // Classic 0x4000 follow uses the authored speed->scale line, while 0x40
+    // samples inherited emitter velocity at a strict 30 Hz sample-and-hold.
+    assert(m2Loader.find("base + 0x190") != std::string::npos);
+    assert(m2Loader.find("base + 0x1C4") != std::string::npos);
+    assert(m2Loader.find("base + 0x1D0") != std::string::npos);
+    assert(m2LoaderHeader.find("float inheritScale = 0.0f") != std::string::npos);
+    assert(m2LoaderHeader.find("float followSpeed1 = 0.0f") != std::string::npos);
+    assert(m2Header.find("particleEmitterPrevOrigins") != std::string::npos);
+    assert(m2Header.find("particleInheritVelocities") != std::string::npos);
+    assert(m2Particles.find("(pem.flags & 0x4000u) != 0") != std::string::npos);
+    assert(m2Particles.find("(pem.followScale2 - pem.followScale1)") != std::string::npos);
+    assert(m2Particles.find("modelSpace ? fraction - 1.0f : fraction") != std::string::npos);
+    assert(m2Particles.find("constexpr float kInheritInterval = 1.0f / 30.0f") != std::string::npos);
+    assert(m2Particles.find("(pem.flags & 0x40u) != 0") != std::string::npos);
+    assert(m2Particles.find("kInheritInterval / accumulator") != std::string::npos);
+    assert(m2Particles.find("inheritFactor * inherited") != std::string::npos);
+    assert(m2Render.find("particleEmitterOriginValid.begin()") != std::string::npos);
 
     // Classic spline emitters carry a cubic-Bezier chain at +0x1D4/+0x1D8.
     // areaLength/areaWidth choose a normalized interval along arc length.

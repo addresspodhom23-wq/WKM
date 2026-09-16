@@ -193,6 +193,10 @@ std::vector<glm::vec3> M2Renderer::getWaterVegetationPositions(const glm::vec3& 
 void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
     if (inst.forcedHidden || gpu.isInstancePortal) return;
 
+    const float simDt = vanillaRendering_
+        ? std::min(std::max(dt, 0.0f), 0.1f)
+        : dt;
+
     if (inst.emitterAccumulators.size() != gpu.particleEmitters.size()) {
         inst.emitterAccumulators.resize(gpu.particleEmitters.size(), 0.0f);
     }
@@ -277,7 +281,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                 inst.emitterAccumulators[ei] = 0.0f;
             inst.particleEmitterGatePrev[ei] = 1;
         } else {
-            inst.emitterAccumulators[ei] += rate * dt;
+            inst.emitterAccumulators[ei] += rate * simDt;
         }
 
         while (inst.emitterAccumulators[ei] >= 1.0f && inst.particles.size() < MAX_M2_PARTICLES) {
@@ -446,6 +450,25 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                     glm::vec4(em.position, 1.0f));
             }
 
+            // Classic flag 0x40 samples emitter motion at 30 Hz and adds the
+            // held world velocity to newly born particles. The speed-variation
+            // factor is sampled independently for this inherited component.
+            if (vanillaRendering_ && (em.flags & 0x40u) != 0 &&
+                ei < inst.particleInheritVelocities.size()) {
+                glm::vec3 inherited = inst.particleInheritVelocities[ei];
+                const float inheritFactor =
+                    1.0f + speedVariation * distN(particleRng_);
+                if (modelSpace) {
+                    const glm::mat3 liveFrame(inst.modelMatrix * boneXform);
+                    const float det = glm::determinant(liveFrame);
+                    if (std::isfinite(det) && std::abs(det) > 1e-8f)
+                        inherited = glm::inverse(liveFrame) * inherited;
+                    else
+                        inherited = glm::vec3(0.0f);
+                }
+                p.velocity += inheritFactor * inherited;
+            }
+
             // Kraken-only fallback for models whose authored/external animation
             // data is incomplete. Vanilla mode must keep zero speed as zero.
             if (!vanillaRendering_ && std::abs(speed) < 0.01f) {
@@ -498,15 +521,30 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
 void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     if (!inst.cachedModel) return;
     const auto& gpu = *inst.cachedModel;
+    const size_t numEm = gpu.particleEmitters.size();
+    const float simDt = vanillaRendering_
+        ? std::min(std::max(dt, 0.0f), 0.1f)
+        : dt;
 
-    // Hoist per-emitter gravity out of the per-particle loop. Gravity (and the
-    // emissionSpeed fallback) depends only on the emitter and animation time -
-    // not on the particle itself - so interpFloat was being re-evaluated for
-    // every particle even when 100s of particles share one emitter.
+    if (inst.particleEmitterPrevOrigins.size() != numEm)
+        inst.particleEmitterPrevOrigins.resize(numEm, glm::vec3(0.0f));
+    if (inst.particleEmitterOriginValid.size() != numEm)
+        inst.particleEmitterOriginValid.resize(numEm, 0);
+    if (inst.particleInheritAccumulators.size() != numEm)
+        inst.particleInheritAccumulators.resize(numEm, 0.0f);
+    if (inst.particleInheritVelocities.size() != numEm)
+        inst.particleInheritVelocities.resize(numEm, glm::vec3(0.0f));
+
+    std::vector<uint8_t> liveByEmitter(numEm, 0);
+    for (const auto& p : inst.particles) {
+        if (p.emitterIndex >= 0 &&
+            static_cast<size_t>(p.emitterIndex) < numEm)
+            liveByEmitter[static_cast<size_t>(p.emitterIndex)] = 1;
+    }
+
     constexpr size_t kMaxStackEmitters = 16;
     float emitterGravStack[kMaxStackEmitters];
     std::vector<float> emitterGravHeap;
-    const size_t numEm = gpu.particleEmitters.size();
     float* emitterGrav = nullptr;
     if (numEm > 0) {
         if (numEm <= kMaxStackEmitters) {
@@ -515,72 +553,149 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             emitterGravHeap.resize(numEm);
             emitterGrav = emitterGravHeap.data();
         }
-        for (size_t e = 0; e < numEm; ++e) {
-            const auto& pem = gpu.particleEmitters[e];
-            float grav = interpFloat(pem.gravity,
-                                      inst.animTime, inst.globalSequenceTime,
-                                      inst.currentSequenceIndex, gpu.globalSequenceDurations);
-            if (!vanillaRendering_ && grav == 0.0f && !gpu.isFireflyEffect) {
-                float emSpeed = interpFloat(pem.emissionSpeed,
-                                             inst.animTime, inst.globalSequenceTime,
-                                             inst.currentSequenceIndex, gpu.globalSequenceDurations);
-                grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
+    }
+
+    std::vector<glm::vec3> followCorrection(numEm, glm::vec3(0.0f));
+
+    for (size_t e = 0; e < numEm; ++e) {
+        const auto& pem = gpu.particleEmitters[e];
+        float grav = interpFloat(
+            pem.gravity, inst.animTime, inst.globalSequenceTime,
+            inst.currentSequenceIndex, gpu.globalSequenceDurations);
+        if (!vanillaRendering_ && grav == 0.0f && !gpu.isFireflyEffect) {
+            const float emSpeed = interpFloat(
+                pem.emissionSpeed, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
+        }
+        emitterGrav[e] = grav;
+
+        if (!vanillaRendering_) continue;
+
+        glm::mat4 boneXform(1.0f);
+        if (pem.bone < inst.boneMatrices.size())
+            boneXform = inst.boneMatrices[pem.bone];
+        const glm::mat4 liveFrame4 = inst.modelMatrix * boneXform;
+        const glm::vec3 currentOrigin = glm::vec3(
+            liveFrame4 * glm::vec4(pem.position, 1.0f));
+        const glm::vec3 emitterDelta =
+            inst.particleEmitterOriginValid[e]
+                ? currentOrigin - inst.particleEmitterPrevOrigins[e]
+                : glm::vec3(0.0f);
+        inst.particleEmitterPrevOrigins[e] = currentOrigin;
+        inst.particleEmitterOriginValid[e] = 1;
+
+        // Flag 0x4000: follow correction is a speed-dependent fraction of the
+        // emitter's frame-to-frame translation. Model-space storage already
+        // rides the emitter, so its correction is (fraction - 1) * delta.
+        if ((pem.flags & 0x4000u) != 0 && simDt > 0.0f &&
+            glm::dot(emitterDelta, emitterDelta) > 0.0f &&
+            std::abs(pem.followSpeed2 - pem.followSpeed1) >= 1e-6f) {
+            const float slope =
+                (pem.followScale2 - pem.followScale1) /
+                (pem.followSpeed2 - pem.followSpeed1);
+            const float intercept =
+                pem.followScale1 - slope * pem.followSpeed1;
+            const float fraction = glm::clamp(
+                slope * glm::length(emitterDelta) / simDt + intercept,
+                0.0f, 1.0f);
+            const bool modelSpace = (pem.flags & 0x10u) != 0;
+            glm::vec3 correction =
+                (modelSpace ? fraction - 1.0f : fraction) * emitterDelta;
+            if (modelSpace) {
+                const glm::mat3 linear(liveFrame4);
+                const float det = glm::determinant(linear);
+                correction = (std::isfinite(det) && std::abs(det) > 1e-8f)
+                    ? glm::inverse(linear) * correction
+                    : glm::vec3(0.0f);
             }
-            emitterGrav[e] = grav;
+            followCorrection[e] = correction;
+        }
+
+        // Flag 0x40: 30 Hz sample-and-hold inherited velocity. Until this
+        // emitter already owns a live particle the held value is zero.
+        if ((pem.flags & 0x40u) != 0) {
+            float& accumulator = inst.particleInheritAccumulators[e];
+            accumulator += simDt;
+            constexpr float kInheritInterval = 1.0f / 30.0f;
+            if (accumulator > kInheritInterval) {
+                inst.particleInheritVelocities[e] = liveByEmitter[e]
+                    ? emitterDelta *
+                        (kInheritInterval / accumulator) * pem.inheritScale
+                    : glm::vec3(0.0f);
+                accumulator = 0.0f;
+            }
+        } else {
+            inst.particleInheritAccumulators[e] = 0.0f;
+            inst.particleInheritVelocities[e] = glm::vec3(0.0f);
         }
     }
 
     for (size_t i = 0; i < inst.particles.size(); ) {
         auto& p = inst.particles[i];
-        p.life += dt;
+        p.life += simDt;
         if (p.life >= p.maxLife) {
-            // Swap-and-pop removal
             inst.particles[i] = inst.particles.back();
             inst.particles.pop_back();
             continue;
         }
-        if (p.emitterIndex >= 0 && static_cast<size_t>(p.emitterIndex) < numEm) {
-            const auto& em = gpu.particleEmitters[static_cast<size_t>(p.emitterIndex)];
-            const float grav = emitterGrav[p.emitterIndex];
+
+        if (p.emitterIndex >= 0 &&
+            static_cast<size_t>(p.emitterIndex) < numEm) {
+            const size_t emitterIndex =
+                static_cast<size_t>(p.emitterIndex);
+            const auto& em = gpu.particleEmitters[emitterIndex];
+            const float grav = emitterGrav[emitterIndex];
             const bool modelSpace =
                 vanillaRendering_ && ((em.flags & 0x10u) != 0);
+
+            if (vanillaRendering_)
+                p.position += followCorrection[emitterIndex];
+
             const glm::vec3 stepVelocity = p.velocity;
 
             if (modelSpace) {
-                // Reference simulation clamps long frames, advances on the
-                // pre-gravity velocity, then applies the closed-form half-step.
-                const float sdt = std::min(std::max(dt, 0.0f), 0.1f);
-                p.position += p.velocity * sdt;
+                p.position += p.velocity * simDt;
                 if (grav != 0.0f) {
-                    p.position.z -= 0.5f * grav * sdt * sdt;
-                    p.velocity.z -= grav * sdt;
+                    p.position.z -= 0.5f * grav * simDt * simDt;
+                    p.velocity.z -= grav * simDt;
                 }
                 if (em.drag > 0.0f) {
-                    const float drag = std::min(sdt * em.drag, 1.0f);
+                    const float drag =
+                        std::min(simDt * em.drag, 1.0f);
+                    p.velocity -= drag * p.velocity;
+                }
+            } else if (vanillaRendering_) {
+                // Vanilla advances with pre-gravity velocity, then applies the
+                // closed-form half-step. Long frames use the same 0.1 s clamp
+                // as emission/follow/inherit.
+                p.position += p.velocity * simDt;
+                if (grav != 0.0f) {
+                    p.position.z -= 0.5f * grav * simDt * simDt;
+                    p.velocity.z -= grav * simDt;
+                }
+                if (em.drag > 0.0f) {
+                    const float drag =
+                        std::min(simDt * em.drag, 1.0f);
                     p.velocity -= drag * p.velocity;
                 }
             } else {
                 p.velocity.z -= grav * dt;
-                if (vanillaRendering_ && em.drag > 0.0f) {
-                    const float drag = std::min(std::max(dt, 0.0f) * em.drag, 1.0f);
-                    p.velocity -= drag * p.velocity;
-                }
                 p.position += p.velocity * dt;
             }
 
-            // Classic Sphere flag 0x80 terminates an inward stream when it
-            // crosses the centre and its pre-gravity velocity points outward.
             if (vanillaRendering_ && em.emitterType == 2 &&
                 (em.flags & 0x80u) != 0 &&
-                glm::dot(stepVelocity, p.position - p.emitterOrigin) > 0.0f) {
+                glm::dot(stepVelocity,
+                         p.position - p.emitterOrigin) > 0.0f) {
                 inst.particles[i] = inst.particles.back();
                 inst.particles.pop_back();
                 continue;
             }
         } else {
-            p.position += p.velocity * dt;
+            p.position += p.velocity * simDt;
         }
-        i++;
+        ++i;
     }
 }
 
