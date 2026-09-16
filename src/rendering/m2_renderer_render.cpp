@@ -1354,7 +1354,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 continue;
             }
             const M2ModelGPU& model = *instances[firstEntry.index].cachedModel;
-            if (model.isInstancePortal) {
+            if (!vanillaRendering_ && model.isInstancePortal) {
                 for (size_t vi = visStart; vi < groupEnd; vi++) {
                     const auto& entry = sortedVisible_[vi];
                     if (entry.index >= instances.size()) continue;
@@ -1492,7 +1492,11 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     glowCard.modelIsBrazierOrFire = model.isBrazierOrFire;
                     glowCard.modelIsSpellEffect = model.isSpellEffect;
                     glowCard.modelIsKoboldFlame = model.isKoboldFlame;
-                    const bool shouldUseGlowSprite = m2WantsGlowSprite(glowCard);
+                    // Vanilla draws the authored M2 glow-card geometry itself
+                    // (including billboard-bone facing/animation). Kraken's
+                    // extra radial sprite is a non-Vanilla enhancement only.
+                    const bool shouldUseGlowSprite =
+                        !vanillaRendering_ && m2WantsGlowSprite(glowCard);
                     if (shouldUseGlowSprite) {
                         // Generate glow sprites for each instance in the group
                         for (size_t j = lodIdx; j < lodEnd; j++) {
@@ -1818,7 +1822,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             currentModelValid = false;
             currentModel = instance.cachedModel;
             if (!currentModel) continue;
-            if (currentModel->isInstancePortal) continue;
+            if (!vanillaRendering_ && currentModel->isInstancePortal) continue;
             if (!currentModel->hasTransparentBatches &&
                 !(!vanillaRendering_ && currentModel->isSpellEffect)) continue;
             if (!currentModel->vertexBuffer || !currentModel->indexBuffer) continue;
@@ -1841,7 +1845,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         }
         float instanceFadeAlpha = fadeAlpha;
         if (model.isGroundDetail) instanceFadeAlpha *= 0.82f;
-        if (model.isInstancePortal) instanceFadeAlpha *= 0.72f;
+        if (!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f;
 
         bool modelNeedsAnimation = model.hasAnimation && !model.disableAnimation;
         if (modelNeedsAnimation && instance.boneMatrices.empty()) continue;
@@ -1902,7 +1906,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             glowCard.modelIsBrazierOrFire = model.isBrazierOrFire;
             glowCard.modelIsSpellEffect = model.isSpellEffect;
             glowCard.modelIsKoboldFlame = model.isKoboldFlame;
-            if (m2WantsGlowSprite(glowCard) && m2GlowSpriteReplacesMesh(glowCard)) {
+            if (!vanillaRendering_ &&
+                m2WantsGlowSprite(glowCard) && m2GlowSpriteReplacesMesh(glowCard)) {
                 continue;
             }
 

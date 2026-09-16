@@ -124,5 +124,12 @@ int main() {
     assert(m2Render.find("batch.blendMode == M2_BLEND_ALPHA_KEY ? 1 : 0") != std::string::npos);
     assert(m2.find("128.0 / 255.0") != std::string::npos);
     assert(m2.find("!vanillaRendering && colorKeyBlack != 0") != std::string::npos);
+
+    // Vanilla glow cards/portals are authored M2 geometry. Kraken-only
+    // heuristic radial sprites must neither replace nor supplement that mesh.
+    assert(m2Render.find("!vanillaRendering_ && m2WantsGlowSprite(glowCard)") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && model.isInstancePortal") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && currentModel->isInstancePortal") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ && model.isInstancePortal) instanceFadeAlpha *= 0.72f") != std::string::npos);
     return 0;
 }
