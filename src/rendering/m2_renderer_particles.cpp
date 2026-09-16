@@ -867,7 +867,33 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             vd.push_back(alpha);
             vd.push_back(scale);
             float tileIndex = p.tileIndex;
-            if (cachedIsTiled) {
+            if (vanillaRendering_ && cachedTotalTiles > 1) {
+                // Classic head-cell ramp is evaluated PER PARTICLE from its own
+                // normalized age. A model/global clock makes every flame sprite
+                // flip in lockstep and visibly strobes the whole emitter.
+                const float tLife = glm::clamp(lifeRatio, 0.0f, 1.0f);
+                const float mid = glm::clamp(em.lifeMidpoint, 0.001f, 1.0f);
+                const int seg = tLife <= mid ? 0 : 1;
+                float segT = seg == 0
+                    ? tLife / mid
+                    : (tLife - mid) / std::max(1.0f - mid, 0.001f);
+                // Vanilla's cell ramp insets both endpoints before sampling.
+                segT = glm::clamp(segT, 0.0f, 1.0f) * 0.99f + 0.005f;
+                const float repeat = static_cast<float>(em.headCellRepeat[seg]);
+                const float cellT = repeat != 1.0f
+                    ? segT * repeat - std::floor(segT * repeat)
+                    : segT;
+                const int begin = static_cast<int>(em.headCellBegin[seg]);
+                const int end = static_cast<int>(em.headCellEnd[seg]);
+                const int baseCell = end >= begin ? begin : begin + 1;
+                const int span = end >= begin
+                    ? end - begin + 1
+                    : end - begin - 1;
+                const int authoredCell =
+                    static_cast<int>(std::floor(baseCell + span * cellT)) & 0xFF;
+                tileIndex = static_cast<float>(
+                    static_cast<uint32_t>(authoredCell) % cachedTotalTiles);
+            } else if (cachedIsTiled) {
                 tileIndex = p.tileIndex + static_cast<float>(cachedAnimFrame);
                 while (tileIndex >= cachedTilesFloat) {
                     tileIndex -= cachedTilesFloat;
