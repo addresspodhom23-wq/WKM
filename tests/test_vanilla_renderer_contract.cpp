@@ -296,6 +296,13 @@ int main() {
     assert(m2TrackSampler.find("glm::slerp") == std::string::npos);
     assert(m2TrackSampler.find("a.w + (b.w - a.w) * fraction") != std::string::npos);
 
+    // Vanilla M2Init promotes raw file bit 0x01 to runtime blend bit 0x80,
+    // then clears 0x01 for the original client's base looping animation IDs.
+    assert(m2Loader.find("applyVanillaSequenceRuntimeFlags(seq)") != std::string::npos);
+    assert(m2Loader.find("sequence.flags |= 0x80u") != std::string::npos);
+    assert(m2Loader.find("sequence.flags &= ~0x01u") != std::string::npos);
+    assert(m2Loader.find("case 223:") != std::string::npos);
+
     // Vanilla sequence flag 0x40 is an alias: animation data lives in the
     // aliasNext target. Resolve track sampling without overwriting the logical
     // sequence metadata, and bound the walk so corrupt/cyclic chains are safe.

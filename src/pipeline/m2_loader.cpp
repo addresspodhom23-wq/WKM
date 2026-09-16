@@ -511,6 +511,37 @@ std::string readString(const std::vector<uint8_t>& data, uint32_t offset, uint32
 
 enum class TrackType { VEC3, QUAT_COMPRESSED, FLOAT, FIXED16, UINT16, BYTE_BOOL };
 
+// Vanilla's M2Init mutates two sequence bits before runtime playback:
+ // file bit 0x01 also arms runtime blending (0x80), then a fixed set of
+ // looping/base animations clears 0x01 so the evaluator uses modulo instead
+ // of the one-shot clamp path. Preserve that exact runtime view in our loaded
+ // M2Sequence rather than re-interpreting raw file flags at every call site.
+void applyVanillaSequenceRuntimeFlags(M2Sequence& sequence) {
+    if ((sequence.flags & 0x01u) != 0)
+        sequence.flags |= 0x80u;
+
+    switch (sequence.id) {
+        case 0:
+        case 4:
+        case 5:
+        case 13:
+        case 41:
+        case 42:
+        case 43:
+        case 44:
+        case 45:
+        case 69:
+        case 119:
+        case 120:
+        case 143:
+        case 223:
+            sequence.flags &= ~0x01u;
+            break;
+        default:
+            break;
+    }
+}
+
 // M2 sequence flag: when set, keyframe data is embedded in the M2 file.
 // When clear, data lives in an external .anim file and the M2 offsets are
 // .anim-relative - reading them from the M2 produces garbage.
@@ -1130,6 +1161,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 seq.boundRadius = ds.boundRadius;
                 seq.nextAnimation = ds.nextAnimation;
                 seq.aliasNext = ds.aliasNext;
+                applyVanillaSequenceRuntimeFlags(seq);
                 model.sequences.push_back(seq);
             }
         } else {
