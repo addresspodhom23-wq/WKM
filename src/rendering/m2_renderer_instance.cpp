@@ -114,8 +114,10 @@ void M2Renderer::setInstanceAnimationHeld(uint32_t instanceId, uint32_t animatio
     const auto& seqs = inst.cachedModel->sequences;
     for (int i = 0; i < static_cast<int>(seqs.size()); ++i) {
         if (seqs[i].id != animationId) continue;
-        inst.currentSequenceIndex = i;
-        inst.animDuration = static_cast<float>(seqs[i].duration);
+        beginM2SequenceTransition(
+            inst, *inst.cachedModel, i,
+            skipToEnd ? static_cast<float>(seqs[i].duration) : 0.0f,
+            !skipToEnd);
         inst.playingVariation = false;   // not a variation: it does not go back
         inst.holdAtEnd = true;
         if (skipToEnd) {
@@ -138,9 +140,7 @@ void M2Renderer::setInstanceAnimation(uint32_t instanceId, uint32_t animationId,
     // Find the first sequence matching the requested animation ID
     for (int i = 0; i < static_cast<int>(seqs.size()); ++i) {
         if (seqs[i].id == animationId) {
-            inst.currentSequenceIndex = i;
-            inst.animDuration = static_cast<float>(seqs[i].duration);
-            inst.animTime = 0.0f;
+            beginM2SequenceTransition(inst, *inst.cachedModel, i);
             inst.animSpeed = 1.0f;
             // Use playingVariation=true for one-shot (returns to idle when done)
             inst.playingVariation = !loop;

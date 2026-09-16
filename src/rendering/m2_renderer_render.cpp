@@ -521,6 +521,32 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     for (auto& instance : instances) {
         instance.animTime += dtMs;
         instance.globalSequenceTime = sharedGlobalSequenceTimeMs_;
+
+        if (instance.blendFromSequenceIndex >= 0 &&
+            instance.blendDuration > 0.0f && instance.cachedModel) {
+            const auto& model = *instance.cachedModel;
+            instance.blendElapsed += dtMs;
+            instance.blendFromAnimTime += dtMs * instance.blendFromAnimSpeed;
+
+            if (instance.blendFromSequenceIndex <
+                static_cast<int>(model.sequences.size())) {
+                const auto& from =
+                    model.sequences[instance.blendFromSequenceIndex];
+                const float fromDuration = static_cast<float>(from.duration);
+                if (fromDuration > 0.0f) {
+                    if ((from.flags & 0x01u) != 0) {
+                        instance.blendFromAnimTime =
+                            std::min(instance.blendFromAnimTime, fromDuration);
+                    } else {
+                        while (instance.blendFromAnimTime >= fromDuration)
+                            instance.blendFromAnimTime -= fromDuration;
+                    }
+                }
+            }
+
+            if (instance.blendElapsed >= instance.blendDuration)
+                clearM2SequenceBlend(instance);
+        }
     }
 
     // The sky model's clock, when this is the renderer that draws one.
@@ -613,11 +639,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
                 instance.animSpeed = 0.0f;
             } else if (instance.playingVariation) {
                 instance.playingVariation = false;
-                instance.currentSequenceIndex = instance.idleSequenceIndex;
-                if (instance.idleSequenceIndex < static_cast<int>(model.sequences.size())) {
-                    instance.animDuration = static_cast<float>(model.sequences[instance.idleSequenceIndex].duration);
-                }
-                instance.animTime = 0.0f;
+                beginM2SequenceTransition(
+                    instance, model, instance.idleSequenceIndex);
                 instance.variationTimer = randFloat(rendering::M2_LOOP_VARIATION_TIMER_MIN_MS, rendering::M2_LOOP_VARIATION_TIMER_MAX_MS);
             } else {
                 // Use iterative subtraction instead of fmod() to preserve precision
@@ -637,9 +660,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
                 int newSeq = model.idleVariationIndices[pick];
                 if (newSeq != instance.currentSequenceIndex && newSeq < static_cast<int>(model.sequences.size())) {
                     instance.playingVariation = true;
-                    instance.currentSequenceIndex = newSeq;
-                    instance.animDuration = static_cast<float>(model.sequences[newSeq].duration);
-                    instance.animTime = 0.0f;
+                    beginM2SequenceTransition(instance, model, newSeq);
                 } else {
                     instance.variationTimer = randFloat(rendering::M2_IDLE_VARIATION_TIMER_MIN_MS, rendering::M2_IDLE_VARIATION_TIMER_MAX_MS);
                 }

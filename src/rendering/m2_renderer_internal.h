@@ -315,6 +315,62 @@ inline int resolveM2SequenceAlias(const M2ModelGPU& model, int sequenceIndex) {
     return sequenceIndex;
 }
 
+inline void clearM2SequenceBlend(M2Instance& instance) {
+    instance.blendFromSequenceIndex = -1;
+    instance.blendFromAnimTime = 0.0f;
+    instance.blendFromAnimSpeed = 1.0f;
+    instance.blendElapsed = 0.0f;
+    instance.blendDuration = 0.0f;
+}
+
+/// Arm a new logical sequence while preserving the outgoing clock for the
+/// authored transition. The loader mirrors Vanilla M2Init first, so runtime
+/// flag 0x80 is the single authoritative "blend this sequence" bit here.
+inline void beginM2SequenceTransition(M2Instance& instance,
+                                      const M2ModelGPU& model,
+                                      int nextSequenceIndex,
+                                      float nextAnimTime = 0.0f,
+                                      bool allowBlend = true) {
+    if (nextSequenceIndex < 0 ||
+        nextSequenceIndex >= static_cast<int>(model.sequences.size())) {
+        return;
+    }
+
+    const int previousIndex = instance.currentSequenceIndex;
+    const auto& next = model.sequences[nextSequenceIndex];
+    const bool blendFlag = (next.flags & 0x80u) != 0;
+    const float authoredBlend =
+        blendFlag ? static_cast<float>(next.blendTime) : 0.0f;
+
+    if (allowBlend && authoredBlend > 0.0f &&
+        previousIndex >= 0 &&
+        previousIndex < static_cast<int>(model.sequences.size()) &&
+        previousIndex != nextSequenceIndex) {
+        instance.blendFromSequenceIndex = previousIndex;
+        instance.blendFromAnimTime = instance.animTime;
+        instance.blendFromAnimSpeed = instance.animSpeed;
+        instance.blendElapsed = 0.0f;
+        instance.blendDuration = authoredBlend;
+    } else {
+        clearM2SequenceBlend(instance);
+    }
+
+    instance.currentSequenceIndex = nextSequenceIndex;
+    instance.animDuration = static_cast<float>(next.duration);
+    instance.animTime = nextAnimTime;
+}
+
+/// 1.12.1 sequence cross-fade weight: smoothstep, not a linear ramp.
+inline float m2SequenceBlendWeight(const M2Instance& instance) {
+    if (instance.blendFromSequenceIndex < 0 ||
+        instance.blendDuration <= 0.0f) {
+        return 1.0f;
+    }
+    const float t = glm::clamp(
+        instance.blendElapsed / instance.blendDuration, 0.0f, 1.0f);
+    return (3.0f - 2.0f * t) * t * t;
+}
+
 /// Bone transforms for one instance.
 ///
 /// `cameraBasisWorld` columns are right/up/forward. Vanilla 1.12 rewrites a
@@ -330,6 +386,14 @@ inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
     const auto& gsd = model.globalSequenceDurations;
     const int sampleSequenceIndex =
         resolveM2SequenceAlias(model, instance.currentSequenceIndex);
+    const bool sequenceBlending =
+        instance.blendFromSequenceIndex >= 0 &&
+        instance.blendDuration > 0.0f;
+    const int blendSequenceIndex = sequenceBlending
+        ? resolveM2SequenceAlias(model, instance.blendFromSequenceIndex)
+        : -1;
+    const float blendWeight = sequenceBlending
+        ? m2SequenceBlendWeight(instance) : 1.0f;
 
     for (size_t i = 0; i < numBones; i++) {
         const auto& bone = model.bones[i];
@@ -342,6 +406,26 @@ inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
         glm::vec3 scl = m2_track::sampleVec3(
             bone.scale, sampleSequenceIndex, instance.animTime,
             instance.globalSequenceTime, gsd, glm::vec3(1.0f));
+
+        // The Classic evaluator samples the outgoing and incoming sequence
+        // clocks independently, then cross-fades continuous TRS values. Global
+        // sequence tracks already ignore the local sequence/time, so sampling
+        // both legs yields the same value and remains phase-locked.
+        if (sequenceBlending && blendSequenceIndex >= 0) {
+            const glm::vec3 fromTrans = m2_track::sampleVec3(
+                bone.translation, blendSequenceIndex, instance.blendFromAnimTime,
+                instance.globalSequenceTime, gsd, glm::vec3(0.0f));
+            const glm::quat fromRot = m2_track::sampleQuat(
+                bone.rotation, blendSequenceIndex, instance.blendFromAnimTime,
+                instance.globalSequenceTime, gsd);
+            const glm::vec3 fromScale = m2_track::sampleVec3(
+                bone.scale, blendSequenceIndex, instance.blendFromAnimTime,
+                instance.globalSequenceTime, gsd, glm::vec3(1.0f));
+
+            trans = glm::mix(fromTrans, trans, blendWeight);
+            rot = glm::normalize(glm::slerp(fromRot, rot, blendWeight));
+            scl = glm::mix(fromScale, scl, blendWeight);
+        }
 
         if (scl.x < 0.001f) scl.x = 1.0f;
         if (scl.y < 0.001f) scl.y = 1.0f;

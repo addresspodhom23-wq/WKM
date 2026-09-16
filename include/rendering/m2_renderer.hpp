@@ -256,8 +256,18 @@ struct M2Instance {
     float animTime = 0.0f;       // Current animation time (ms)
     float globalSequenceTime = 0.0f; // Shared client clock snapshot for global animation tracks
     float animSpeed = 1.0f;      // Animation playback speed
-    int currentSequenceIndex = 0;// Index into sequences array
+    int currentSequenceIndex = 0;// Logical index into sequences array
     float animDuration = 0.0f;   // Duration of current animation (ms)
+
+    // Vanilla keeps a second clock while changing sequences and blends the two
+    // sampled poses with a Hermite smoothstep. The old sequence keeps advancing
+    // during the transition; it is not frozen at the switching frame.
+    int blendFromSequenceIndex = -1;
+    float blendFromAnimTime = 0.0f;
+    float blendFromAnimSpeed = 1.0f;
+    float blendElapsed = 0.0f;
+    float blendDuration = 0.0f;
+
     std::vector<glm::mat4> boneMatrices;
 
     // Idle variation state

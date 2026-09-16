@@ -314,6 +314,18 @@ int main() {
     assert(m2Render.find("resolveM2SequenceAlias(model, inst.currentSequenceIndex)") != std::string::npos);
     assert(m2Render.find("resolveM2SequenceAlias(model, instance.currentSequenceIndex)") != std::string::npos);
 
+    // Sequence transitions use the M2Init-normalized 0x80 blend flag and
+    // authored blendTime. 1.12.1 advances both clocks and applies a Hermite
+    // smoothstep; quaternion cross-fade is shortest-arc slerp.
+    assert(m2Header.find("blendFromSequenceIndex") != std::string::npos);
+    assert(m2Internal.find("(next.flags & 0x80u) != 0") != std::string::npos);
+    assert(m2Internal.find("(next.flags & 0x01u)") == std::string::npos);
+    assert(m2Internal.find("next.blendTime") != std::string::npos);
+    assert(m2Internal.find("(3.0f - 2.0f * t) * t * t") != std::string::npos);
+    assert(m2Internal.find("glm::slerp(fromRot, rot, blendWeight)") != std::string::npos);
+    assert(m2Render.find("instance.blendFromAnimTime += dtMs * instance.blendFromAnimSpeed") != std::string::npos);
+    assert(m2Render.find("beginM2SequenceTransition(instance, model, newSeq)") != std::string::npos);
+
     // One render clock owns all Classic global-sequence phases.
     assert(m2Render.find("instance.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
     assert(m2Render.find("instance.globalSequenceTime += dtMs") == std::string::npos);
