@@ -50,7 +50,7 @@ int main() {
     // Vanilla material bit 0x04 is the only reason an M2 batch is two-sided.
     assert(m2Header.find("int32_t twoSided") != std::string::npos);
     assert(m2.find("int twoSided") != std::string::npos);
-    assert(m2.find("vanillaRendering && twoSided == 0 && !gl_FrontFacing") != std::string::npos);
+    assert(m2.find("vanillaRendering && alphaTest != 3 && twoSided == 0 && !gl_FrontFacing") != std::string::npos);
 
     // Vanilla material bit 0x02 is Unfogged: it must survive material setup and
     // bypass world distance fog in the Vanilla renderer.
