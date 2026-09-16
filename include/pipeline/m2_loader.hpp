@@ -180,6 +180,10 @@ struct M2ParticleEmitter {
     M2AnimationTrack zSource;         // pull launch direction toward local (0,0,zSource)
     M2AnimationTrack visibilityTrack; // enabledIn: Classic byte track at record tail
     float drag = 0.0f;                // Classic plain f32 @ +0x194
+    float twinkleSpeed = 0.0f;        // Classic plain f32 @ +0x180
+    float twinklePercent = 1.0f;      // hard draw gate @ +0x184
+    float twinkleMin = 1.0f;          // size range @ +0x188
+    float twinkleMax = 1.0f;          // size range @ +0x18C
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
