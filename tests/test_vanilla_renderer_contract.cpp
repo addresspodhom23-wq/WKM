@@ -229,6 +229,15 @@ int main() {
     assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
 
+    // Classic v256 particle record: width/length are separate tracks and
+    // the final 0x130 Classic track is byte-valued emitter visibility.
+    assert(m2Loader.find("EMITTER_SIZE_VANILLA = 0x1F8") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0xF8, em.emissionAreaWidth)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0x114, em.emissionAreaLength)") != std::string::npos);
+    assert(m2Loader.find("parseTrackV(0x130, em.visibilityTrack, TrackType::BYTE_BOOL)") != std::string::npos);
+    assert(m2Particles.find("em.visibilityTrack") != std::string::npos);
+    assert(m2Particles.find("inst.emitterAccumulators[ei] = 0.0f") != std::string::npos);
+
     // Build-5875 ribbon emitters are 0xE0-byte records with Classic 28-byte
     // tracks. Their texture/material fields are arrays, and the animated
     // texture-slot track selects the current direct textures[] entry.
