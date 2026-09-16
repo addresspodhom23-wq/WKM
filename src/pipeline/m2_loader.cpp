@@ -677,9 +677,10 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         ranges = readArray<M2Range>(data, disk.ofsRanges, disk.nRanges);
     }
 
-    // If no ranges, treat entire array as one sequence
+    // Classic M2Range is [first,last] INCLUSIVE. With no ranges the one
+    // sequence therefore ends at count-1, not count.
     if (ranges.empty()) {
-        ranges.push_back({.start = 0, .end = disk.nTimestamps});
+        ranges.push_back({.start = 0, .end = disk.nTimestamps - 1});
     }
 
     // Read the flat key array ONCE before the per-sequence loop. Previously
@@ -722,23 +723,26 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
     track.sequences.resize(ranges.size());
 
     for (size_t i = 0; i < ranges.size(); i++) {
-        uint32_t start = ranges[i].start;
-        uint32_t end = ranges[i].end;
-        if (start >= end || start >= disk.nTimestamps) continue;
-        end = std::min(end, disk.nTimestamps);
+        const uint32_t start = ranges[i].start;
+        uint32_t last = ranges[i].end;
+        if (start >= disk.nTimestamps || start > last) continue;
+        last = std::min(last, disk.nTimestamps - 1);
 
+        // M2Range.maximum names the LAST key, not the one-past-the-end key.
         track.sequences[i].timestamps.assign(
-            allTimestamps.begin() + start, allTimestamps.begin() + end);
+            allTimestamps.begin() + start,
+            allTimestamps.begin() + static_cast<size_t>(last) + 1);
         if (!track.sequences[i].timestamps.empty()) {
-            uint32_t firstTime = track.sequences[i].timestamps[0];
+            const uint32_t firstTime = track.sequences[i].timestamps[0];
             for (auto& ts : track.sequences[i].timestamps) {
                 ts -= firstTime;
             }
         }
 
         if (start >= disk.nKeys) continue;
-        uint32_t keyEnd = std::min(end, disk.nKeys);
-        uint32_t keyCount = keyEnd - start;
+        const uint32_t keyLast = std::min(last, disk.nKeys - 1);
+        if (keyLast < start) continue;
+        const uint32_t keyCount = keyLast - start + 1;
 
         if (type == TrackType::FLOAT || type == TrackType::FIXED16 ||
             type == TrackType::UINT16 || type == TrackType::BYTE_BOOL) {
