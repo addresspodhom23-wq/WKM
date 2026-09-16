@@ -1308,6 +1308,13 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
                 default: break;
             }
 
+            const uint8_t ribbonFogPolicy = vanillaRendering_
+                ? (((em.materialFlags & 0x02u) != 0)
+                    ? 0u
+                    : ((em.blendMode == 3 || em.blendMode == 4)
+                        ? 2u : 1u))
+                : 2u;
+
             // textureSlotTrack selects a slot in the ribbon's direct
             // textureIndices[] array. This is animation/global-sequence aware.
             size_t textureSlot = 0;
@@ -1378,27 +1385,29 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
                       static_cast<float>(edges.size() - 1);
 
                 glm::vec3 top = e.worldPos + edgeAxis * e.heightAbove;
-                dst[written * 9 + 0] = top.x;
-                dst[written * 9 + 1] = top.y;
-                dst[written * 9 + 2] = top.z;
-                dst[written * 9 + 3] = edgeColor.r;
-                dst[written * 9 + 4] = edgeColor.g;
-                dst[written * 9 + 5] = edgeColor.b;
-                dst[written * 9 + 6] = a;
-                dst[written * 9 + 7] = u;
-                dst[written * 9 + 8] = 0.0f;
+                dst[written * 10 + 0] = top.x;
+                dst[written * 10 + 1] = top.y;
+                dst[written * 10 + 2] = top.z;
+                dst[written * 10 + 3] = edgeColor.r;
+                dst[written * 10 + 4] = edgeColor.g;
+                dst[written * 10 + 5] = edgeColor.b;
+                dst[written * 10 + 6] = a;
+                dst[written * 10 + 7] = u;
+                dst[written * 10 + 8] = 0.0f;
+                dst[written * 10 + 9] = static_cast<float>(ribbonFogPolicy);
                 written++;
 
                 glm::vec3 bot = e.worldPos - edgeAxis * e.heightBelow;
-                dst[written * 9 + 0] = bot.x;
-                dst[written * 9 + 1] = bot.y;
-                dst[written * 9 + 2] = bot.z;
-                dst[written * 9 + 3] = edgeColor.r;
-                dst[written * 9 + 4] = edgeColor.g;
-                dst[written * 9 + 5] = edgeColor.b;
-                dst[written * 9 + 6] = a;
-                dst[written * 9 + 7] = u;
-                dst[written * 9 + 8] = 1.0f;
+                dst[written * 10 + 0] = bot.x;
+                dst[written * 10 + 1] = bot.y;
+                dst[written * 10 + 2] = bot.z;
+                dst[written * 10 + 3] = edgeColor.r;
+                dst[written * 10 + 4] = edgeColor.g;
+                dst[written * 10 + 5] = edgeColor.b;
+                dst[written * 10 + 6] = a;
+                dst[written * 10 + 7] = u;
+                dst[written * 10 + 8] = 1.0f;
+                dst[written * 10 + 9] = static_cast<float>(ribbonFogPolicy);
                 written++;
             }
 

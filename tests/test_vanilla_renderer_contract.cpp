@@ -21,6 +21,8 @@ int main() {
     const auto m2Particles=read("src/rendering/m2_renderer_particles.cpp");
     const auto m2ParticleVert=read("assets/shaders/m2_particle.vert.glsl");
     const auto m2ParticleFrag=read("assets/shaders/m2_particle.frag.glsl");
+    const auto m2RibbonVert=read("assets/shaders/m2_ribbon.vert.glsl");
+    const auto m2RibbonFrag=read("assets/shaders/m2_ribbon.frag.glsl");
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
     const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
@@ -283,7 +285,7 @@ int main() {
     assert(m2ParticleFrag.find("push.vanillaRendering != 0") != std::string::npos);
     assert(m2ParticleFrag.find("? 1.0") != std::string::npos);
     assert(m2Particles.find(".vanillaRendering = vanillaRendering_ ? 1 : 0") != std::string::npos);
-    assert(m2Renderer.find("pushRange.size = 16") != std::string::npos);
+    assert(m2Renderer.find("pushRange.size = 20") != std::string::npos);
 
     // Vanilla model-space emitters (flag 0x10) keep particle state local,
     // apply the emitter kernel's +90deg local-Z rotation, and re-project through
@@ -515,6 +517,20 @@ int main() {
     assert(m2Particles.find("2.0f * em.gravity * ageBefore * simDt") != std::string::npos);
     assert(m2Particles.find("vanillaRendering_ ? e.upWorld") != std::string::npos);
     assert(m2Particles.find("e.age / normalizedLifetime") != std::string::npos);
+
+    // Classic ribbon fog follows renderFlags.Unfogged and blend mode:
+    // scene-colour fog for ordinary alpha, black fog for Add/AddAlpha.
+    assert(m2LoaderHeader.find("uint16_t materialFlags = 0") != std::string::npos);
+    assert(m2Particles.find("(em.materialFlags & 0x02u) != 0") != std::string::npos);
+    assert(m2Particles.find("const uint8_t ribbonFogPolicy") != std::string::npos);
+    assert(m2Particles.find("dst[written * 10 + 9] = static_cast<float>(ribbonFogPolicy)") != std::string::npos);
+    assert(m2Renderer.find("rBind.stride = 10 * sizeof(float)") != std::string::npos);
+    assert(m2Renderer.find("MAX_RIBBON_VERTS * 10 * sizeof(float)") != std::string::npos);
+    assert(m2RibbonVert.find("layout(location = 4) in float aFogPolicy") != std::string::npos);
+    assert(m2RibbonVert.find("flat out int vFogPolicy") != std::string::npos);
+    assert(m2RibbonFrag.find("flat in int vFogPolicy") != std::string::npos);
+    assert(m2RibbonFrag.find("vFogPolicy == 2 ? vec3(0.0) : fogColor.rgb") != std::string::npos);
+    assert(m2RibbonFrag.find("rgb *= vFogFactor") == std::string::npos);
 
     // The ground-detail opaque gate must not reference a pass-local variable
     // before it is declared; this is also the authored Vanilla cutout exception.

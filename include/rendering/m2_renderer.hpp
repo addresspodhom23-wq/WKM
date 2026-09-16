@@ -852,7 +852,7 @@ private:
     std::vector<uint32_t> cullReadableIds_[2];
 
     // Dynamic ribbon vertex buffer (CPU-written triangle strip)
-    static constexpr size_t MAX_RIBBON_VERTS = 2048;  // 9 floats each
+    static constexpr size_t MAX_RIBBON_VERTS = 2048;  // 10 floats each
     ::VkBuffer ribbonVB_ = VK_NULL_HANDLE;
     VmaAllocation ribbonVBAlloc_ = VK_NULL_HANDLE;
     void* ribbonVBMapped_ = nullptr;

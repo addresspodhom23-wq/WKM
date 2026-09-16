@@ -2,7 +2,7 @@
 
 // M2 ribbon emitter vertex shader.
 // Ribbon geometry is generated CPU-side as a triangle strip.
-// Vertex format: pos(3) + color(3) + alpha(1) + uv(2) = 9 floats.
+// Vertex format: pos(3) + color(3) + alpha(1) + uv(2) + fogPolicy(1) = 10 floats.
 
 layout(set = 0, binding = 0) uniform PerFrame {
     mat4 view;
@@ -21,11 +21,13 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aColor;
 layout(location = 2) in float aAlpha;
 layout(location = 3) in vec2 aUV;
+layout(location = 4) in float aFogPolicy;
 
 layout(location = 0) out vec3 vColor;
 layout(location = 1) out float vAlpha;
 layout(location = 2) out vec2 vUV;
 layout(location = 3) out float vFogFactor;
+layout(location = 4) flat out int vFogPolicy;
 
 void main() {
     vec4 worldPos = vec4(aPos, 1.0);
@@ -40,4 +42,5 @@ void main() {
     vColor = aColor;
     vAlpha = aAlpha;
     vUV    = aUV;
+    vFogPolicy = int(aFogPolicy + 0.5);
 }

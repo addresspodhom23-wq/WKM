@@ -479,7 +479,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     }
 
     // --- Build ribbon pipelines ---
-    // Vertex format: pos(3) + color(3) + alpha(1) + uv(2) = 9 floats = 36 bytes
+    // Vertex format: pos(3) + color(3) + alpha(1) + uv(2) + fogPolicy(1) = 10 floats = 40 bytes
     {
         rendering::VkShaderModule ribVert, ribFrag;
         (void)ribVert.loadFromFile(device, "assets/shaders/m2_ribbon.vert.spv");
@@ -501,7 +501,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
 
             VkVertexInputBindingDescription rBind{};
             rBind.binding = 0;
-            rBind.stride = 9 * sizeof(float);
+            rBind.stride = 10 * sizeof(float);
             rBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
             std::vector<VkVertexInputAttributeDescription> rAttrs = {
@@ -509,6 +509,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
                 {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 3 * sizeof(float)},    // color
                 {.location = 2, .binding = 0, .format = VK_FORMAT_R32_SFLOAT,       .offset = 6 * sizeof(float)},    // alpha
                 {.location = 3, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT,    .offset = 7 * sizeof(float)},    // uv
+                {.location = 4, .binding = 0, .format = VK_FORMAT_R32_SFLOAT,       .offset = 9 * sizeof(float)},    // fog policy
             };
 
             auto buildRibbonPipeline = [&](VkPipelineColorBlendAttachmentState blend) -> VkPipeline {
@@ -1290,8 +1291,8 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &glowVB_, &glowVBAlloc_, &allocInfo);
         glowVBMapped_ = allocInfo.pMappedData;
 
-        // Ribbon vertex buffer - triangle strip: pos(3)+color(3)+alpha(1)+uv(2)=9 floats/vert
-        bci.size = MAX_RIBBON_VERTS * 9 * sizeof(float);
+        // Ribbon vertex buffer - triangle strip: pos3+color3+alpha1+uv2+fogPolicy1 = 10 floats/vert
+        bci.size = MAX_RIBBON_VERTS * 10 * sizeof(float);
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &ribbonVB_, &ribbonVBAlloc_, &allocInfo);
         ribbonVBMapped_ = allocInfo.pMappedData;
     }
