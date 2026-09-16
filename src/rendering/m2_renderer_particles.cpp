@@ -417,7 +417,7 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
 // Ribbon rendering
 // ---------------------------------------------------------------------------
 void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
-    if (!ribbonPipeline_ || !ribbonAdditivePipeline_ || !ribbonVB_ || !ribbonVBMapped_) return;
+    if (!ribbonPipeline_ || !ribbonVB_ || !ribbonVBMapped_) return;
     // Diagnostic: WOWEE_M2_NO_RIBBONS=1 drops every M2 ribbon trail draw.
     static const bool kNoRibbons = envFlagEnabled("WOWEE_M2_NO_RIBBONS");
     if (kNoRibbons) return;
@@ -447,11 +447,20 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
 
             const auto& em = gpu.ribbonEmitters[ri];
 
-            // Ribbon materialIndices[] point into the M2 material table; the
-            // loader already resolved that authored blend mode onto the emitter.
-            // Add/AddAlpha use the additive family, ordinary Blend uses alpha.
-            const bool additive = (em.blendMode == 3 || em.blendMode == 4);
-            VkPipeline pipe = additive ? ribbonAdditivePipeline_ : ribbonPipeline_;
+            // Ribbon materialIndices[] point into the M2 material table; route
+            // the authored Vanilla blend mode exactly instead of collapsing
+            // Add/AddAlpha/Mod/Mod2x into one additive state.
+            VkPipeline pipe = ribbonPipeline_;
+            switch (em.blendMode) {
+                case 0:
+                case 1: pipe = ribbonOpaquePipeline_; break;
+                case 2: pipe = ribbonPipeline_; break;
+                case 3: pipe = ribbonAdditiveOnePipeline_; break;
+                case 4: pipe = ribbonAdditivePipeline_; break;
+                case 5: pipe = ribbonModulatePipeline_; break;
+                case 6: pipe = ribbonModulate2xPipeline_; break;
+                default: break;
+            }
 
             // textureSlotTrack selects a slot in the ribbon's direct
             // textureIndices[] array. This is animation/global-sequence aware.
@@ -764,8 +773,17 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         if (group.vertexData.empty()) continue;
 
         uint8_t blendType = group.blendType;
-        VkPipeline desiredPipeline = (blendType == 3 || blendType == 4)
-            ? particleAdditivePipeline_ : particlePipeline_;
+        VkPipeline desiredPipeline = particlePipeline_;
+        switch (blendType) {
+            case 0:
+            case 1: desiredPipeline = particleOpaquePipeline_; break;
+            case 2: desiredPipeline = particlePipeline_; break;
+            case 3: desiredPipeline = particleAdditiveOnePipeline_; break;
+            case 4: desiredPipeline = particleAdditivePipeline_; break;
+            case 5: desiredPipeline = particleModulatePipeline_; break;
+            case 6: desiredPipeline = particleModulate2xPipeline_; break;
+            default: break;
+        }
         if (desiredPipeline != currentPipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
             currentPipeline = desiredPipeline;
