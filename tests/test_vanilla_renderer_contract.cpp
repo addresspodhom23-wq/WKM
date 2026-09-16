@@ -256,6 +256,19 @@ int main() {
     assert(m2ParticleFrag.find("vec3 rgb = texColor.rgb * vColor.rgb;") != std::string::npos);
     assert(m2ParticleFrag.find("texColor.rgb * vColor.rgb * alpha") == std::string::npos);
 
+    // Classic animation ranges are [first,last] inclusive. Losing the last
+    // key breaks sequence-end pose/fades/visibility on every pre-WotLK track.
+    assert(m2Loader.find("ranges.push_back({.start = 0, .end = disk.nTimestamps - 1})") != std::string::npos);
+    assert(m2Loader.find("static_cast<size_t>(last) + 1") != std::string::npos);
+    assert(m2Loader.find("keyLast - start + 1") != std::string::npos);
+
+    // Vanilla point sprites keep the authored square billboard; the BLP alpha,
+    // not Kraken's synthetic radial mask, defines their silhouette.
+    assert(m2ParticleFrag.find("push.vanillaRendering != 0") != std::string::npos);
+    assert(m2ParticleFrag.find("? 1.0") != std::string::npos);
+    assert(m2Particles.find(".vanillaRendering = vanillaRendering_ ? 1 : 0") != std::string::npos);
+    assert(m2Renderer.find("pushRange.size = 16") != std::string::npos);
+
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
     assert(m2Loader.find("EMITTER_SIZE_VANILLA = 0x1F8") != std::string::npos);
