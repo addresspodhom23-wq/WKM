@@ -270,6 +270,18 @@ int main() {
     assert(m2Particles.find(".vanillaRendering = vanillaRendering_ ? 1 : 0") != std::string::npos);
     assert(m2Renderer.find("pushRange.size = 16") != std::string::npos);
 
+    // Vanilla model-space emitters (flag 0x10) keep particle state local,
+    // apply the emitter kernel's +90deg local-Z rotation, and re-project through
+    // the live bone every draw. Classic drag is the plain f32 at +0x194.
+    assert(m2Loader.find("base + 0x194") != std::string::npos);
+    assert(m2LoaderHeader.find("float drag = 0.0f") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x10u) != 0") != std::string::npos);
+    assert(m2Particles.find("return glm::vec3(-v.y, v.x, v.z)") != std::string::npos);
+    assert(m2Particles.find("p.position = localPos") != std::string::npos);
+    assert(m2Particles.find("p.velocity = dir * speed") != std::string::npos);
+    assert(m2Particles.find("inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f)") != std::string::npos);
+    assert(m2Particles.find("std::min(sdt * em.drag, 1.0f)") != std::string::npos);
+
     // Classic v256 particle record uses pre-262 uint16 blend/emitter fields,
     // zSource at +0x130, and the byte-valued enabledIn track at the record tail.
     assert(m2Loader.find("EMITTER_SIZE_VANILLA = 0x1F8") != std::string::npos);
