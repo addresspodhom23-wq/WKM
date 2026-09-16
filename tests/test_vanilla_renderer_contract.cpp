@@ -91,5 +91,14 @@ int main() {
     assert(m2Renderer.find("modulate2xPipeline_ = buildM2Pipeline(PipelineBuilder::blendModulate2x(), true") != std::string::npos);
     assert(m2Render.find("batch.materialFlags & 0x10u") != std::string::npos);
     assert(m2Render.find("noDepthWritePipelines_[pipelineBlendMode]") != std::string::npos);
+
+    // Vanilla render flag 0x08 changes the depth compare to ALWAYS without
+    // implicitly changing depth writes; 0x10 remains the independent write gate.
+    assert(m2Header.find("noDepthTestPipelines_[7]") != std::string::npos);
+    assert(m2Header.find("noDepthTestNoWritePipelines_[7]") != std::string::npos);
+    assert(m2Renderer.find("VK_COMPARE_OP_ALWAYS") != std::string::npos);
+    assert(m2Render.find("batch.materialFlags & 0x08u") != std::string::npos);
+    assert(m2Render.find("noDepthTestNoWritePipelines_[pipelineBlendMode]") != std::string::npos);
+    assert(m2Render.find("noDepthTestPipelines_[pipelineBlendMode]") != std::string::npos);
     return 0;
 }

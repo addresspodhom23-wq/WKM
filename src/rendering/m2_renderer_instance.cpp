@@ -1374,6 +1374,8 @@ void M2Renderer::recreatePipelines() {
     destroy(device, modulatePipeline_);
     destroy(device, modulate2xPipeline_);
     for (auto& p : noDepthWritePipelines_) destroy(device, p);
+    for (auto& p : noDepthTestPipelines_) destroy(device, p);
+    for (auto& p : noDepthTestNoWritePipelines_) destroy(device, p);
     destroy(device, particlePipeline_);
     destroy(device, particleAdditivePipeline_);
     destroy(device, smokePipeline_);

@@ -61,7 +61,7 @@ struct M2ModelGPU {
         glm::vec3 tint{1.0f};  ///< the batch's authored colour
         uint16_t textureAnimIndex = 0xFFFF; // 0xFFFF = no texture animation
         uint16_t blendMode = 0;   // 0=Opaque, 1=AlphaKey, 2=Alpha, 3=Add, etc.
-        uint16_t materialFlags = 0; // M2 material flags (0x01=Unlit, 0x04=TwoSided, 0x10=NoDepthWrite)
+        uint16_t materialFlags = 0; // M2 material flags (0x01=Unlit, 0x04=TwoSided, 0x08=NoDepthTest, 0x10=NoDepthWrite)
         uint16_t submeshLevel = 0; // LOD level: 0=base, 1=LOD1, 2=LOD2, 3=LOD3
         uint8_t textureUnit = 0;  // UV set index (0=texCoords[0], 1=texCoords[1])
         uint8_t texFlags = 0;     // M2Texture.flags (bit0=WrapS, bit1=WrapT)
@@ -648,9 +648,11 @@ private:
     VkPipeline additivePipeline_ = VK_NULL_HANDLE;      // blend mode 4: SRC_ALPHA + ONE
     VkPipeline modulatePipeline_ = VK_NULL_HANDLE;      // blend mode 5: DST_COLOR + ZERO
     VkPipeline modulate2xPipeline_ = VK_NULL_HANDLE;    // blend mode 6: DST_COLOR + SRC_COLOR
-    // Vanilla render flag 0x10 is the only authored switch that disables
-    // depth writes. One no-write twin per blend mode keeps blend math intact.
+    // Vanilla depth state is authored independently of blend mode:
+    // 0x10 disables depth writes; 0x08 changes the compare to ALWAYS.
     VkPipeline noDepthWritePipelines_[7] = {};
+    VkPipeline noDepthTestPipelines_[7] = {};
+    VkPipeline noDepthTestNoWritePipelines_[7] = {};
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
 
     // Shadow rendering (Phase 7)

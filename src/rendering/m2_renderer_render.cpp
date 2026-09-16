@@ -1718,7 +1718,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                         case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                         default: desiredPipeline = additivePipeline_; break;
                     }
-                    if ((batch.materialFlags & 0x10u) != 0) {
+                    const bool noDepthWrite = (batch.materialFlags & 0x10u) != 0;
+                    const bool noDepthTest = (batch.materialFlags & 0x08u) != 0;
+                    if (noDepthTest) {
+                        desiredPipeline = noDepthWrite
+                            ? noDepthTestNoWritePipelines_[pipelineBlendMode]
+                            : noDepthTestPipelines_[pipelineBlendMode];
+                    } else if (noDepthWrite) {
                         desiredPipeline = noDepthWritePipelines_[pipelineBlendMode];
                     }
                     if (desiredPipeline != currentPipeline) {
@@ -1949,7 +1955,13 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 case M2_BLEND_MODULATE2X: desiredPipeline = modulate2xPipeline_; break;
                 default: desiredPipeline = additivePipeline_; break;
             }
-            if ((batch.materialFlags & 0x10u) != 0) {
+            const bool noDepthWrite = (batch.materialFlags & 0x10u) != 0;
+            const bool noDepthTest = (batch.materialFlags & 0x08u) != 0;
+            if (noDepthTest) {
+                desiredPipeline = noDepthWrite
+                    ? noDepthTestNoWritePipelines_[pipelineBlendMode]
+                    : noDepthTestPipelines_[pipelineBlendMode];
+            } else if (noDepthWrite) {
                 desiredPipeline = noDepthWritePipelines_[pipelineBlendMode];
             }
             if (desiredPipeline != currentPipeline) {

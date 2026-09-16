@@ -301,7 +301,8 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     // Pipeline derivatives - opaque is the base, others derive from it for shared state optimization
     auto buildM2Pipeline = [&](VkPipelineColorBlendAttachmentState blendState, bool depthWrite,
                                VkPipelineCreateFlags flags = 0, VkPipeline basePipeline = VK_NULL_HANDLE,
-                               bool alphaToCoverage = false) -> VkPipeline {
+                               bool alphaToCoverage = false,
+                               VkCompareOp depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL) -> VkPipeline {
         auto builder = PipelineBuilder()
             .setShaders(m2Vert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
                         m2Frag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
@@ -312,7 +313,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
             // pushed to the far plane, so the test is what lets ground drawn
             // before it occlude it, and a write would put the far plane over
             // everything drawn after.
-            .setDepthTest(true, skyMode_ ? false : depthWrite, VK_COMPARE_OP_LESS_OR_EQUAL)
+            .setDepthTest(true, skyMode_ ? false : depthWrite, depthCompareOp)
             .setColorBlendAttachment(blendState)
             .setMultisample(vkCtx_->getMsaaSamples());
         // MSAA alpha-to-coverage dithers the shader's sharpened cutout alpha
@@ -367,6 +368,42 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     noDepthWritePipelines_[M2_BLEND_MODULATE2X] =
         buildM2Pipeline(PipelineBuilder::blendModulate2x(), false,
                         VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_);
+
+    // Render flag 0x08 is "no depth test" in the client state table. Keep
+    // depth testing enabled in Vulkan but compare with ALWAYS so depth writes
+    // remain independently controlled by 0x10.
+    auto buildNoDepthTestSet = [&](auto& out, bool depthWrite) {
+        out[M2_BLEND_OPAQUE] =
+            buildM2Pipeline(PipelineBuilder::blendDisabled(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_ALPHA_KEY] =
+            buildM2Pipeline(PipelineBuilder::blendAlpha(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            true, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_ALPHA] =
+            buildM2Pipeline(PipelineBuilder::blendAlpha(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_ADD] =
+            buildM2Pipeline(PipelineBuilder::blendAdditiveOne(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_ADD_ALPHA] =
+            buildM2Pipeline(PipelineBuilder::blendAdditive(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_MODULATE] =
+            buildM2Pipeline(PipelineBuilder::blendModulate(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+        out[M2_BLEND_MODULATE2X] =
+            buildM2Pipeline(PipelineBuilder::blendModulate2x(), depthWrite,
+                            VK_PIPELINE_CREATE_DERIVATIVE_BIT, opaquePipeline_,
+                            false, VK_COMPARE_OP_ALWAYS);
+    };
+    buildNoDepthTestSet(noDepthTestPipelines_, true);
+    buildNoDepthTestSet(noDepthTestNoWritePipelines_, false);
 
     // --- Build particle pipelines ---
     if (particleVert.isValid() && particleFrag.isValid()) {
@@ -1156,6 +1193,8 @@ void M2Renderer::shutdown() {
     destroyPipeline(modulatePipeline_);
     destroyPipeline(modulate2xPipeline_);
     for (auto& p : noDepthWritePipelines_) destroyPipeline(p);
+    for (auto& p : noDepthTestPipelines_) destroyPipeline(p);
+    for (auto& p : noDepthTestNoWritePipelines_) destroyPipeline(p);
     destroyPipeline(particlePipeline_);
     destroyPipeline(particleAdditivePipeline_);
     destroyPipeline(smokePipeline_);
