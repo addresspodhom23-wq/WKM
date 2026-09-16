@@ -673,16 +673,24 @@ private:
     static constexpr uint32_t kShadowTexPoolFrames = 2;
     VkDescriptorPool shadowTexPool_[kShadowTexPoolFrames] = {};
 
-    // Particle pipelines
-    VkPipeline particlePipeline_ = VK_NULL_HANDLE;       // M2 emitter particles
-    VkPipeline particleAdditivePipeline_ = VK_NULL_HANDLE; // Additive particle blend
+    // Particle pipelines mirror Vanilla M2 material blend modes 0..6.
+    VkPipeline particleOpaquePipeline_ = VK_NULL_HANDLE;       // 0/1: opaque/alpha-key
+    VkPipeline particlePipeline_ = VK_NULL_HANDLE;             // 2: alpha blend
+    VkPipeline particleAdditiveOnePipeline_ = VK_NULL_HANDLE;  // 3: ONE + ONE
+    VkPipeline particleAdditivePipeline_ = VK_NULL_HANDLE;     // 4: SRC_ALPHA + ONE
+    VkPipeline particleModulatePipeline_ = VK_NULL_HANDLE;     // 5: DST_COLOR + ZERO
+    VkPipeline particleModulate2xPipeline_ = VK_NULL_HANDLE;   // 6: DST_COLOR + SRC_COLOR
     VkPipelineLayout particlePipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline smokePipeline_ = VK_NULL_HANDLE;           // Smoke particles
     VkPipelineLayout smokePipelineLayout_ = VK_NULL_HANDLE;
 
-    // Ribbon pipelines (additive + alpha-blend)
-    VkPipeline ribbonPipeline_ = VK_NULL_HANDLE;          // Alpha-blend ribbons
-    VkPipeline ribbonAdditivePipeline_ = VK_NULL_HANDLE;  // Additive ribbons
+    // Ribbon pipelines use the same authored M2 material blend modes.
+    VkPipeline ribbonOpaquePipeline_ = VK_NULL_HANDLE;
+    VkPipeline ribbonPipeline_ = VK_NULL_HANDLE;
+    VkPipeline ribbonAdditiveOnePipeline_ = VK_NULL_HANDLE;
+    VkPipeline ribbonAdditivePipeline_ = VK_NULL_HANDLE;
+    VkPipeline ribbonModulatePipeline_ = VK_NULL_HANDLE;
+    VkPipeline ribbonModulate2xPipeline_ = VK_NULL_HANDLE;
     VkPipelineLayout ribbonPipelineLayout_ = VK_NULL_HANDLE;
     /// The per-frame set layout initialize() was given. recreatePipelines()
     /// runs long after that call and needs the same one.
