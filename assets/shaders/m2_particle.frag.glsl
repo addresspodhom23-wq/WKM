@@ -5,6 +5,7 @@ layout(set = 1, binding = 0) uniform sampler2D uTexture;
 layout(push_constant) uniform Push {
     vec2 tileCount;
     int alphaKey;
+    int vanillaRendering;
 } push;
 
 layout(location = 0) in vec4 vColor;
@@ -26,8 +27,11 @@ void main() {
         if (lum < 0.05) discard;
     }
 
-    // Soft circular falloff for point-sprite edges.
-    float edge = 1.0 - smoothstep(0.4, 0.5, length(p - 0.5));
+    // Vanilla's particle is a square billboard. Its BLP alpha defines the
+    // silhouette; a synthetic circular mask clips authored smoke/flame cells.
+    float edge = push.vanillaRendering != 0
+        ? 1.0
+        : 1.0 - smoothstep(0.4, 0.5, length(p - 0.5));
     float alpha = texColor.a * vColor.a * edge * vFogVisibility;
     // Pipelines use straight-alpha blending (SRC_ALPHA for Blend/AddAlpha).
     // Premultiplying RGB here and then applying SRC_ALPHA again produces
