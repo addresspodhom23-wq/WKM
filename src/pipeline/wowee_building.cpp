@@ -409,11 +409,10 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
             wm.shader = mat.shader;
             wm.blendMode = mat.blendMode;
             wm.texture1 = textureIndex(mat.texturePath);
-            wm.color1 = 0;
+            // Exact Vanilla MOMT has only two authored texture slots.
+            // All remaining fields are already zero-initialized above.
             wm.texture2 = 0;
             wm.color2 = 0;
-            wm.texture3 = 0;
-            wm.color3 = 0;
             materialIndex[key] = static_cast<uint32_t>(outModel.materials.size());
             outModel.materials.push_back(wm);
         }
@@ -462,7 +461,19 @@ bool WoweeBuildingLoader::toWMOModel(const WoweeBuilding& building, WMOModel& ou
         WMOPortal portal{};
         portal.startVertex = static_cast<uint16_t>(outModel.portalVertices.size());
         portal.vertexCount = static_cast<uint16_t>(wp.vertices.size());
-        portal.planeIndex = 0;
+        // Vanilla MOPT stores the portal plane directly. WOB keeps only the
+        // polygon, so reconstruct the same C4Plane convention used by the
+        // renderer: xyz = unit normal, w = dot(normal, pointOnPlane).
+        if (wp.vertices.size() >= 3) {
+            const glm::vec3 cross =
+                glm::cross(wp.vertices[1] - wp.vertices[0],
+                           wp.vertices[2] - wp.vertices[0]);
+            const float len = glm::length(cross);
+            if (len > 1e-6f) {
+                const glm::vec3 normal = cross / len;
+                portal.plane = glm::vec4(normal, glm::dot(normal, wp.vertices[0]));
+            }
+        }
         for (const auto& v : wp.vertices) outModel.portalVertices.push_back(v);
         uint16_t portalIdx = static_cast<uint16_t>(outModel.portals.size());
         outModel.portals.push_back(portal);
