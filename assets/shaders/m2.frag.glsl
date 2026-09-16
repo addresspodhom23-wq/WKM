@@ -62,6 +62,11 @@ float shadowTexel() {
     return shadowParams.z > 0.0 ? shadowParams.z : 1.0 / 4096.0;
 }
 
+vec3 vanillaNormalize(vec3 v) {
+    float l2 = dot(v, v);
+    return l2 > 1e-12 ? normalize(v) : vec3(0.0);
+}
+
 float sampleShadowPCF(sampler2DShadow smap, vec3 coords) {
     float shadow = 0.0;
     for (int x = -1; x <= 1; ++x) {
@@ -220,7 +225,9 @@ void main() {
         texColor.rgb *= vec3(hueShiftR, 1.0, hueShiftB) * brightness;
     }
 
-    vec3 norm = normalize(Normal);
+    // Shipped Vanilla M2s legally contain zero authored normals. Preserve
+    // them as zero so lighting falls back to ambient/DC instead of NaN.
+    vec3 norm = vanillaRendering ? vanillaNormalize(Normal) : normalize(Normal);
     bool foliageTwoSided = vanillaRendering ? (twoSided != 0) : (alphaTest == 2);
     // Vanilla does not enable two-sided lighting. Material 0x04 only disables
     // back-face culling; both faces use the same submitted/authored normal.

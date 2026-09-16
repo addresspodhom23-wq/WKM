@@ -174,5 +174,17 @@ int main() {
     // lighting: back faces keep the exact same authored normal.
     assert(m2.find("!vanillaRendering && foliageTwoSided && !gl_FrontFacing") != std::string::npos);
     assert(m2.find("if (foliageTwoSided && !gl_FrontFacing) norm = -norm") == std::string::npos);
+
+    // Vanilla Model2.bls accepts authored zero normals. They remain zero so
+    // directional lighting vanishes and the ambient/DC term survives.
+    assert(m2.find("vec3 vanillaNormalize(vec3 v)") != std::string::npos);
+    assert(m2.find("l2 > 1e-12 ? normalize(v) : vec3(0.0)") != std::string::npos);
+    assert(m2.find("vanillaRendering ? vanillaNormalize(Normal) : normalize(Normal)") != std::string::npos);
+
+    // The 1.12 skin path transforms normals with the same weighted 3x3 bone
+    // rows as positions (translation excluded); do not replace it with an
+    // inverse-transpose skin matrix.
+    const auto m2Vert=read("assets/shaders/m2.vert.glsl");
+    assert(m2Vert.find("norm = skinMat * norm") != std::string::npos);
     return 0;
 }
