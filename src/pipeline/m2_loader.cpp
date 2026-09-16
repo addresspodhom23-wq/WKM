@@ -671,7 +671,12 @@ void parseAnimTrackVanilla(
     if (static_cast<size_t>(disk.ofsTimestamps) + timestampBytes > data.size()) return;
     const auto allTimestamps = readArray<uint32_t>(data, disk.ofsTimestamps, disk.nTimestamps);
 
-    const bool spline = disk.interpolationType == 2 || disk.interpolationType == 3;
+    // The 1.12.1 quaternion evaluator always reads one C4Quaternion per key
+    // (16-byte stride). Cubic value/in/out triples apply to scalar/vec3 tracks,
+    // not rotation; tripling quaternion stride desynchronizes every later key.
+    const bool spline =
+        (disk.interpolationType == 2 || disk.interpolationType == 3) &&
+        type != TrackType::QUAT_COMPRESSED;
     size_t baseKeySize;
     if (type == TrackType::FLOAT) baseKeySize = sizeof(float);
     else if (type == TrackType::FIXED16) baseKeySize = sizeof(int16_t);

@@ -26,6 +26,7 @@ int main() {
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
     const auto m2Internal=read("src/rendering/m2_renderer_internal.h");
+    const auto m2TrackSampler=read("include/rendering/m2_track_sampler.hpp");
     const auto characterRenderer=read("src/rendering/character_renderer.cpp");
     const auto characterHeader=read("include/rendering/character_renderer.hpp");
 
@@ -287,6 +288,13 @@ int main() {
     assert(m2Loader.find("hasAuthoredRanges && i < sequenceWindows.size()") != std::string::npos);
     assert(m2Loader.find("baseTime = sequenceWindows[i].first") != std::string::npos);
     assert(m2Loader.find("track.globalSequence < 0") != std::string::npos);
+
+    // Vanilla v256 rotation keys stay one C4Quaternion (16 bytes) even when
+    // the track interpolation id is cubic. Rotation-key interpolation is
+    // normalized component lerp; sequence cross-fade owns the slerp.
+    assert(m2Loader.find("type != TrackType::QUAT_COMPRESSED") != std::string::npos);
+    assert(m2TrackSampler.find("glm::slerp") == std::string::npos);
+    assert(m2TrackSampler.find("a.w + (b.w - a.w) * fraction") != std::string::npos);
 
     // Vanilla sequence flag 0x40 is an alias: animation data lives in the
     // aliasNext target. Resolve track sampling without overwriting the logical

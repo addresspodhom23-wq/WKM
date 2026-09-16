@@ -5,6 +5,7 @@
 #include "rendering/m2_renderer_internal.h"
 #include "rendering/m2_track_sampler.hpp"
 #include <cstring>
+#include <cmath>
 
 using namespace wowee::pipeline;
 
@@ -296,20 +297,23 @@ TEST_CASE("Classic M2 Bezier tracks use both endpoint controls", "[m2][animation
     REQUIRE(value.z == Catch::Approx(1.625f));
 }
 
-TEST_CASE("Classic quaternion spline samples remain unit quaternions", "[m2][animation][interpolation]") {
-    M2AnimationTrack track{};
-    track.interpolationType = 3; // Classic v256: Hermite/spline
+TEST_CASE("Classic quaternion tracks use normalized component lerp", "[m2][animation][interpolation]") {
+    wowee::pipeline::M2AnimationTrack track;
+    track.interpolationType = 3; // Even cubic-tagged v256 rotation uses plain C4Quaternion keys.
     track.sequences.resize(1);
     auto& keys = track.sequences[0];
     keys.timestamps = {0, 1000};
     keys.quatValues = {
         glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
-        glm::quat(0.70710678f, 0.0f, 0.70710678f, 0.0f)
+        glm::quat(0.0f, 1.0f, 0.0f, 0.0f)
     };
-    keys.quatInTangents = keys.quatValues;
-    keys.quatOutTangents = keys.quatValues;
 
-    const glm::quat value = wowee::rendering::m2_track::sampleQuat(
-        track, 0, 500.0f, 0.0f, {});
-    REQUIRE(glm::length(value) == Catch::Approx(1.0f).margin(0.0001f));
+    const glm::quat q = wowee::rendering::m2_track::sampleQuat(
+        track, 0, 250.0f, 0.0f, {});
+
+    // Component lerp at t=.25 gives (w,x)=(.75,.25), then normalizes.
+    const float invLen = 1.0f / std::sqrt(0.75f * 0.75f + 0.25f * 0.25f);
+    REQUIRE(q.w == Catch::Approx(0.75f * invLen).margin(0.0001f));
+    REQUIRE(q.x == Catch::Approx(0.25f * invLen).margin(0.0001f));
+    REQUIRE(glm::length(q) == Catch::Approx(1.0f).margin(0.0001f));
 }

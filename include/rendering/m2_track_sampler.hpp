@@ -207,8 +207,17 @@ inline glm::quat sampleQuat(const pipeline::M2AnimationTrack& track,
                                         control(keys.quatOutTangents[lower]),
                                         control(keys.quatInTangents[lower + 1])));
     }
-    return safe(glm::slerp(safe(keys.quatValues[lower]),
-                           safe(keys.quatValues[lower + 1]), fraction));
+    // Classic's quaternion track evaluator linearly interpolates the four
+    // components and normalizes the result. Slerp belongs to the separate
+    // sequence cross-fade stage, not to interpolation between rotation keys.
+    const glm::quat a = safe(keys.quatValues[lower]);
+    const glm::quat b = safe(keys.quatValues[lower + 1]);
+    const glm::quat linear(
+        a.w + (b.w - a.w) * fraction,
+        a.x + (b.x - a.x) * fraction,
+        a.y + (b.y - a.y) * fraction,
+        a.z + (b.z - a.z) * fraction);
+    return safe(linear);
 }
 
 } // namespace wowee::rendering::m2_track
