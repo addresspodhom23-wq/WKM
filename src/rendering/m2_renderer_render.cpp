@@ -1691,12 +1691,21 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Forcing it opaque and then keying the black out leaves
                     // the bright middle of a glow card as a solid disc, which
                     // is what Orgrimmar's bonfires were.
-                    const bool forceCutout =
+                    // Vanilla ordinary M2s take alpha-test state from the authored
+                    // material only (blend mode 1). Texture-content heuristics such
+                    // as black-key/hasAlpha are Kraken fallbacks. Ground-detail is
+                    // the one separate Vanilla pass that intentionally forces cutout.
+                    const bool vanillaGroundDetailCutout =
+                        vanillaRendering_ && model.isGroundDetail;
+                    const bool krakenForceCutout =
+                        !vanillaRendering_ &&
                         !model.isSpellEffect && !fireEffectModel &&
                         !m2BlendIsAdditive(batch.blendMode) &&
                         (model.isGroundDetail || foliageCutout ||
                          m2BatchNeedsAlphaTest(batch.blendMode, batch.hasAlpha) ||
                          batch.colorKeyBlack);
+                    const bool forceCutout =
+                        vanillaGroundDetailCutout || krakenForceCutout;
 
                     uint8_t effectiveBlendMode = batch.blendMode;
                     if (!vanillaRendering_ && (model.isSpellEffect || fireEffectModel)) {
@@ -1743,10 +1752,17 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                         mat->interiorDarken = 0.0f;
                         if (batch.colorKeyBlack)
                             mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
-                        if (forceCutout) {
+                        if (vanillaRendering_) {
+                            // Ordinary Vanilla M2 alpha-test is authored blend
+                            // mode 1 only. Detail doodads use their dedicated
+                            // ~0.5 cutout pass regardless of source material.
+                            mat->alphaTest = model.isGroundDetail
+                                ? 3
+                                : (batch.blendMode == M2_BLEND_ALPHA_KEY ? 1 : 0);
+                        } else if (forceCutout) {
                             mat->alphaTest = model.isGroundDetail ? 3 : (foliageCutout ? 2 : 1);
-                            if (model.isGroundDetail) mat->unlit = 0;
                         }
+                        if (forceCutout && model.isGroundDetail) mat->unlit = 0;
                     }
 
                     // Bind material descriptor set (set 1)

@@ -173,7 +173,9 @@ void main() {
     } else if (alphaTest == 2) {
         alphaCutoff = 0.4;
     } else if (alphaTest == 3) {
-        alphaCutoff = 0.25;
+        // Vanilla detail-doodad pass uses 128/255 rather than the
+        // general M2 AlphaKey reference of 224/255.
+        alphaCutoff = 128.0 / 255.0;
     } else if (alphaTest != 0) {
         alphaCutoff = 0.4;
     }
@@ -203,7 +205,7 @@ void main() {
         texColor.a = clamp((texColor.a - alphaCutoff) / max(aGrad, 0.001) * 0.5 + 0.5, 0.0, 1.0);
         if (texColor.a < 1.0 / 255.0) discard;
     }
-    if (colorKeyBlack != 0 && !classicVegetation) {
+    if (!vanillaRendering && colorKeyBlack != 0 && !classicVegetation) {
         float lum = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
         if (lum < colorKeyThreshold) discard;
     }

@@ -114,5 +114,15 @@ int main() {
     assert(m2Render.find("!vanillaRendering_ && (model.isSpellEffect || fireEffectModel)") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && (model.isSpellEffect || batch.forgeFireCard)") != std::string::npos);
     assert(m2Render.find("(batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect)") != std::string::npos);
+
+    // Ordinary Vanilla M2s must not be promoted to cutout because of decoded
+    // texture alpha or black-key heuristics. Only authored blend mode 1 alpha
+    // tests; the separate ground-detail pass keeps its 128/255 cutout.
+    assert(m2Render.find("vanillaGroundDetailCutout") != std::string::npos);
+    assert(m2Render.find("const bool krakenForceCutout =") != std::string::npos);
+    assert(m2Render.find("!vanillaRendering_ &&") != std::string::npos);
+    assert(m2Render.find("batch.blendMode == M2_BLEND_ALPHA_KEY ? 1 : 0") != std::string::npos);
+    assert(m2.find("128.0 / 255.0") != std::string::npos);
+    assert(m2.find("!vanillaRendering && colorKeyBlack != 0") != std::string::npos);
     return 0;
 }
