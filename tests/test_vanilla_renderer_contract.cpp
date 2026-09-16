@@ -224,5 +224,11 @@ int main() {
     assert(m2Render.find("!(vanillaRendering_ && instance.cachedModel->isGroundDetail)") != std::string::npos);
     assert(m2Render.find("vanillaRendering_ ? 0.0f : groundDetailMaxDistance_") != std::string::npos);
     assert(m2Render.find("!vanillaRendering_ && groundDetailMaxDistance_ > 0.0f") != std::string::npos);
+
+    // World-doodad fade keeps the 224/255 AlphaKey silhouette stable: object
+    // fade affects source alpha/output blend, not the texel-alpha comparison.
+    assert(m2.find("float alphaForTest = texColor.a") != std::string::npos);
+    assert(m2.find("alphaForTest *= vFadeAlpha") == std::string::npos);
+    assert(m2.find("float outAlpha = texColor.a * vFadeAlpha") != std::string::npos);
     return 0;
 }

@@ -206,16 +206,15 @@ void main() {
         texColor.a *= 1.0 + clamp(mip, 0.0, 4.0) * 0.18;
     }
     if ((classicVegetation || vanillaRendering) && alphaTest != 0) {
-        // Vanilla AlphaKey tests texel alpha after the object's authored/world
-        // fade weight. That makes a fading cutout erode from its soft edges
-        // instead of staying solid until it suddenly disappears.
+        // Vanilla world-doodad fade keeps the authored AlphaKey silhouette
+        // stable. The reference scales ALPHAREF by the same object fade used
+        // on source alpha; algebraically that is still texel.a >= 224/255.
+        // Detail doodads are different: their 52.5→70 yd ramp is already
+        // multiplied into texColor.a above before the 128/255 test.
         float alphaForTest = texColor.a;
-        if (vanillaRendering && blendMode == 1 && alphaTest != 3) {
-            alphaForTest *= vFadeAlpha;
-        }
         if (alphaForTest < alphaCutoff) discard;
-        // The Vanilla fade twin blends texel alpha × object alpha. On the
-        // steady opaque/cutout pipelines output alpha is ignored anyway.
+        // The Vanilla fade twin blends texel alpha × object alpha. On steady
+        // opaque/cutout draws output alpha is ignored by the pipeline.
         if (!vanillaRendering && blendMode <= 1) texColor.a = 1.0;
     } else if (alphaTest != 0) {
         // Screen-space sharpened alpha: rescale so the cutoff maps to the
