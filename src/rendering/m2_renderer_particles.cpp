@@ -902,10 +902,19 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
                 }
             }
 
+            glm::vec3 drawPos = p.position;
+            if (vanillaRendering_ && ((em.flags & 0x10u) != 0)) {
+                glm::mat4 liveBone(1.0f);
+                if (em.bone < inst.boneMatrices.size())
+                    liveBone = inst.boneMatrices[em.bone];
+                drawPos = glm::vec3(
+                    inst.modelMatrix * liveBone * glm::vec4(p.position, 1.0f));
+            }
+
             auto& vd = cachedGroup->vertexData;
-            vd.push_back(p.position.x);
-            vd.push_back(p.position.y);
-            vd.push_back(p.position.z);
+            vd.push_back(drawPos.x);
+            vd.push_back(drawPos.y);
+            vd.push_back(drawPos.z);
             vd.push_back(color.r);
             vd.push_back(color.g);
             vd.push_back(color.b);
