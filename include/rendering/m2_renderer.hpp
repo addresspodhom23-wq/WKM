@@ -1125,9 +1125,6 @@ private:
     // Thread count for parallel bone animation
     uint32_t numAnimThreads_ = 1;
 
-    float interpFloat(const pipeline::M2AnimationTrack& track, float animTime,
-                      float globalTime, int seqIdx,
-                      const std::vector<uint32_t>& globalSeqDurations);
     float interpFBlockFloat(const pipeline::M2FBlock& fb, float lifeRatio);
     glm::vec3 interpFBlockVec3(const pipeline::M2FBlock& fb, float lifeRatio);
     void emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt);

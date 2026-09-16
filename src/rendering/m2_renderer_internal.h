@@ -371,6 +371,61 @@ inline float m2SequenceBlendWeight(const M2Instance& instance) {
     return (3.0f - 2.0f * t) * t * t;
 }
 
+/// Sample a continuous local-sequence float with the same sequence cross-fade
+/// as the skeleton. Global-sequence tracks already own a shared independent
+/// clock and must not be blended against a second local sequence.
+inline float sampleM2BlendedFloat(const M2ModelGPU& model,
+                                  const M2Instance& instance,
+                                  const pipeline::M2AnimationTrack& track,
+                                  float defaultValue) {
+    const int currentIndex =
+        resolveM2SequenceAlias(model, instance.currentSequenceIndex);
+    const float current = m2_track::sampleFloat(
+        track, currentIndex, instance.animTime, instance.globalSequenceTime,
+        model.globalSequenceDurations, defaultValue);
+
+    if (track.globalSequence >= 0 ||
+        instance.blendFromSequenceIndex < 0 ||
+        instance.blendDuration <= 0.0f) {
+        return current;
+    }
+
+    const int fromIndex =
+        resolveM2SequenceAlias(model, instance.blendFromSequenceIndex);
+    const float from = m2_track::sampleFloat(
+        track, fromIndex, instance.blendFromAnimTime,
+        instance.globalSequenceTime, model.globalSequenceDurations,
+        defaultValue);
+    return glm::mix(from, current, m2SequenceBlendWeight(instance));
+}
+
+/// Vec3 counterpart for colour, UV translation and other continuous element
+/// tracks. Byte/word selectors deliberately keep using the raw sampler.
+inline glm::vec3 sampleM2BlendedVec3(const M2ModelGPU& model,
+                                     const M2Instance& instance,
+                                     const pipeline::M2AnimationTrack& track,
+                                     const glm::vec3& defaultValue) {
+    const int currentIndex =
+        resolveM2SequenceAlias(model, instance.currentSequenceIndex);
+    const glm::vec3 current = m2_track::sampleVec3(
+        track, currentIndex, instance.animTime, instance.globalSequenceTime,
+        model.globalSequenceDurations, defaultValue);
+
+    if (track.globalSequence >= 0 ||
+        instance.blendFromSequenceIndex < 0 ||
+        instance.blendDuration <= 0.0f) {
+        return current;
+    }
+
+    const int fromIndex =
+        resolveM2SequenceAlias(model, instance.blendFromSequenceIndex);
+    const glm::vec3 from = m2_track::sampleVec3(
+        track, fromIndex, instance.blendFromAnimTime,
+        instance.globalSequenceTime, model.globalSequenceDurations,
+        defaultValue);
+    return glm::mix(from, current, m2SequenceBlendWeight(instance));
+}
+
 /// Bone transforms for one instance.
 ///
 /// `cameraBasisWorld` columns are right/up/forward. Vanilla 1.12 rewrites a

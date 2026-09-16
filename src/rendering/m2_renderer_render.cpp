@@ -2028,10 +2028,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                             auto& inst = instances[p.instanceIdx];
                             glm::vec2 uvOffset(0.0f);
                             if (tt) {
-                                glm::vec3 trans = m2_track::sampleVec3(
-                                    tt->translation, resolveM2SequenceAlias(model, inst.currentSequenceIndex),
-                                    inst.animTime, inst.globalSequenceTime,
-                                    model.globalSequenceDurations, glm::vec3(0.0f));
+                                glm::vec3 trans = sampleM2BlendedVec3(
+                                    model, inst, tt->translation, glm::vec3(0.0f));
                                 uvOffset = glm::vec2(trans.x, trans.y);
                             }
                             if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
@@ -2340,10 +2338,8 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     uint16_t transformIdx = model.textureTransformLookup[lookupIdx];
                     if (transformIdx < model.textureTransforms.size()) {
                         const auto& tt = model.textureTransforms[transformIdx];
-                        glm::vec3 trans = m2_track::sampleVec3(
-                            tt.translation, resolveM2SequenceAlias(model, instance.currentSequenceIndex),
-                            instance.animTime, instance.globalSequenceTime,
-                            model.globalSequenceDurations, glm::vec3(0.0f));
+                        glm::vec3 trans = sampleM2BlendedVec3(
+                            model, instance, tt.translation, glm::vec3(0.0f));
                         uvOffset = glm::vec2(trans.x, trans.y);
                     }
                 }

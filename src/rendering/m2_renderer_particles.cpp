@@ -243,13 +243,6 @@ ClassicLocalBirth sampleClassicLocalBirth(
 
 // --- M2 Particle Emitter Helpers ---
 
-float M2Renderer::interpFloat(const pipeline::M2AnimationTrack& track, float animTime,
-                                float globalTime, int seqIdx,
-                                const std::vector<uint32_t>& globalSeqDurations) {
-    return m2_track::sampleFloat(track, seqIdx, animTime, globalTime,
-                                 globalSeqDurations, 0.0f);
-}
-
 // Interpolate an M2 FBlock (particle lifetime curve) at a given life ratio [0..1].
 // FBlocks store per-lifetime keyframes for particle color, alpha, and scale.
 // NOTE: interpFBlockFloat and interpFBlockVec3 share identical interpolation logic -
@@ -339,10 +332,8 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             continue;
         }
 
-        float rate = interpFloat(em.emissionRate, inst.animTime, inst.globalSequenceTime,
-                                 sampleSequenceIndex, gpu.globalSequenceDurations);
-        float life = interpFloat(em.lifespan, inst.animTime, inst.globalSequenceTime,
-                                 sampleSequenceIndex, gpu.globalSequenceDurations);
+        float rate = sampleM2BlendedFloat(gpu, inst, em.emissionRate, 0.0f);
+        float life = sampleM2BlendedFloat(gpu, inst, em.lifespan, 0.0f);
         // What the player asked to see of it, before the floor below. The order
         // is the whole point: thinning first and flooring second lets a low
         // setting take smoke, dust and spell effects down while a candle is
@@ -437,26 +428,20 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             // M2 stores launch speed plus a fractional variation. Plane emitters
             // spawn across their authored rectangle. Sphere emitters spawn on a
             // shell between areaLength/areaWidth and normally travel radially.
-            float speed = interpFloat(em.emissionSpeed, inst.animTime, inst.globalSequenceTime,
-                                      sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float speedVariation = interpFloat(
-                em.speedVariation, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float vRange = interpFloat(
-                em.verticalRange, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float hRange = interpFloat(
-                em.horizontalRange, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float areaLength = interpFloat(
-                em.emissionAreaLength, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float areaWidth = interpFloat(
-                em.emissionAreaWidth, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
-            const float zSource = interpFloat(
-                em.zSource, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
+            float speed = sampleM2BlendedFloat(
+                gpu, inst, em.emissionSpeed, 0.0f);
+            const float speedVariation = sampleM2BlendedFloat(
+                gpu, inst, em.speedVariation, 0.0f);
+            const float vRange = sampleM2BlendedFloat(
+                gpu, inst, em.verticalRange, 0.0f);
+            const float hRange = sampleM2BlendedFloat(
+                gpu, inst, em.horizontalRange, 0.0f);
+            const float areaLength = sampleM2BlendedFloat(
+                gpu, inst, em.emissionAreaLength, 0.0f);
+            const float areaWidth = sampleM2BlendedFloat(
+                gpu, inst, em.emissionAreaWidth, 0.0f);
+            const float zSource = sampleM2BlendedFloat(
+                gpu, inst, em.zSource, 0.0f);
 
             glm::vec3 localPos = em.position;
             glm::vec3 emissionOffset(0.0f);
@@ -706,13 +691,11 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
 
     for (size_t e = 0; e < numEm; ++e) {
         const auto& pem = gpu.particleEmitters[e];
-        float grav = interpFloat(
-            pem.gravity, inst.animTime, inst.globalSequenceTime,
-            sampleSequenceIndex, gpu.globalSequenceDurations);
+        float grav = sampleM2BlendedFloat(
+            gpu, inst, pem.gravity, 0.0f);
         if (!vanillaRendering_ && grav == 0.0f && !gpu.isFireflyEffect) {
-            const float emSpeed = interpFloat(
-                pem.emissionSpeed, inst.animTime, inst.globalSequenceTime,
-                sampleSequenceIndex, gpu.globalSequenceDurations);
+            const float emSpeed = sampleM2BlendedFloat(
+                gpu, inst, pem.emissionSpeed, 0.0f);
             grav = (std::abs(emSpeed) > 0.1f) ? 4.0f : 1.5f;
         }
         emitterGrav[e] = grav;
@@ -1165,18 +1148,14 @@ void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt
         const float visibility = m2_track::sampleFloat(
             em.visibilityTrack, sampleSequenceIndex, inst.animTime,
             inst.globalSequenceTime, gsd, 1.0f);
-        const float heightAbove = std::max(0.0f, m2_track::sampleFloat(
-            em.heightAboveTrack, sampleSequenceIndex, inst.animTime,
-            inst.globalSequenceTime, gsd, 0.0f));
-        const float heightBelow = std::max(0.0f, m2_track::sampleFloat(
-            em.heightBelowTrack, sampleSequenceIndex, inst.animTime,
-            inst.globalSequenceTime, gsd, 0.0f));
-        const glm::vec3 color = m2_track::sampleVec3(
-            em.colorTrack, sampleSequenceIndex, inst.animTime,
-            inst.globalSequenceTime, gsd, glm::vec3(1.0f));
-        const float alpha = glm::clamp(m2_track::sampleFloat(
-            em.alphaTrack, sampleSequenceIndex, inst.animTime,
-            inst.globalSequenceTime, gsd, 1.0f), 0.0f, 1.0f);
+        const float heightAbove = std::max(
+            0.0f, sampleM2BlendedFloat(gpu, inst, em.heightAboveTrack, 0.0f));
+        const float heightBelow = std::max(
+            0.0f, sampleM2BlendedFloat(gpu, inst, em.heightBelowTrack, 0.0f));
+        const glm::vec3 color = sampleM2BlendedVec3(
+            gpu, inst, em.colorTrack, glm::vec3(1.0f));
+        const float alpha = glm::clamp(sampleM2BlendedFloat(
+            gpu, inst, em.alphaTrack, 1.0f), 0.0f, 1.0f);
 
         // Vanilla normalizes these two scalar controls before simulation.
         const float edgeRate = std::isfinite(em.edgesPerSecond)
@@ -1360,14 +1339,10 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
             glm::vec3 liveColor(1.0f);
             float liveAlpha = 1.0f;
             if (vanillaRendering_) {
-                liveColor = m2_track::sampleVec3(
-                    em.colorTrack, sampleSequenceIndex, inst.animTime,
-                    inst.globalSequenceTime, gpu.globalSequenceDurations,
-                    glm::vec3(1.0f));
-                liveAlpha = glm::clamp(m2_track::sampleFloat(
-                    em.alphaTrack, sampleSequenceIndex, inst.animTime,
-                    inst.globalSequenceTime, gpu.globalSequenceDurations, 1.0f),
-                    0.0f, 1.0f);
+                liveColor = sampleM2BlendedVec3(
+                    gpu, inst, em.colorTrack, glm::vec3(1.0f));
+                liveAlpha = glm::clamp(sampleM2BlendedFloat(
+                    gpu, inst, em.alphaTrack, 1.0f), 0.0f, 1.0f);
             }
 
             uint32_t firstVert = static_cast<uint32_t>(written);

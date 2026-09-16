@@ -326,6 +326,17 @@ int main() {
     assert(m2Render.find("instance.blendFromAnimTime += dtMs * instance.blendFromAnimSpeed") != std::string::npos);
     assert(m2Render.find("beginM2SequenceTransition(instance, model, newSeq)") != std::string::npos);
 
+    // Continuous element tracks share the sequence smoothstep. Global-sequence
+    // tracks bypass local cross-fade, while byte/word selectors (visibility and
+    // ribbon texture slot) remain direct discrete samples.
+    assert(m2Internal.find("sampleM2BlendedFloat") != std::string::npos);
+    assert(m2Internal.find("sampleM2BlendedVec3") != std::string::npos);
+    assert(m2Internal.find("track.globalSequence >= 0") != std::string::npos);
+    assert(m2Particles.find("sampleM2BlendedFloat(gpu, inst, em.emissionRate") != std::string::npos);
+    assert(m2Particles.find("em.visibilityTrack, sampleSequenceIndex") != std::string::npos);
+    assert(m2Particles.find("em.textureSlotTrack, sampleSequenceIndex") != std::string::npos);
+    assert(m2Render.find("sampleM2BlendedVec3(") != std::string::npos);
+
     // One render clock owns all Classic global-sequence phases.
     assert(m2Render.find("instance.globalSequenceTime = sharedGlobalSequenceTimeMs_") != std::string::npos);
     assert(m2Render.find("instance.globalSequenceTime += dtMs") == std::string::npos);
