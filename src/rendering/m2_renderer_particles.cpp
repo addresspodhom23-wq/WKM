@@ -976,7 +976,50 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
 
     if (totalParticles == 0) return;
 
-    // Bind per-frame set (set 0) for particle pipeline
+    // Pack every particle group into a UNIQUE range before recording any draw.
+    // The old loop repeatedly memcpy'd to byte 0 and then recorded a draw. GPU
+    // execution happens after command recording, so later memcpy calls could
+    // replace the data that earlier draw commands were meant to consume.
+    struct PackedParticleDraw {
+        ParticleGroup* group;
+        uint32_t firstInstance;
+        uint32_t instanceCount;
+    };
+    std::vector<PackedParticleDraw> packedDraws;
+    packedDraws.reserve(groups.size());
+
+    float* packed = static_cast<float*>(m2ParticleVBMapped_);
+    size_t packedCount = 0;
+    for (auto& [key, group] : groups) {
+        if (group.vertexData.empty()) continue;
+        if (packedCount >= MAX_M2_RENDER_PARTICLES) break;
+
+        const size_t groupCount = group.vertexData.size() / 9;
+        const size_t count = std::min(
+            groupCount, MAX_M2_RENDER_PARTICLES - packedCount);
+        if (count == 0) continue;
+
+        memcpy(packed + packedCount * 9, group.vertexData.data(),
+               count * 9 * sizeof(float));
+        packedDraws.push_back({
+            .group = &group,
+            .firstInstance = static_cast<uint32_t>(packedCount),
+            .instanceCount = static_cast<uint32_t>(count)
+        });
+        packedCount += count;
+    }
+
+    if (packedDraws.empty()) return;
+    if (packedCount < totalParticles) {
+        static bool warnedParticleFrameCap = false;
+        if (!warnedParticleFrameCap) {
+            LOG_WARNING("M2 particle render buffer capped at ",
+                        MAX_M2_RENDER_PARTICLES, " of ", totalParticles,
+                        " visible particles; extra particles are not submitted");
+            warnedParticleFrameCap = true;
+        }
+    }
+
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             particlePipelineLayout_, 0, 1, &perFrameSet, 0, nullptr);
 
@@ -985,10 +1028,10 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
 
     VkPipeline currentPipeline = VK_NULL_HANDLE;
 
-    for (auto& [key, group] : groups) {
-        if (group.vertexData.empty()) continue;
+    for (const auto& draw : packedDraws) {
+        auto& group = *draw.group;
+        const uint8_t blendType = group.blendType;
 
-        uint8_t blendType = group.blendType;
         VkPipeline desiredPipeline = particlePipeline_;
         switch (blendType) {
             case 0:
@@ -1001,56 +1044,62 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             default: break;
         }
         if (desiredPipeline != currentPipeline) {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desiredPipeline);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              desiredPipeline);
             currentPipeline = desiredPipeline;
         }
 
-        // Use pre-allocated stable descriptor set; fall back to per-frame alloc only if unavailable
+        // Use the emitter's stable descriptor when available. The fallback is
+        // retained for malformed/legacy uploads that did not preallocate one.
         VkDescriptorSet texSet = group.preAllocSet;
         if (texSet == VK_NULL_HANDLE) {
-            // Fallback: allocate per-frame (pool exhaustion risk - should not happen in practice)
-            VkDescriptorSetAllocateInfo ai{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            VkDescriptorSetAllocateInfo ai{
+                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
             ai.descriptorPool = materialDescPool_;
             ai.descriptorSetCount = 1;
             ai.pSetLayouts = &particleTexLayout_;
-            if (vkAllocateDescriptorSets(vkCtx_->getDevice(), &ai, &texSet) == VK_SUCCESS) {
+            if (vkAllocateDescriptorSets(
+                    vkCtx_->getDevice(), &ai, &texSet) == VK_SUCCESS) {
                 VkTexture* tex = (group.texture && group.texture->isValid())
                     ? group.texture : whiteTexture_.get();
                 if (!tex || !tex->isValid()) continue;
                 VkDescriptorImageInfo imgInfo = tex->descriptorInfo();
-                VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                VkWriteDescriptorSet write{
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                 write.dstSet = texSet;
                 write.dstBinding = 0;
                 write.descriptorCount = 1;
-                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.descriptorType =
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 write.pImageInfo = &imgInfo;
-                vkUpdateDescriptorSets(vkCtx_->getDevice(), 1, &write, 0, nullptr);
+                vkUpdateDescriptorSets(
+                    vkCtx_->getDevice(), 1, &write, 0, nullptr);
             }
         }
-        if (texSet != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    particlePipelineLayout_, 1, 1, &texSet, 0, nullptr);
-        }
+        if (texSet == VK_NULL_HANDLE) continue;
 
-        // Push constants: tileCount + alphaKey
-        struct { float tileX, tileY; int alphaKey; int vanillaRendering; } pc = {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                particlePipelineLayout_, 1, 1, &texSet,
+                                0, nullptr);
+
+        struct {
+            float tileX, tileY;
+            int alphaKey;
+            int vanillaRendering;
+        } pc = {
             .tileX = static_cast<float>(group.tilesX),
             .tileY = static_cast<float>(group.tilesY),
             .alphaKey = (blendType == 1) ? 1 : 0,
             .vanillaRendering = vanillaRendering_ ? 1 : 0
         };
-        vkCmdPushConstants(cmd, particlePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        vkCmdPushConstants(cmd, particlePipelineLayout_,
+                           VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(pc), &pc);
 
-        // Upload and draw in chunks
-        size_t count = group.vertexData.size() / 9;
-        size_t offset = 0;
-        while (offset < count) {
-            size_t batch = std::min(count - offset, MAX_M2_PARTICLES);
-            memcpy(m2ParticleVBMapped_, &group.vertexData[offset * 9], batch * 9 * sizeof(float));
-            vkCmdDraw(cmd, static_cast<uint32_t>(batch), 1, 0, 0);
-            offset += batch;
-        }
+        // Four generated vertices form one billboard triangle strip. Particle
+        // records are instance-rate input; firstInstance addresses this group's
+        // immutable slice of the once-packed frame buffer.
+        vkCmdDraw(cmd, 4, draw.instanceCount, 0, draw.firstInstance);
     }
 }
 
