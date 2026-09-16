@@ -1274,11 +1274,17 @@ void M2Renderer::destroyModelGPU(M2ModelGPU& model) {
         if (pSet) { vkFreeDescriptorSets(device, materialDescPool_, 1, &pSet); pSet = VK_NULL_HANDLE; }
     }
     model.particleTexSets.clear();
-    // Free ribbon texture descriptor sets
-    for (auto& rSet : model.ribbonTexSets) {
-        if (rSet) { vkFreeDescriptorSets(device, materialDescPool_, 1, &rSet); rSet = VK_NULL_HANDLE; }
+    // Free ribbon texture descriptor sets (one vector per emitter/slot).
+    for (auto& emitterSets : model.ribbonTexSets) {
+        for (auto& rSet : emitterSets) {
+            if (rSet) {
+                vkFreeDescriptorSets(device, materialDescPool_, 1, &rSet);
+                rSet = VK_NULL_HANDLE;
+            }
+        }
     }
     model.ribbonTexSets.clear();
+    model.ribbonTextures.clear();
 }
 
 void M2Renderer::destroyInstanceBones(M2Instance& inst, bool defer) {
@@ -1828,53 +1834,60 @@ bool M2Renderer::loadModel(const pipeline::M2Model& model, uint32_t modelId) {
         }
     }
 
-    // Copy ribbon emitter data and resolve textures
+    // Copy ribbon emitter data and resolve every authored texture slot.
     gpuModel.ribbonEmitters = model.ribbonEmitters;
     if (!model.ribbonEmitters.empty()) {
         VkDevice device = vkCtx_->getDevice();
-        gpuModel.ribbonTextures.resize(model.ribbonEmitters.size(), whiteTexture_.get());
-        gpuModel.ribbonTexSets.resize(model.ribbonEmitters.size(), VK_NULL_HANDLE);
+        gpuModel.ribbonTextures.resize(model.ribbonEmitters.size());
+        gpuModel.ribbonTexSets.resize(model.ribbonEmitters.size());
+
         for (size_t ri = 0; ri < model.ribbonEmitters.size(); ri++) {
-            // Resolve texture: ribbon textureIndex is a direct index into the
-            // model's texture array (NOT through the textureLookup table).
-            uint16_t texDirect = model.ribbonEmitters[ri].textureIndex;
-            if (texDirect < allTextures.size() && allTextures[texDirect] != nullptr) {
-                gpuModel.ribbonTextures[ri] = allTextures[texDirect];
-            } else {
-                // Fallback: try through textureLookup table
-                uint32_t texIdx = (texDirect < model.textureLookup.size())
-                                  ? model.textureLookup[texDirect] : UINT32_MAX;
-                if (texIdx < allTextures.size() && allTextures[texIdx] != nullptr) {
-                    gpuModel.ribbonTextures[ri] = allTextures[texIdx];
-                } else {
-                    LOG_WARNING("M2 '", model.name, "' ribbon emitter[", ri,
-                                "] texIndex=", texDirect, " lookup failed"
-                                " (direct=", (texDirect < allTextures.size() ? "yes" : "OOB"),
-                                " lookup=", texIdx,
-                                " textures=", allTextures.size(),
-                                ") - using white fallback");
+            const auto& emitter = model.ribbonEmitters[ri];
+            const size_t slotCount = std::max<size_t>(1, emitter.textureIndices.size());
+            auto& textures = gpuModel.ribbonTextures[ri];
+            auto& texSets = gpuModel.ribbonTexSets[ri];
+            textures.resize(slotCount, whiteTexture_.get());
+            texSets.resize(slotCount, VK_NULL_HANDLE);
+
+            for (size_t slot = 0; slot < slotCount; ++slot) {
+                // Ribbon texture indices are direct indices into textures[],
+                // not texture-combo lookup entries used by mesh batches.
+                if (slot < emitter.textureIndices.size()) {
+                    const uint16_t texDirect = emitter.textureIndices[slot];
+                    if (texDirect < allTextures.size() && allTextures[texDirect] != nullptr) {
+                        textures[slot] = allTextures[texDirect];
+                    } else {
+                        LOG_WARNING("M2 '", model.name, "' ribbon emitter[", ri,
+                                    "] slot=", slot, " texture=", texDirect,
+                                    " is outside textures[", allTextures.size(),
+                                    "] - using white fallback");
+                    }
                 }
-            }
-            // Allocate descriptor set (reuse particleTexLayout_ = single sampler)
-            if (particleTexLayout_ && materialDescPool_) {
-                VkDescriptorSetAllocateInfo ai{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+
+                if (!particleTexLayout_ || !materialDescPool_) continue;
+
+                VkDescriptorSetAllocateInfo ai{
+                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
                 ai.descriptorPool = materialDescPool_;
                 ai.descriptorSetCount = 1;
                 ai.pSetLayouts = &particleTexLayout_;
-                if (vkAllocateDescriptorSets(device, &ai, &gpuModel.ribbonTexSets[ri]) == VK_SUCCESS) {
-                    VkTexture* tex = gpuModel.ribbonTextures[ri];
-                    if (!tex || !tex->isValid()) tex = whiteTexture_.get();
-                    if (!tex || !tex->isValid()) continue;
-                    VkDescriptorImageInfo imgInfo = tex->descriptorInfo();
-                    VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                    write.dstSet = gpuModel.ribbonTexSets[ri];
-                    write.dstBinding = 0;
-                    write.descriptorCount = 1;
-                    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                    write.pImageInfo = &imgInfo;
-                    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+                if (vkAllocateDescriptorSets(device, &ai, &texSets[slot]) != VK_SUCCESS) {
+                    continue;
                 }
+
+                VkTexture* tex = textures[slot];
+                if (!tex || !tex->isValid()) tex = whiteTexture_.get();
+                if (!tex || !tex->isValid()) continue;
+
+                VkDescriptorImageInfo imgInfo = tex->descriptorInfo();
+                VkWriteDescriptorSet write{
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                write.dstSet = texSets[slot];
+                write.dstBinding = 0;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo = &imgInfo;
+                vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
             }
         }
         LOG_DEBUG("  Ribbon emitters loaded: ", model.ribbonEmitters.size());
