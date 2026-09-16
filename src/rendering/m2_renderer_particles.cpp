@@ -979,9 +979,11 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         }
 
         // Push constants: tileCount + alphaKey
-        struct { float tileX, tileY; int alphaKey; } pc = {
-            .tileX = static_cast<float>(group.tilesX), .tileY = static_cast<float>(group.tilesY),
-            .alphaKey = (blendType == 1) ? 1 : 0
+        struct { float tileX, tileY; int alphaKey; int vanillaRendering; } pc = {
+            .tileX = static_cast<float>(group.tilesX),
+            .tileY = static_cast<float>(group.tilesY),
+            .alphaKey = (blendType == 1) ? 1 : 0,
+            .vanillaRendering = vanillaRendering_ ? 1 : 0
         };
         vkCmdPushConstants(cmd, particlePipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(pc), &pc);
