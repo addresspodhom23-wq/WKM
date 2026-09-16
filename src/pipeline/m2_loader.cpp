@@ -509,7 +509,7 @@ std::string readString(const std::vector<uint8_t>& data, uint32_t offset, uint32
     return std::string(reinterpret_cast<const char*>(&data[offset]), actualLen);
 }
 
-enum class TrackType { VEC3, QUAT_COMPRESSED, FLOAT, FIXED16, BYTE_BOOL };
+enum class TrackType { VEC3, QUAT_COMPRESSED, FLOAT, FIXED16, UINT16, BYTE_BOOL };
 
 // M2 sequence flag: when set, keyframe data is embedded in the M2 file.
 // When clear, data lives in an external .anim file and the M2 offsets are
@@ -564,6 +564,7 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
         size_t keyElementSize;
         if (type == TrackType::FLOAT) keyElementSize = sizeof(float);
         else if (type == TrackType::FIXED16) keyElementSize = sizeof(int16_t);
+        else if (type == TrackType::UINT16) keyElementSize = sizeof(uint16_t);
         else if (type == TrackType::BYTE_BOOL) keyElementSize = sizeof(uint8_t);
         else if (type == TrackType::VEC3) keyElementSize = sizeof(float) * 3;
         else keyElementSize = sizeof(int16_t) * 4;
@@ -583,6 +584,12 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
             for (int16_t v : raw) {
                 track.sequences[i].floatValues.push_back(
                     std::clamp(static_cast<float>(v) / 32767.0f, 0.0f, 1.0f));
+            }
+        } else if (type == TrackType::UINT16) {
+            auto raw = readArray<uint16_t>(data, keyOffset, keyCount);
+            track.sequences[i].floatValues.reserve(raw.size());
+            for (uint16_t v : raw) {
+                track.sequences[i].floatValues.push_back(static_cast<float>(v));
             }
         } else if (type == TrackType::BYTE_BOOL) {
             // One byte per key, and only ever 0 or 1. Reading these as floats
@@ -656,6 +663,7 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
     size_t keySize;
     if (type == TrackType::FLOAT) keySize = sizeof(float);
     else if (type == TrackType::FIXED16) keySize = sizeof(int16_t);
+    else if (type == TrackType::UINT16) keySize = sizeof(uint16_t);
     else if (type == TrackType::BYTE_BOOL) keySize = sizeof(uint8_t);
     else if (type == TrackType::VEC3) keySize = sizeof(float) * 3;
     else keySize = compressedQuat ? sizeof(int16_t) * 4 : sizeof(float) * 4;
@@ -690,6 +698,12 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         allFloatKeys.reserve(raw.size());
         for (int16_t v : raw) {
             allFloatKeys.push_back(std::clamp(static_cast<float>(v) / 32767.0f, 0.0f, 1.0f));
+        }
+    } else if (type == TrackType::UINT16) {
+        auto raw = readArray<uint16_t>(data, disk.ofsKeys, disk.nKeys);
+        allFloatKeys.reserve(raw.size());
+        for (uint16_t v : raw) {
+            allFloatKeys.push_back(static_cast<float>(v));
         }
     } else if (type == TrackType::BYTE_BOOL) {
         auto raw = readArray<uint8_t>(data, disk.ofsKeys, disk.nKeys);
@@ -727,7 +741,7 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
         uint32_t keyCount = keyEnd - start;
 
         if (type == TrackType::FLOAT || type == TrackType::FIXED16 ||
-            type == TrackType::BYTE_BOOL) {
+            type == TrackType::UINT16 || type == TrackType::BYTE_BOOL) {
             track.sequences[i].floatValues.assign(
                 allFloatKeys.begin() + start, allFloatKeys.begin() + start + keyCount);
         } else if (type == TrackType::VEC3) {
@@ -1667,24 +1681,29 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 rib.position.y = readValue<float>(m2Data, base + 0x0C);
                 rib.position.z = readValue<float>(m2Data, base + 0x10);
 
-                // textureIndices M2Array (0x14): first entry is a direct
-                // texture-array index. Texture-slot animation is handled by
-                // the renderer separately; keep slot 0 as the base texture.
+                // textureIndices/materialIndices are direct arrays in the
+                // root M2. texSlotTrack chooses a slot in textureIndices[].
                 {
                     const uint32_t nTex = readValue<uint32_t>(m2Data, base + 0x14);
                     const uint32_t ofsTex = readValue<uint32_t>(m2Data, base + 0x18);
-                    if (nTex > 0 && ofsTex + sizeof(uint16_t) <= m2Data.size()) {
-                        rib.textureIndex = readValue<uint16_t>(m2Data, ofsTex);
+                    if (nTex > 0 && nTex < 256 &&
+                        static_cast<size_t>(ofsTex) + static_cast<size_t>(nTex) * sizeof(uint16_t) <= m2Data.size()) {
+                        rib.textureIndices = readArray<uint16_t>(m2Data, ofsTex, nTex);
                     }
                 }
-
-                // materialIndices M2Array (0x1C): preserve the first authored
-                // material lookup for blend-state selection.
                 {
                     const uint32_t nMat = readValue<uint32_t>(m2Data, base + 0x1C);
                     const uint32_t ofsMat = readValue<uint32_t>(m2Data, base + 0x20);
-                    if (nMat > 0 && ofsMat + sizeof(uint16_t) <= m2Data.size()) {
-                        rib.materialIndex = readValue<uint16_t>(m2Data, ofsMat);
+                    if (nMat > 0 && nMat < 256 &&
+                        static_cast<size_t>(ofsMat) + static_cast<size_t>(nMat) * sizeof(uint16_t) <= m2Data.size()) {
+                        rib.materialIndices = readArray<uint16_t>(m2Data, ofsMat, nMat);
+                    }
+                    if (!rib.materialIndices.empty()) {
+                        const uint16_t matIndex = rib.materialIndices.front();
+                        if (matIndex < model.materials.size()) {
+                            rib.materialFlags = model.materials[matIndex].flags;
+                            rib.blendMode = model.materials[matIndex].blendMode;
+                        }
                     }
                 }
 
@@ -1722,6 +1741,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     rib.textureRows    = readValue<uint16_t>(m2Data, base + 0xA0);
                     rib.textureCols    = readValue<uint16_t>(m2Data, base + 0xA2);
 
+                    parseRibbonTrack(0xA4, rib.textureSlotTrack, TrackType::UINT16);
                     parseRibbonTrack(0xC0, rib.visibilityTrack, TrackType::BYTE_BOOL);
                 } else {
                     parseRibbonTrack(0x24, rib.colorTrack,       TrackType::VEC3);
@@ -1735,6 +1755,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     rib.textureRows    = readValue<uint16_t>(m2Data, base + 0x80);
                     rib.textureCols    = readValue<uint16_t>(m2Data, base + 0x82);
 
+                    parseRibbonTrack(0x84, rib.textureSlotTrack, TrackType::UINT16);
                     parseRibbonTrack(0x98, rib.visibilityTrack, TrackType::BYTE_BOOL);
                 }
 
