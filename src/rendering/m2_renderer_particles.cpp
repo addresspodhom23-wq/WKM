@@ -116,7 +116,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
         // is the whole point: thinning first and flooring second lets a low
         // setting take smoke, dust and spell effects down while a candle is
         // pulled back up to the handful of particles that still reads as fire.
-        rate *= particleDensity_;
+        if (!vanillaRendering_) rate *= particleDensity_;
 
         // A flame reads as a flame only when enough particles are alive at once.
         // Authored rates vary wildly for the same visual intent - a candle asks
@@ -128,7 +128,7 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
         // that reduces how many particles are alive or how far they travel. The
         // effect is only visible because a scattering of particles reaches open
         // air, so thinning it drops the whole thing below the threshold.
-        if (rate > 0.0f && life > 0.0f &&
+        if (!vanillaRendering_ && rate > 0.0f && life > 0.0f &&
             (gpu.isLanternLike || gpu.isTorch || gpu.isBrazierOrFire || gpu.isKoboldFlame)) {
             constexpr float kMinLiveParticles = 15.0f;
             rate = std::max(rate, kMinLiveParticles / std::max(life, 0.1f));
@@ -174,31 +174,45 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             glm::vec3 worldPos = glm::vec3(inst.modelMatrix * boneXform * glm::vec4(localPos, 1.0f));
             p.position = worldPos;
 
-            // Velocity: emission speed in upward direction + random spread
+            // M2 stores launch speed plus a variation, and vertical/horizontal
+            // ranges as angular cone ranges in radians around authored +Z.
             float speed = interpFloat(em.emissionSpeed, inst.animTime, inst.globalSequenceTime,
                                       inst.currentSequenceIndex, gpu.globalSequenceDurations);
+            const float speedVariation = interpFloat(
+                em.speedVariation, inst.animTime, inst.globalSequenceTime,
+                inst.currentSequenceIndex, gpu.globalSequenceDurations);
             float vRange = interpFloat(em.verticalRange, inst.animTime, inst.globalSequenceTime,
                                        inst.currentSequenceIndex, gpu.globalSequenceDurations);
             float hRange = interpFloat(em.horizontalRange, inst.animTime, inst.globalSequenceTime,
                                        inst.currentSequenceIndex, gpu.globalSequenceDurations);
 
-            // Base direction: up in model space, transformed to world
             glm::vec3 dir(0.0f, 0.0f, 1.0f);
-            // Add random spread
-            dir.x += distN(particleRng_) * hRange;
-            dir.y += distN(particleRng_) * hRange;
-            dir.z += distN(particleRng_) * vRange;
-            float lenSq = glm::dot(dir, dir);
-            if (lenSq > 0.001f * 0.001f) dir *= glm::inversesqrt(lenSq);
+            if (vanillaRendering_) {
+                const float phi = (distN(particleRng_) + 1.0f) * 0.5f *
+                                  std::max(0.0f, vRange);
+                const float theta = distN(particleRng_) * 0.5f * hRange;
+                const float sinPhi = std::sin(phi);
+                dir = glm::vec3(sinPhi * std::cos(theta),
+                                sinPhi * std::sin(theta),
+                                std::cos(phi));
+                speed = std::max(0.0f, speed +
+                    (dist01(particleRng_) - 0.5f) * speedVariation);
+            } else {
+                // Preserve Kraken's historical non-Vanilla spread behaviour.
+                dir.x += distN(particleRng_) * hRange;
+                dir.y += distN(particleRng_) * hRange;
+                dir.z += distN(particleRng_) * vRange;
+                const float lenSq = glm::dot(dir, dir);
+                if (lenSq > 0.001f * 0.001f) dir *= glm::inversesqrt(lenSq);
+            }
 
             // Transform direction by bone + model orientation (rotation only)
             glm::mat3 rotMat = glm::mat3(inst.modelMatrix * boneXform);
             p.velocity = rotMat * dir * speed;
 
-            // When emission speed is ~0 and bone animation isn't loaded (.anim files),
-            // particles pile up at the same position. Give them a drift so they
-            // spread outward like a mist/spray effect instead of clustering.
-            if (std::abs(speed) < 0.01f) {
+            // Kraken-only fallback for models whose authored/external animation
+            // data is incomplete. Vanilla mode must keep zero speed as zero.
+            if (!vanillaRendering_ && std::abs(speed) < 0.01f) {
                 if (gpu.isFireflyEffect) {
                     // Fireflies: gentle random drift in all directions
                     p.velocity = rotMat * glm::vec3(
@@ -270,7 +284,7 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
             float grav = interpFloat(pem.gravity,
                                       inst.animTime, inst.globalSequenceTime,
                                       inst.currentSequenceIndex, gpu.globalSequenceDurations);
-            if (grav == 0.0f && !gpu.isFireflyEffect) {
+            if (!vanillaRendering_ && grav == 0.0f && !gpu.isFireflyEffect) {
                 float emSpeed = interpFloat(pem.emissionSpeed,
                                              inst.animTime, inst.globalSequenceTime,
                                              inst.currentSequenceIndex, gpu.globalSequenceDurations);
@@ -656,7 +670,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);
             float rawScale = interpFBlockFloat(em.particleScale, lifeRatio);
 
-            if (!gpu.isSpellEffect && !gpu.isFireflyEffect && !gpu.isLanternLike &&
+            if (!vanillaRendering_ &&
+                !gpu.isSpellEffect && !gpu.isFireflyEffect && !gpu.isLanternLike &&
                 !gpu.isTorch && !gpu.isBrazierOrFire && !gpu.isKoboldFlame) {
                 color = glm::mix(color, glm::vec3(1.0f), 0.7f);
                 if (rawScale > 2.0f) alpha *= 0.02f;
@@ -670,16 +685,17 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             // the frame. Floor colour and alpha so a lit fixture always shows
             // flame. Floors only lift the dim end, leaving torches and candles
             // that already read correctly untouched.
-            if (gpu.isLanternLike || gpu.isTorch ||
-                gpu.isBrazierOrFire || gpu.isKoboldFlame) {
+            if (!vanillaRendering_ &&
+                (gpu.isLanternLike || gpu.isTorch ||
+                 gpu.isBrazierOrFire || gpu.isKoboldFlame)) {
                 color = glm::max(color, glm::vec3(0.50f, 0.26f, 0.09f));
                 alpha = std::max(alpha, 0.30f);
             }
 
             float scale = rawScale;
-            if (gpu.isSpellEffect) {
+            if (!vanillaRendering_ && gpu.isSpellEffect) {
                 scale = std::max(rawScale * 1.5f, 0.15f);
-            } else if (!gpu.isFireflyEffect) {
+            } else if (!vanillaRendering_ && !gpu.isFireflyEffect) {
                 scale = std::min(rawScale, 1.5f);
                 // Candle flames are authored at a fraction of a unit, which lands
                 // sub-pixel at any normal viewing distance - the fixture glows
