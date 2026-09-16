@@ -19,6 +19,7 @@ int main() {
     const auto m2Renderer=read("src/rendering/m2_renderer.cpp");
     const auto m2Render=read("src/rendering/m2_renderer_render.cpp");
     const auto m2Particles=read("src/rendering/m2_renderer_particles.cpp");
+    const auto m2ParticleVert=read("assets/shaders/m2_particle.vert.glsl");
     const auto m2ParticleFrag=read("assets/shaders/m2_particle.frag.glsl");
     const auto vkPipeline=read("src/rendering/vk_pipeline.cpp");
     const auto m2Header=read("include/rendering/m2_renderer.hpp");
@@ -251,6 +252,20 @@ int main() {
     assert(m2Particles.find("case 3:\n                case 4: pipe = ribbonAdditivePipeline_") != std::string::npos);
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
     assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
+
+    // Particle size is an authored world-space half extent. Render it as an
+    // instanced camera-facing quad; Vulkan largePoints is neither required nor
+    // used. Frame data is packed once into unique instance ranges before draws.
+    assert(m2ParticleVert.find("gl_PointSize") == std::string::npos);
+    assert(m2ParticleFrag.find("gl_PointCoord") == std::string::npos);
+    assert(m2ParticleVert.find("corners[gl_VertexIndex & 3]") != std::string::npos);
+    assert(m2ParticleVert.find("corner * aSize") != std::string::npos);
+    assert(m2Renderer.find("pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE") != std::string::npos);
+    assert(m2Renderer.find("VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP") != std::string::npos);
+    assert(m2Renderer.find("MAX_M2_RENDER_PARTICLES * 9 * sizeof(float)") != std::string::npos);
+    assert(m2Particles.find("packed + packedCount * 9") != std::string::npos);
+    assert(m2Particles.find("vkCmdDraw(cmd, 4, draw.instanceCount, 0, draw.firstInstance)") != std::string::npos);
+    assert(m2Particles.find("memcpy(m2ParticleVBMapped_") == std::string::npos);
 
     // Particle fragment output is straight-alpha. Blend/AddAlpha pipelines
     // apply SRC_ALPHA; premultiplying RGB here would apply alpha twice.
