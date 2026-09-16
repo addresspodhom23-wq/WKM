@@ -1594,6 +1594,17 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     midpoint = 0.5f;
                 em.lifeMidpoint = midpoint;
 
+                if (base + 0x190 <= m2Data.size()) {
+                    const float speed = readValue<float>(m2Data, base + 0x180);
+                    const float percent = readValue<float>(m2Data, base + 0x184);
+                    const float twMin = readValue<float>(m2Data, base + 0x188);
+                    const float twMax = readValue<float>(m2Data, base + 0x18C);
+                    if (std::isfinite(speed)) em.twinkleSpeed = speed;
+                    if (std::isfinite(percent))
+                        em.twinklePercent = std::clamp(percent, 0.0f, 1.0f);
+                    if (std::isfinite(twMin)) em.twinkleMin = twMin;
+                    if (std::isfinite(twMax)) em.twinkleMax = twMax;
+                }
                 if (base + 0x198 <= m2Data.size()) {
                     const float drag = readValue<float>(m2Data, base + 0x194);
                     if (std::isfinite(drag) && drag >= 0.0f)
