@@ -44,6 +44,7 @@ void main() {
 
     vec4 centerView = view * vec4(aPos, 1.0);
     vec4 vertexView;
+    bool tailStreak = false;
 
     if (aTailMode > 0.5) {
         vec3 tailView = mat3(view) * (-aVelocity * max(aTailSeconds, 0.0));
@@ -51,6 +52,7 @@ void main() {
         if (projectedLen2 < 7.7e-4) {
             vertexView = centerView + vec4(corner * aSize, 0.0, 0.0);
         } else {
+            tailStreak = true;
             vec3 axisUp = tailView * 0.5;
             vec2 perp = vec2(-tailView.y, tailView.x) *
                         (aSize * inversesqrt(projectedLen2));
@@ -82,7 +84,13 @@ void main() {
 
     vColor = aColor;
     vTile = aTile;
-    vSpriteUV = uvCorner * 0.5 + 0.5;
+    vec2 localUv = uvCorner * 0.5 + 0.5;
+    // Classic velocity streaks rotate the sprite so U runs from the particle
+    // head toward the tail tip and V runs across the streak width. A projected
+    // tail too short to form a streak falls back to ordinary billboard UVs.
+    if (tailStreak)
+        localUv = vec2(localUv.y, 1.0 - localUv.x);
+    vSpriteUV = localUv;
 
     float worldDist = length(viewPos.xyz - aPos);
     float fogRange = max(fogParams.y - fogParams.x, 0.001);
