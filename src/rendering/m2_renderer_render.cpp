@@ -1747,7 +1747,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Opaque gate - transparent glow cards were handled above so their
                     // sprites are generated before the mesh moves to pass 2.
                     const bool rawTransparent =
-                        !vanillaGroundDetailCutout &&
+                        !(vanillaRendering_ && model.isGroundDetail) &&
                         ((batch.blendMode >= 2) || (!vanillaRendering_ && model.isSpellEffect));
                     if (rawTransparent) continue;
 
