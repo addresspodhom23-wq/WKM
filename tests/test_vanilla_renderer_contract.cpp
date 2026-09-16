@@ -158,5 +158,16 @@ int main() {
     // the instance's actual boneCount before indexing the palette.
     assert(m2Renderer.find("static_cast<float>(v.boneIndices[0])") != std::string::npos);
     assert(m2Renderer.find("uint8_t(127)") == std::string::npos);
+
+    // Vanilla bone flags 0x01/0x02/0x04 rewrite the effective parent before
+    // the child's TRS: translation, scale and rotation are independently
+    // suppressible, while the pivot stays where the animated parent carried it
+    // unless 0x01 explicitly selects the model-root origin.
+    assert(m2Internal.find("const uint32_t parentArm = bone.flags & 0x07u") != std::string::npos);
+    assert(m2Internal.find("case 0x02u: { // ignore parent scale") != std::string::npos);
+    assert(m2Internal.find("case 0x04u: // ignore parent rotation; keep per-axis scale") != std::string::npos);
+    assert(m2Internal.find("case 0x06u: // ignore parent rotation and scale") != std::string::npos);
+    assert(m2Internal.find("(parentArm & 0x01u) == 0") != std::string::npos);
+    assert(m2Internal.find("translation = posedPivot - basis * bone.pivot") != std::string::npos);
     return 0;
 }

@@ -323,7 +323,69 @@ inline void computeBoneMatrices(const M2ModelGPU& model, M2Instance& instance,
 
         glm::mat4 composed = local;
         if (bone.parentBone >= 0 && static_cast<size_t>(bone.parentBone) < numBones) {
-            composed = instance.boneMatrices[bone.parentBone] * local;
+            const glm::mat4 parent = instance.boneMatrices[bone.parentBone];
+            glm::mat4 effectiveParent = parent;
+
+            // Vanilla bone flags 0x01/0x02/0x04 rewrite the effective parent
+            // before this bone's own TRS composes:
+            //   0x01 ignore parent translation
+            //   0x02 ignore parent scale
+            //   0x04 ignore parent rotation
+            // Root/model placement lives outside our palette in modelMatrix,
+            // so the model-root basis here is identity.
+            const uint32_t parentArm = bone.flags & 0x07u;
+            if (parentArm != 0) {
+                const glm::vec3 p0(parent[0]);
+                const glm::vec3 p1(parent[1]);
+                const glm::vec3 p2(parent[2]);
+                const glm::vec3 plen(
+                    glm::length(p0), glm::length(p1), glm::length(p2));
+
+                glm::mat3 basis(1.0f);
+                switch (parentArm & 0x06u) {
+                    case 0x00u:
+                        basis[0] = p0;
+                        basis[1] = p1;
+                        basis[2] = p2;
+                        break;
+                    case 0x02u: { // ignore parent scale
+                        auto unitOr = [](const glm::vec3& v, const glm::vec3& fallback) {
+                            const float l2 = glm::dot(v, v);
+                            return l2 > (1.0f / float(1 << 22))
+                                ? v * glm::inversesqrt(l2) : fallback;
+                        };
+                        basis[0] = unitOr(p0, glm::vec3(1, 0, 0));
+                        basis[1] = unitOr(p1, glm::vec3(0, 1, 0));
+                        basis[2] = unitOr(p2, glm::vec3(0, 0, 1));
+                        break;
+                    }
+                    case 0x04u: // ignore parent rotation; keep per-axis scale
+                        basis[0] = glm::vec3(plen.x, 0, 0);
+                        basis[1] = glm::vec3(0, plen.y, 0);
+                        basis[2] = glm::vec3(0, 0, plen.z);
+                        break;
+                    case 0x06u: // ignore parent rotation and scale
+                        basis = glm::mat3(1.0f);
+                        break;
+                }
+
+                glm::vec3 translation(0.0f);
+                if ((parentArm & 0x01u) == 0) {
+                    // Preserve the animated parent's placement of this bone's
+                    // bind pivot while replacing only the requested basis parts.
+                    const glm::vec3 posedPivot =
+                        glm::vec3(parent * glm::vec4(bone.pivot, 1.0f));
+                    translation = posedPivot - basis * bone.pivot;
+                }
+
+                effectiveParent = glm::mat4(1.0f);
+                effectiveParent[0] = glm::vec4(basis[0], 0.0f);
+                effectiveParent[1] = glm::vec4(basis[1], 0.0f);
+                effectiveParent[2] = glm::vec4(basis[2], 0.0f);
+                effectiveParent[3] = glm::vec4(translation, 1.0f);
+            }
+
+            composed = effectiveParent * local;
         }
 
         if (cameraBasisWorld && (bone.flags & kM2BoneBillboardMask) != 0) {
