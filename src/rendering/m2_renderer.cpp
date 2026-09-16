@@ -410,7 +410,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
         VkVertexInputBindingDescription pBind{};
         pBind.binding = 0;
         pBind.stride = 9 * sizeof(float); // pos3 + color4 + size1 + tile1
-        pBind.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        pBind.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::vector<VkVertexInputAttributeDescription> pAttrs = {
             {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0},                    // position
@@ -424,7 +424,7 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
                 .setShaders(particleVert.stageInfo(VK_SHADER_STAGE_VERTEX_BIT),
                             particleFrag.stageInfo(VK_SHADER_STAGE_FRAGMENT_BIT))
                 .setVertexInput({pBind}, pAttrs)
-                .setTopology(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+                .setTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP)
                 .setRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE)
                 .setDepthTest(true, false, VK_COMPARE_OP_LESS_OR_EQUAL)
                 .setColorBlendAttachment(blend)
@@ -1046,8 +1046,9 @@ bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &smokeVB_, &smokeVBAlloc_, &allocInfo);
         smokeVBMapped_ = allocInfo.pMappedData;
 
-        // M2 particle buffer
-        bci.size = MAX_M2_PARTICLES * 9 * sizeof(float);
+        // M2 particle INSTANCE buffer. It spans all visible emitters in the
+        // frame; MAX_M2_PARTICLES is only the per-instance simulation ceiling.
+        bci.size = MAX_M2_RENDER_PARTICLES * 9 * sizeof(float);
         vmaCreateBuffer(vkCtx_->getAllocator(), &bci, &aci, &m2ParticleVB_, &m2ParticleVBAlloc_, &allocInfo);
         m2ParticleVBMapped_ = allocInfo.pMappedData;
 
