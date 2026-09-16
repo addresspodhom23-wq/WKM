@@ -1545,6 +1545,23 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
             em.position.z = readValue<float>(m2Data, base + 0x10);
             em.bone       = readValue<uint16_t>(m2Data, base + 0x14);
             em.texture    = readValue<uint16_t>(m2Data, base + 0x16);
+
+            auto readParticleModelName = [&](uint32_t off) -> std::string {
+                if (base + off + 8 > m2Data.size()) return {};
+                const uint32_t count = readValue<uint32_t>(m2Data, base + off);
+                const uint32_t offset = readValue<uint32_t>(m2Data, base + off + 4);
+                if (count == 0 || count > 4096 || offset == 0 ||
+                    static_cast<uint64_t>(offset) + count > m2Data.size())
+                    return {};
+                std::string text(
+                    reinterpret_cast<const char*>(m2Data.data() + offset),
+                    reinterpret_cast<const char*>(m2Data.data() + offset + count));
+                while (!text.empty() && text.back() == '\0') text.pop_back();
+                return text;
+            };
+            em.geometryModel = readParticleModelName(0x18);
+            em.recursionModel = readParticleModelName(0x20);
+
             if (isVanilla) {
                 em.blendingType = static_cast<uint8_t>(
                     readValue<uint16_t>(m2Data, base + 0x28));
@@ -1609,13 +1626,30 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                     if (std::isfinite(inheritScale))
                         em.inheritScale = inheritScale;
                 }
-                if (base + 0x19C <= m2Data.size()) {
+                if (base + 0x1B4 <= m2Data.size()) {
                     const float drag = readValue<float>(m2Data, base + 0x194);
                     const float spin = readValue<float>(m2Data, base + 0x198);
                     if (std::isfinite(drag) && drag >= 0.0f)
                         em.drag = drag;
                     if (std::isfinite(spin))
                         em.spin = spin;
+
+                    const glm::vec3 angularMin(
+                        readValue<float>(m2Data, base + 0x19C),
+                        readValue<float>(m2Data, base + 0x1A0),
+                        readValue<float>(m2Data, base + 0x1A4));
+                    const glm::vec3 angularMax(
+                        readValue<float>(m2Data, base + 0x1A8),
+                        readValue<float>(m2Data, base + 0x1AC),
+                        readValue<float>(m2Data, base + 0x1B0));
+                    const auto finiteVec3 = [](const glm::vec3& v) {
+                        return std::isfinite(v.x) && std::isfinite(v.y) &&
+                               std::isfinite(v.z);
+                    };
+                    if (finiteVec3(angularMin))
+                        em.angularVelocityMin = angularMin;
+                    if (finiteVec3(angularMax))
+                        em.angularVelocityMax = angularMax;
                 }
 
                 // Classic head-quad flipbook cell ramps:

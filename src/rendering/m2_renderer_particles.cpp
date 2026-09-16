@@ -11,6 +11,7 @@
 #include "pipeline/asset_manager.hpp"
 #include "core/logger.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
@@ -294,6 +295,25 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
             p.tileIndex = 0.0f;
             p.phase = particleRng_() & 0x7Fu;
 
+            if (vanillaRendering_ && !em.geometryModel.empty()) {
+                // Geometry particles start with the same +90deg local-Z frame
+                // used by the Classic emitter kernel, then tumble in their
+                // authored local axes.
+                p.orientation = glm::angleAxis(
+                    glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+                const glm::vec3 range =
+                    em.angularVelocityMax - em.angularVelocityMin;
+                p.angularVelocity = glm::vec3(
+                    em.angularVelocityMin.x + dist01(particleRng_) * range.x,
+                    em.angularVelocityMin.y + dist01(particleRng_) * range.y,
+                    em.angularVelocityMin.z + dist01(particleRng_) * range.z);
+                if ((em.flags & 0x200u) != 0) {
+                    if ((particleRng_() & 1u) == 0u) p.angularVelocity.x = -p.angularVelocity.x;
+                    if ((particleRng_() & 1u) == 0u) p.angularVelocity.y = -p.angularVelocity.y;
+                    if ((particleRng_() & 1u) == 0u) p.angularVelocity.z = -p.angularVelocity.z;
+                }
+            }
+
             glm::mat4 boneXform = glm::mat4(1.0f);
             if (em.bone < inst.boneMatrices.size()) {
                 boneXform = inst.boneMatrices[em.bone];
@@ -448,6 +468,16 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
                 p.emitterOrigin = glm::vec3(
                     inst.modelMatrix * boneXform *
                     glm::vec4(em.position, 1.0f));
+            }
+
+            if (vanillaRendering_ && !em.geometryModel.empty() && !modelSpace) {
+                glm::mat3 basis(inst.modelMatrix * boneXform);
+                for (int col = 0; col < 3; ++col) {
+                    const float len = glm::length(basis[col]);
+                    if (len > 1e-8f) basis[col] /= len;
+                }
+                p.orientation =
+                    glm::normalize(glm::quat_cast(basis) * p.orientation);
             }
 
             // Classic flag 0x40 samples emitter motion at 30 Hz and adds the
@@ -653,6 +683,16 @@ void M2Renderer::updateParticles(M2Instance& inst, float dt) {
                 p.position += followCorrection[emitterIndex];
 
             const glm::vec3 stepVelocity = p.velocity;
+
+            if (vanillaRendering_ && !em.geometryModel.empty()) {
+                const float angularSpeed = glm::length(p.angularVelocity);
+                if (angularSpeed > 1e-8f) {
+                    const glm::quat delta = glm::angleAxis(
+                        angularSpeed * simDt,
+                        p.angularVelocity / angularSpeed);
+                    p.orientation = glm::normalize(p.orientation * delta);
+                }
+            }
 
             if (modelSpace) {
                 p.position += p.velocity * simDt;
@@ -1138,6 +1178,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
             }
 
             const auto& em = *cachedEm;
+            if (vanillaRendering_ && !em.geometryModel.empty())
+                continue;
             float lifeRatio = p.life / std::max(p.maxLife, 0.001f);
             glm::vec3 color = interpFBlockVec3(em.particleColor, lifeRatio);
             float alpha = std::min(interpFBlockFloat(em.particleAlpha, lifeRatio), 1.0f);

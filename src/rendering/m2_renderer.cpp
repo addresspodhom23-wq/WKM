@@ -543,6 +543,86 @@ bool M2Renderer::buildMainPassPipelines(VkDescriptorSetLayout perFrameLayout) {
     return true;
 }
 
+const M2ModelGPU* M2Renderer::particleGeometryModel(const std::string& path) const {
+    std::string key = pipeline::modelPathToM2(path);
+    std::replace(key.begin(), key.end(), '/', '\\');
+    std::transform(key.begin(), key.end(), key.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const auto idIt = particleGeometryModelIds_.find(key);
+    if (idIt == particleGeometryModelIds_.end()) return nullptr;
+    const auto modelIt = models.find(idIt->second);
+    return modelIt != models.end() ? &modelIt->second : nullptr;
+}
+
+void M2Renderer::ensureParticleGeometryModelsLoaded() {
+    if (!vanillaRendering_ || !assetManager) return;
+
+    std::vector<std::string> requested;
+    requested.reserve(16);
+    for (const auto& [id, model] : models) {
+        (void)id;
+        for (const auto& emitter : model.particleEmitters) {
+            if (emitter.geometryModel.empty()) continue;
+            std::string key = pipeline::modelPathToM2(emitter.geometryModel);
+            std::replace(key.begin(), key.end(), '/', '\\');
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            if (particleGeometryModelIds_.find(key) == particleGeometryModelIds_.end() &&
+                failedParticleGeometryModels_.find(key) == failedParticleGeometryModels_.end()) {
+                requested.push_back(std::move(key));
+            }
+        }
+    }
+    std::sort(requested.begin(), requested.end());
+    requested.erase(std::unique(requested.begin(), requested.end()), requested.end());
+
+    for (const std::string& path : requested) {
+        const auto bytes = assetManager->readFileOptional(path);
+        if (bytes.empty()) {
+            failedParticleGeometryModels_.insert(path);
+            LOG_WARNING("M2 particle geometry missing: ", path);
+            continue;
+        }
+
+        pipeline::M2Model child = pipeline::M2Loader::load(bytes);
+        if (child.vertices.empty()) {
+            failedParticleGeometryModels_.insert(path);
+            LOG_WARNING("M2 particle geometry has no vertices: ", path);
+            continue;
+        }
+
+        const std::string skinPath = pipeline::skinPathForM2(path);
+        const auto skinBytes = assetManager->readFileOptional(skinPath);
+        if (skinBytes.empty() || !pipeline::M2Loader::loadSkin(skinBytes, child) ||
+            !child.isValid() || child.batches.empty()) {
+            failedParticleGeometryModels_.insert(path);
+            LOG_WARNING("M2 particle geometry skin missing/invalid: ", skinPath);
+            continue;
+        }
+
+        while (nextParticleGeometryModelId_ != 0 &&
+               models.find(nextParticleGeometryModelId_) != models.end()) {
+            --nextParticleGeometryModelId_;
+        }
+        if (nextParticleGeometryModelId_ == 0) {
+            failedParticleGeometryModels_.insert(path);
+            LOG_ERROR("M2 particle geometry model ID space exhausted");
+            continue;
+        }
+
+        const uint32_t modelId = nextParticleGeometryModelId_--;
+        if (!loadModel(child, modelId)) {
+            failedParticleGeometryModels_.insert(path);
+            LOG_WARNING("M2 particle geometry GPU load failed: ", path);
+            continue;
+        }
+
+        particleGeometryModelIds_[path] = modelId;
+        pinnedModelIds_.insert(modelId);
+        LOG_DEBUG("M2 particle geometry loaded: ", path, " -> ", modelId);
+    }
+}
+
 bool M2Renderer::initialize(VkContext* ctx, VkDescriptorSetLayout perFrameLayout,
                             pipeline::AssetManager* assets) {
     if (initialized_) { assetManager = assets; return true; }
@@ -1154,6 +1234,9 @@ void M2Renderer::shutdown() {
     }
     models.clear();
     pinnedModelIds_.clear();
+    particleGeometryModelIds_.clear();
+    failedParticleGeometryModels_.clear();
+    nextParticleGeometryModelId_ = 0xF0000000u;
 
     // Destroy instance bone buffers
     for (auto& inst : instances) {

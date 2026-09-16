@@ -326,6 +326,33 @@ int main() {
     assert(m2Particles.find("inheritFactor * inherited") != std::string::npos);
     assert(m2Render.find("particleEmitterOriginValid.begin()") != std::string::npos);
 
+    // Classic particle geometry models are M2Array strings in the emitter
+    // prefix. Their tumble range is retained, integrated per particle, and the
+    // geometry itself is drawn through the ordinary M2 material/depth path.
+    assert(m2LoaderHeader.find("std::string geometryModel") != std::string::npos);
+    assert(m2LoaderHeader.find("std::string recursionModel") != std::string::npos);
+    assert(m2Loader.find("readParticleModelName(0x18)") != std::string::npos);
+    assert(m2Loader.find("readParticleModelName(0x20)") != std::string::npos);
+    assert(m2Loader.find("base + 0x19C") != std::string::npos);
+    assert(m2Loader.find("base + 0x1B0") != std::string::npos);
+    assert(m2LoaderHeader.find("angularVelocityMin") != std::string::npos);
+    assert(m2Header.find("glm::quat orientation") != std::string::npos);
+    assert(m2Header.find("glm::vec3 angularVelocity") != std::string::npos);
+    assert(m2Particles.find("em.angularVelocityMax - em.angularVelocityMin") != std::string::npos);
+    assert(m2Particles.find("(em.flags & 0x200u) != 0") != std::string::npos);
+    assert(m2Particles.find("p.orientation = glm::normalize(p.orientation * delta)") != std::string::npos);
+    assert(m2Particles.find("!em.geometryModel.empty()") != std::string::npos);
+    assert(m2Renderer.find("ensureParticleGeometryModelsLoaded") != std::string::npos);
+    assert(m2Renderer.find("pipeline::skinPathForM2(path)") != std::string::npos);
+    assert(m2Render.find("ensureParticleGeometryModelsLoaded()") != std::string::npos);
+    assert(m2Render.find("drawParticleGeometry(false)") != std::string::npos);
+    assert(m2Render.find("drawParticleGeometry(true)") != std::string::npos);
+    assert(m2Render.find("particleGeometryModel(emitter.geometryModel)") != std::string::npos);
+    assert(m2Render.find("gpuInst.instanceColor = glm::vec4(color, alpha)") != std::string::npos);
+    assert(m2Render.find("batch.materialFlags & 0x10u") != std::string::npos);
+    assert(m2Render.find("batch.materialFlags & 0x08u") != std::string::npos);
+    assert(m2Render.find("kMaxGeometryParticlesPerEmitter = 128") != std::string::npos);
+
     // Classic spline emitters carry a cubic-Bezier chain at +0x1D4/+0x1D8.
     // areaLength/areaWidth choose a normalized interval along arc length.
     assert(m2Loader.find("base + 0x1D4") != std::string::npos);

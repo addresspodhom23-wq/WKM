@@ -11,6 +11,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <atomic>
 #include <memory>
 #include <unordered_map>
@@ -212,6 +213,8 @@ struct M2Particle {
     glm::vec3 position;
     glm::vec3 velocity;
     glm::vec3 emitterOrigin; // birth-space sphere centre for Classic kill-outbound
+    glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 angularVelocity{0.0f};
     float life;        // current age in seconds
     float maxLife;     // total lifespan
     int emitterIndex;  // which emitter spawned this
@@ -850,6 +853,12 @@ private:
     void* glowVBMapped_ = nullptr;
 
     std::unordered_map<uint32_t, M2ModelGPU> models;
+    // Geometry-model particles reference secondary M2s by path rather than by
+    // a DBC/display ID. They live in the same GPU model cache so their batches
+    // use the exact ordinary M2 material path.
+    std::unordered_map<std::string, uint32_t> particleGeometryModelIds_;
+    std::unordered_set<std::string> failedParticleGeometryModels_;
+    uint32_t nextParticleGeometryModelId_ = 0xF0000000u;
     // Grace period for model cleanup: track when a model first became instanceless.
     // Models are only evicted after 60 seconds with no instances.
     std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> modelUnusedSince_;
@@ -885,6 +894,8 @@ private:
     uint32_t modelLimitRejectWarnings_ = 0;
 
     VkTexture* loadTexture(const std::string& path, uint32_t texFlags = 0);
+    void ensureParticleGeometryModelsLoaded();
+    [[nodiscard]] const M2ModelGPU* particleGeometryModel(const std::string& path) const;
     std::unordered_map<std::string, pipeline::BLPImage>* predecodedBLPCache_ = nullptr;
 
     struct TextureCacheEntry {

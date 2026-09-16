@@ -398,6 +398,10 @@ static bool skyBatchAllowed(bool skyMode, std::size_t index) {
 void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
                         const glm::mat4& viewProjection, const glm::mat4& viewMatrix) {
     ZoneScopedN("M2Renderer::update");
+
+    // Geometry-model particle M2s must be resident before command recording.
+    // Loading them here keeps file IO and Vulkan resource creation out of render().
+    ensureParticleGeometryModelsLoaded();
     if (spatialIndexDirty_) {
         rebuildSpatialIndex();
     }
@@ -1428,6 +1432,212 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
     instanceDataCount_ = 0;
     auto* instSSBO = static_cast<M2InstanceGPU*>(instanceMapped_[frameIndex]);
 
+    // A geometry-model particle is an ordinary little M2 attached to the
+    // particle state. Reuse the normal M2 material pipelines and instance SSBO
+    // instead of flattening that M2 into a billboard.
+    std::vector<uint8_t> particleGeometryParentVisible(instances.size(), 0);
+    for (const auto& entry : sortedVisible_) {
+        if (entry.index < particleGeometryParentVisible.size())
+            particleGeometryParentVisible[entry.index] = 1;
+    }
+
+    auto drawParticleGeometry = [&](bool transparentPass) {
+        constexpr size_t kMaxGeometryParticlesPerEmitter = 128;
+
+        for (size_t parentIndex = 0; parentIndex < instances.size(); ++parentIndex) {
+            if (parentIndex >= particleGeometryParentVisible.size() ||
+                particleGeometryParentVisible[parentIndex] == 0)
+                continue;
+
+            const auto& parent = instances[parentIndex];
+            if (!parent.cachedModel || parent.particles.empty()) continue;
+            const auto& parentModel = *parent.cachedModel;
+
+            for (size_t emitterIndex = 0;
+                 emitterIndex < parentModel.particleEmitters.size();
+                 ++emitterIndex) {
+                const auto& emitter = parentModel.particleEmitters[emitterIndex];
+                if (emitter.geometryModel.empty()) continue;
+
+                const M2ModelGPU* child =
+                    particleGeometryModel(emitter.geometryModel);
+                if (!child || !child->vertexBuffer || !child->indexBuffer)
+                    continue;
+
+                VkDeviceSize vbOffset = 0;
+                vkCmdBindVertexBuffers(
+                    cmd, 0, 1, &child->vertexBuffer, &vbOffset);
+                vkCmdBindIndexBuffer(
+                    cmd, child->indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+                size_t emitted = 0;
+                for (const auto& particle : parent.particles) {
+                    if (particle.emitterIndex !=
+                        static_cast<int>(emitterIndex))
+                        continue;
+                    if (emitted++ >= kMaxGeometryParticlesPerEmitter)
+                        break;
+                    if (instanceDataCount_ >= MAX_INSTANCE_DATA)
+                        return;
+
+                    const float lifeRatio = particle.life /
+                        std::max(particle.maxLife, 0.001f);
+                    const glm::vec3 color =
+                        interpFBlockVec3(emitter.particleColor, lifeRatio);
+                    const float alpha = glm::clamp(
+                        interpFBlockFloat(
+                            emitter.particleAlpha, lifeRatio),
+                        0.0f, 1.0f);
+                    float scale = interpFBlockFloat(
+                        emitter.particleScale, lifeRatio);
+                    if ((emitter.flags & 0x20u) != 0)
+                        scale *= parent.scale;
+                    if (!(scale > 0.0f) || !(alpha > 0.0f))
+                        continue;
+
+                    const bool modelSpace =
+                        (emitter.flags & 0x10u) != 0;
+                    glm::vec3 centre = particle.position;
+                    glm::quat rotation = particle.orientation;
+
+                    if (modelSpace) {
+                        glm::mat4 liveFrame = parent.modelMatrix;
+                        if (emitter.bone < parent.boneMatrices.size())
+                            liveFrame *= parent.boneMatrices[emitter.bone];
+
+                        centre = glm::vec3(
+                            liveFrame * glm::vec4(particle.position, 1.0f));
+
+                        glm::mat3 basis(liveFrame);
+                        for (int col = 0; col < 3; ++col) {
+                            const float len = glm::length(basis[col]);
+                            if (len > 1e-8f) basis[col] /= len;
+                        }
+                        rotation = glm::normalize(
+                            glm::quat_cast(basis) * particle.orientation);
+                    }
+
+                    const glm::mat4 particleModel =
+                        glm::translate(glm::mat4(1.0f), centre) *
+                        glm::mat4_cast(rotation) *
+                        glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+
+                    const uint32_t drawOffset = instanceDataCount_;
+                    auto& gpuInst = instSSBO[instanceDataCount_++];
+                    gpuInst.model = particleModel;
+                    gpuInst.uvOffset = glm::vec2(0.0f);
+                    gpuInst.fadeAlpha = 1.0f;
+                    gpuInst.useBones = 0;
+                    gpuInst.boneBase = 0;
+                    gpuInst.boneCount = 0;
+                    gpuInst.highlight = 0.0f;
+                    gpuInst._pad = 0;
+                    gpuInst.instanceColor = glm::vec4(color, alpha);
+
+                    for (const auto& batch : child->batches) {
+                        if (batch.indexCount == 0 ||
+                            batch.submeshLevel != 0 ||
+                            batch.batchOpacity < 0.01f ||
+                            !batch.materialSet)
+                            continue;
+
+                        const bool transparent = batch.blendMode >= 2;
+                        if (transparent != transparentPass) continue;
+
+                        const uint8_t blend =
+                            batch.blendMode <= M2_BLEND_MODULATE2X
+                                ? static_cast<uint8_t>(batch.blendMode)
+                                : static_cast<uint8_t>(M2_BLEND_ADD_ALPHA);
+
+                        VkPipeline desired = opaquePipeline_;
+                        switch (blend) {
+                            case M2_BLEND_ALPHA_KEY:
+                                desired = alphaTestPipeline_;
+                                break;
+                            case M2_BLEND_ALPHA:
+                                desired = alphaPipeline_;
+                                break;
+                            case M2_BLEND_ADD:
+                                desired = additiveOnePipeline_;
+                                break;
+                            case M2_BLEND_ADD_ALPHA:
+                                desired = additivePipeline_;
+                                break;
+                            case M2_BLEND_MODULATE:
+                                desired = modulatePipeline_;
+                                break;
+                            case M2_BLEND_MODULATE2X:
+                                desired = modulate2xPipeline_;
+                                break;
+                            default:
+                                desired = opaquePipeline_;
+                                break;
+                        }
+
+                        const bool noDepthWrite =
+                            (batch.materialFlags & 0x10u) != 0;
+                        const bool noDepthTest =
+                            (batch.materialFlags & 0x08u) != 0;
+                        if (noDepthTest) {
+                            desired = noDepthWrite
+                                ? noDepthTestNoWritePipelines_[blend]
+                                : noDepthTestPipelines_[blend];
+                        } else if (noDepthWrite) {
+                            desired = noDepthWritePipelines_[blend];
+                        }
+
+                        if (desired != currentPipeline) {
+                            vkCmdBindPipeline(
+                                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                desired);
+                            currentPipeline = desired;
+                        }
+
+                        if (batch.materialUBOMapped) {
+                            auto* mat = static_cast<M2MaterialUBO*>(
+                                batch.materialUBOMapped);
+                            mat->interiorDarken = 0.0f;
+                            mat->alphaTest =
+                                batch.blendMode == M2_BLEND_ALPHA_KEY
+                                    ? 1 : 0;
+                            if (batch.colorKeyBlack)
+                                mat->colorKeyThreshold =
+                                    (batch.blendMode == 4 ||
+                                     batch.blendMode == 5)
+                                        ? 0.7f : 0.08f;
+                        }
+
+                        if (batch.materialSet != currentMaterialSet) {
+                            vkCmdBindDescriptorSets(
+                                cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout_, 1, 1,
+                                &batch.materialSet, 0, nullptr);
+                            currentMaterialSet = batch.materialSet;
+                        }
+
+                        M2PushConstants pc{};
+                        pc.texCoordSet =
+                            static_cast<int32_t>(batch.textureUnit);
+                        pc.isFoliage = 0;
+                        pc.instanceDataOffset =
+                            static_cast<int32_t>(drawOffset);
+                        pc.swayRefHeight = 20.0f;
+                        pc.swayAmp = 1.0f;
+                        pc.plantHeight = 0.0f;
+                        vkCmdPushConstants(
+                            cmd, pipelineLayout_,
+                            VK_SHADER_STAGE_VERTEX_BIT, 0,
+                            sizeof(pc), &pc);
+                        vkCmdDrawIndexed(
+                            cmd, batch.indexCount, 1,
+                            batch.indexStart, 0, 0);
+                        ++lastDrawCallCount;
+                    }
+                }
+            }
+        }
+    };
+
     // =====================================================================
     // Opaque pass - instanced draws grouped by (modelId, LOD)
     // =====================================================================
@@ -1948,6 +2158,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
         }
     }
 
+    // Geometry-particle opaque/cutout batches participate in depth before
+    // any alpha/additive world geometry is composited.
+    drawParticleGeometry(false);
+
     // =====================================================================
     // Pass 2: Transparent/additive batches - back-to-front per instance
     // =====================================================================
@@ -2206,6 +2420,12 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
             lastDrawCallCount++;
         }
     }
+
+    // Geometry-particle alpha/additive batches use the same M2 blend/depth
+    // states. Most spell geometry is additive, so ordering against other
+    // geometry particles is not observable; ordinary alpha still depth-tests
+    // correctly against the completed opaque pass.
+    drawParticleGeometry(true);
 
     // Render glow sprites as billboarded additive point lights
     if (!glowSprites_.empty() && particleAdditivePipeline_ && glowVB_ && glowTexDescSet_) {

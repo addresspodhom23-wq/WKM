@@ -163,6 +163,8 @@ struct M2ParticleEmitter {
     glm::vec3 position;
     uint16_t bone;
     uint16_t texture;
+    std::string geometryModel;   // optional per-particle M2 model
+    std::string recursionModel;  // optional child particle M2 model
     uint8_t blendingType;   // 0=opaque,1=alphakey,2=alpha,4=add
     uint8_t emitterType;    // 1=plane,2=sphere,3=spline
     uint8_t headOrTail = 0;  // 0=head, 1=tail, >=2=head+tail
@@ -191,6 +193,8 @@ struct M2ParticleEmitter {
     float twinkleMin = 1.0f;          // size range @ +0x188
     float twinkleMax = 1.0f;          // size range @ +0x18C
     float spin = 0.0f;               // authored head-quad spin rate @ +0x198
+    glm::vec3 angularVelocityMin{0.0f}; // Classic tumble min @ +0x19C
+    glm::vec3 angularVelocityMax{0.0f}; // Classic tumble max @ +0x1A8
     M2FBlock particleColor;   // vec3 RGB at 3 timestamps
     M2FBlock particleAlpha;   // float (from uint16/32767) at 3 timestamps
     M2FBlock particleScale;   // float (x component of vec2) at 3 timestamps
