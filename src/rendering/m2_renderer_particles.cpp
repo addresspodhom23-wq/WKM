@@ -98,6 +98,16 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
         const auto& em = gpu.particleEmitters[ei];
         if (!em.enabled) continue;
 
+        const float emitterVisible = m2_track::sampleFloat(
+            em.visibilityTrack, inst.currentSequenceIndex, inst.animTime,
+            inst.globalSequenceTime, gpu.globalSequenceDurations, 1.0f);
+        if (emitterVisible <= 0.0f) {
+            // Do not bank hidden-time emission and release it as a burst when
+            // the authored visibility track turns the emitter back on.
+            inst.emitterAccumulators[ei] = 0.0f;
+            continue;
+        }
+
         float rate = interpFloat(em.emissionRate, inst.animTime, inst.globalSequenceTime,
                                  inst.currentSequenceIndex, gpu.globalSequenceDurations);
         float life = interpFloat(em.lifespan, inst.animTime, inst.globalSequenceTime,
