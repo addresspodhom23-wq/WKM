@@ -49,6 +49,16 @@ struct M2AnimationTrack {
         std::vector<glm::vec3> vec3Values;  // For translation/scale tracks
         std::vector<glm::quat> quatValues;  // For rotation tracks
         std::vector<float> floatValues;     // For float tracks (particle emitters)
+
+        // Classic spline keys are triples: {value, inTan, outTan}. Keep the
+        // tangent arrays separate so the common value arrays stay compatible
+        // with linear/step tracks and with existing aggregate initializers.
+        std::vector<glm::vec3> vec3InTangents;
+        std::vector<glm::vec3> vec3OutTangents;
+        std::vector<glm::quat> quatInTangents;
+        std::vector<glm::quat> quatOutTangents;
+        std::vector<float> floatInTangents;
+        std::vector<float> floatOutTangents;
     };
     std::vector<SequenceKeys> sequences;    // One per animation sequence
 

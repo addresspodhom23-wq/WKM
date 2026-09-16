@@ -530,104 +530,116 @@ void parseAnimTrack(const std::vector<uint8_t>& data,
 
     if (disk.nTimestamps == 0 || disk.nKeys == 0) return;
 
-    uint32_t numSubArrays = disk.nTimestamps;
-    // Sanity cap: no model has >4096 animation sequences; garbage counts cause OOM
+    const uint32_t numSubArrays = disk.nTimestamps;
     if (numSubArrays > 4096) return;
     track.sequences.resize(numSubArrays);
 
-    for (uint32_t i = 0; i < numSubArrays; i++) {
-        // Sequences without flag 0x20 have their animation data in external .anim files.
-        // Their sub-array offsets are .anim-file-relative, not M2-relative, so reading
-        // from the M2 file would produce garbage data.
-        if (i < sequenceFlags.size() && !(sequenceFlags[i] & kM2SeqFlagEmbeddedData)) continue;
-        // Each sub-array header is {uint32_t count, uint32_t offset} = 8 bytes
-        uint32_t tsHeaderOfs = disk.ofsTimestamps + i * 8;
-        uint32_t keyHeaderOfs = disk.ofsKeys + i * 8;
+    const bool spline = disk.interpolationType == 2 || disk.interpolationType == 3;
+    size_t baseKeySize;
+    if (type == TrackType::FLOAT) baseKeySize = sizeof(float);
+    else if (type == TrackType::FIXED16) baseKeySize = sizeof(int16_t);
+    else if (type == TrackType::UINT16) baseKeySize = sizeof(uint16_t);
+    else if (type == TrackType::BYTE_BOOL) baseKeySize = sizeof(uint8_t);
+    else if (type == TrackType::VEC3) baseKeySize = sizeof(float) * 3;
+    else baseKeySize = sizeof(int16_t) * 4;
+    const size_t diskKeySize = baseKeySize * (spline ? 3u : 1u);
 
+    struct Vec3Disk { float x, y, z; };
+
+    auto decodeCompressed = [](const CompressedQuat& cq, bool normalizeValue) {
+        const float fx = (cq.x < 0) ? (cq.x + 32768) / 32767.0f : (cq.x - 32767) / 32767.0f;
+        const float fy = (cq.y < 0) ? (cq.y + 32768) / 32767.0f : (cq.y - 32767) / 32767.0f;
+        const float fz = (cq.z < 0) ? (cq.z + 32768) / 32767.0f : (cq.z - 32767) / 32767.0f;
+        const float fw = (cq.w < 0) ? (cq.w + 32768) / 32767.0f : (cq.w - 32767) / 32767.0f;
+        glm::quat q(fw, fx, fy, fz);
+        if (!normalizeValue) return q;
+        const float len = glm::length(q);
+        return len > 0.001f ? q / len : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    };
+
+    for (uint32_t i = 0; i < numSubArrays; i++) {
+        if (i < sequenceFlags.size() && !(sequenceFlags[i] & kM2SeqFlagEmbeddedData)) continue;
+
+        const size_t tsHeaderOfs = static_cast<size_t>(disk.ofsTimestamps) + static_cast<size_t>(i) * 8;
+        const size_t keyHeaderOfs = static_cast<size_t>(disk.ofsKeys) + static_cast<size_t>(i) * 8;
         if (tsHeaderOfs + 8 > data.size() || keyHeaderOfs + 8 > data.size()) continue;
 
-        uint32_t tsCount = readValue<uint32_t>(data, tsHeaderOfs);
-        uint32_t tsOffset = readValue<uint32_t>(data, tsHeaderOfs + 4);
-        uint32_t keyCount = readValue<uint32_t>(data, keyHeaderOfs);
-        uint32_t keyOffset = readValue<uint32_t>(data, keyHeaderOfs + 4);
-
+        const uint32_t tsCount = readValue<uint32_t>(data, static_cast<uint32_t>(tsHeaderOfs));
+        const uint32_t tsOffset = readValue<uint32_t>(data, static_cast<uint32_t>(tsHeaderOfs + 4));
+        const uint32_t keyCount = readValue<uint32_t>(data, static_cast<uint32_t>(keyHeaderOfs));
+        const uint32_t keyOffset = readValue<uint32_t>(data, static_cast<uint32_t>(keyHeaderOfs + 4));
         if (tsCount == 0 || keyCount == 0) continue;
 
-        // Validate offsets are within file data (external .anim files have out-of-range offsets)
-        if (tsOffset + tsCount * sizeof(uint32_t) > data.size()) continue;
-
-        // Read timestamps
-        auto timestamps = readArray<uint32_t>(data, tsOffset, tsCount);
-        track.sequences[i].timestamps = std::move(timestamps);
-
-        // Validate key data offset
-        size_t keyElementSize;
-        if (type == TrackType::FLOAT) keyElementSize = sizeof(float);
-        else if (type == TrackType::FIXED16) keyElementSize = sizeof(int16_t);
-        else if (type == TrackType::UINT16) keyElementSize = sizeof(uint16_t);
-        else if (type == TrackType::BYTE_BOOL) keyElementSize = sizeof(uint8_t);
-        else if (type == TrackType::VEC3) keyElementSize = sizeof(float) * 3;
-        else keyElementSize = sizeof(int16_t) * 4;
-        if (keyOffset + keyCount * keyElementSize > data.size()) {
-            track.sequences[i].timestamps.clear();
+        const size_t timestampBytes = static_cast<size_t>(tsCount) * sizeof(uint32_t);
+        const size_t keyBytes = static_cast<size_t>(keyCount) * diskKeySize;
+        if (static_cast<size_t>(tsOffset) + timestampBytes > data.size() ||
+            static_cast<size_t>(keyOffset) + keyBytes > data.size()) {
             continue;
         }
 
-        // Read key values
-        if (type == TrackType::FLOAT) {
-            auto values = readArray<float>(data, keyOffset, keyCount);
-            track.sequences[i].floatValues = std::move(values);
-        } else if (type == TrackType::FIXED16) {
-            // fixed16: int16 where 0x7FFF = 1.0 (color/transparency alpha tracks)
-            auto raw = readArray<int16_t>(data, keyOffset, keyCount);
-            track.sequences[i].floatValues.reserve(raw.size());
-            for (int16_t v : raw) {
-                track.sequences[i].floatValues.push_back(
-                    std::clamp(static_cast<float>(v) / 32767.0f, 0.0f, 1.0f));
-            }
-        } else if (type == TrackType::UINT16) {
-            auto raw = readArray<uint16_t>(data, keyOffset, keyCount);
-            track.sequences[i].floatValues.reserve(raw.size());
-            for (uint16_t v : raw) {
-                track.sequences[i].floatValues.push_back(static_cast<float>(v));
-            }
-        } else if (type == TrackType::BYTE_BOOL) {
-            // One byte per key, and only ever 0 or 1. Reading these as floats
-            // turns a 1 into a denormal of about 1.4e-45, which passes for
-            // zero at every threshold downstream and hides the ribbon.
-            track.sequences[i].floatValues.reserve(keyCount);
-            for (uint32_t k = 0; k < keyCount; k++) {
-                track.sequences[i].floatValues.push_back(
-                    readValue<uint8_t>(data, keyOffset + k) != 0 ? 1.0f : 0.0f);
-            }
-        } else if (type == TrackType::VEC3) {
-            // Translation/scale: float[3] per key
-            struct Vec3Disk { float x, y, z; };
-            auto values = readArray<Vec3Disk>(data, keyOffset, keyCount);
-            track.sequences[i].vec3Values.reserve(values.size());
-            for (const auto& v : values) {
-                track.sequences[i].vec3Values.emplace_back(v.x, v.y, v.z);
-            }
-        } else {
-            // Rotation: compressed quaternion int16[4] per key
-            auto compressed = readArray<CompressedQuat>(data, keyOffset, keyCount);
-            track.sequences[i].quatValues.reserve(compressed.size());
-            for (const auto& cq : compressed) {
-                // M2 compressed quaternion: offset mapping, NOT simple division
-                // int16 range [-32768..32767] maps to float [-1..1] with offset
-                float fx = (cq.x < 0) ? (cq.x + 32768) / 32767.0f : (cq.x - 32767) / 32767.0f;
-                float fy = (cq.y < 0) ? (cq.y + 32768) / 32767.0f : (cq.y - 32767) / 32767.0f;
-                float fz = (cq.z < 0) ? (cq.z + 32768) / 32767.0f : (cq.z - 32767) / 32767.0f;
-                float fw = (cq.w < 0) ? (cq.w + 32768) / 32767.0f : (cq.w - 32767) / 32767.0f;
-                // M2 on-disk: (x,y,z,w), GLM quat constructor: (w,x,y,z)
-                glm::quat q(fw, fx, fy, fz);
-                float len = glm::length(q);
-                if (len > 0.001f) {
-                    q = q / len;
-                } else {
-                    q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // identity
+        auto& dst = track.sequences[i];
+        dst.timestamps = readArray<uint32_t>(data, tsOffset, tsCount);
+
+        for (uint32_t k = 0; k < keyCount; k++) {
+            const size_t keyBase = static_cast<size_t>(keyOffset) + static_cast<size_t>(k) * diskKeySize;
+            const size_t inBase = keyBase + baseKeySize;
+            const size_t outBase = inBase + baseKeySize;
+
+            if (type == TrackType::FLOAT) {
+                dst.floatValues.push_back(readValue<float>(data, static_cast<uint32_t>(keyBase)));
+                if (spline) {
+                    dst.floatInTangents.push_back(readValue<float>(data, static_cast<uint32_t>(inBase)));
+                    dst.floatOutTangents.push_back(readValue<float>(data, static_cast<uint32_t>(outBase)));
                 }
-                track.sequences[i].quatValues.push_back(q);
+            } else if (type == TrackType::FIXED16) {
+                const auto decode = [](int16_t v, bool clampValue) {
+                    const float f = static_cast<float>(v) / 32767.0f;
+                    return clampValue ? std::clamp(f, 0.0f, 1.0f) : f;
+                };
+                dst.floatValues.push_back(decode(
+                    readValue<int16_t>(data, static_cast<uint32_t>(keyBase)), true));
+                if (spline) {
+                    dst.floatInTangents.push_back(decode(
+                        readValue<int16_t>(data, static_cast<uint32_t>(inBase)), false));
+                    dst.floatOutTangents.push_back(decode(
+                        readValue<int16_t>(data, static_cast<uint32_t>(outBase)), false));
+                }
+            } else if (type == TrackType::UINT16) {
+                dst.floatValues.push_back(static_cast<float>(
+                    readValue<uint16_t>(data, static_cast<uint32_t>(keyBase))));
+                if (spline) {
+                    dst.floatInTangents.push_back(static_cast<float>(
+                        readValue<uint16_t>(data, static_cast<uint32_t>(inBase))));
+                    dst.floatOutTangents.push_back(static_cast<float>(
+                        readValue<uint16_t>(data, static_cast<uint32_t>(outBase))));
+                }
+            } else if (type == TrackType::BYTE_BOOL) {
+                const auto decode = [&](size_t offset) {
+                    return readValue<uint8_t>(data, static_cast<uint32_t>(offset)) != 0 ? 1.0f : 0.0f;
+                };
+                dst.floatValues.push_back(decode(keyBase));
+                if (spline) {
+                    dst.floatInTangents.push_back(decode(inBase));
+                    dst.floatOutTangents.push_back(decode(outBase));
+                }
+            } else if (type == TrackType::VEC3) {
+                const auto v = readValue<Vec3Disk>(data, static_cast<uint32_t>(keyBase));
+                dst.vec3Values.emplace_back(v.x, v.y, v.z);
+                if (spline) {
+                    const auto in = readValue<Vec3Disk>(data, static_cast<uint32_t>(inBase));
+                    const auto out = readValue<Vec3Disk>(data, static_cast<uint32_t>(outBase));
+                    dst.vec3InTangents.emplace_back(in.x, in.y, in.z);
+                    dst.vec3OutTangents.emplace_back(out.x, out.y, out.z);
+                }
+            } else {
+                dst.quatValues.push_back(decodeCompressed(
+                    readValue<CompressedQuat>(data, static_cast<uint32_t>(keyBase)), true));
+                if (spline) {
+                    dst.quatInTangents.push_back(decodeCompressed(
+                        readValue<CompressedQuat>(data, static_cast<uint32_t>(inBase)), false));
+                    dst.quatOutTangents.push_back(decodeCompressed(
+                        readValue<CompressedQuat>(data, static_cast<uint32_t>(outBase)), false));
+                }
             }
         }
     }
@@ -651,136 +663,183 @@ void parseAnimTrackVanilla(const std::vector<uint8_t>& data,
     track.globalSequence = disk.globalSequence;
 
     if (disk.nTimestamps == 0 || disk.nKeys == 0) return;
-    // Sanity caps
     if (disk.nTimestamps > 100000 || disk.nKeys > 100000) return;
 
-    // Validate flat timestamp array
-    if (disk.ofsTimestamps + disk.nTimestamps * sizeof(uint32_t) > data.size()) return;
-    auto allTimestamps = readArray<uint32_t>(data, disk.ofsTimestamps, disk.nTimestamps);
+    const size_t timestampBytes = static_cast<size_t>(disk.nTimestamps) * sizeof(uint32_t);
+    if (static_cast<size_t>(disk.ofsTimestamps) + timestampBytes > data.size()) return;
+    const auto allTimestamps = readArray<uint32_t>(data, disk.ofsTimestamps, disk.nTimestamps);
 
-    // Validate flat key array. Rotation key stride depends on version:
-    // vanilla = float[4] (16 bytes), TBC = compressed int16[4] (8 bytes).
-    size_t keySize;
-    if (type == TrackType::FLOAT) keySize = sizeof(float);
-    else if (type == TrackType::FIXED16) keySize = sizeof(int16_t);
-    else if (type == TrackType::UINT16) keySize = sizeof(uint16_t);
-    else if (type == TrackType::BYTE_BOOL) keySize = sizeof(uint8_t);
-    else if (type == TrackType::VEC3) keySize = sizeof(float) * 3;
-    else keySize = compressedQuat ? sizeof(int16_t) * 4 : sizeof(float) * 4;
-    if (disk.ofsKeys + disk.nKeys * keySize > data.size()) return;
+    const bool spline = disk.interpolationType == 2 || disk.interpolationType == 3;
+    size_t baseKeySize;
+    if (type == TrackType::FLOAT) baseKeySize = sizeof(float);
+    else if (type == TrackType::FIXED16) baseKeySize = sizeof(int16_t);
+    else if (type == TrackType::UINT16) baseKeySize = sizeof(uint16_t);
+    else if (type == TrackType::BYTE_BOOL) baseKeySize = sizeof(uint8_t);
+    else if (type == TrackType::VEC3) baseKeySize = sizeof(float) * 3;
+    else baseKeySize = compressedQuat ? sizeof(int16_t) * 4 : sizeof(float) * 4;
+    const size_t diskKeySize = baseKeySize * (spline ? 3u : 1u);
+    const size_t keyBytes = static_cast<size_t>(disk.nKeys) * diskKeySize;
+    if (static_cast<size_t>(disk.ofsKeys) + keyBytes > data.size()) return;
 
-    // Read per-sequence ranges
     std::vector<M2Range> ranges;
     if (disk.nRanges > 0 && disk.ofsRanges > 0 &&
         disk.nRanges < 4096 &&
-        disk.ofsRanges + disk.nRanges * sizeof(M2Range) <= data.size()) {
+        static_cast<size_t>(disk.ofsRanges) +
+            static_cast<size_t>(disk.nRanges) * sizeof(M2Range) <= data.size()) {
         ranges = readArray<M2Range>(data, disk.ofsRanges, disk.nRanges);
     }
-
-    // Classic M2Range is [first,last] INCLUSIVE. With no ranges the one
-    // sequence therefore ends at count-1, not count.
     if (ranges.empty()) {
         ranges.push_back({.start = 0, .end = disk.nTimestamps - 1});
     }
 
-    // Read the flat key array ONCE before the per-sequence loop. Previously
-    // readArray was called inside the loop on every iteration, re-parsing and
-    // copying the entire array (O(sequences × keys) redundant memcpy).
     struct Vec3Disk { float x, y, z; };
     struct C4Quaternion { float x, y, z, w; };
-    std::vector<float> allFloatKeys;
-    std::vector<Vec3Disk> allVec3Keys;
-    std::vector<C4Quaternion> allQuatKeys;
-    std::vector<CompressedQuat> allCompQuatKeys;
-    if (type == TrackType::FLOAT) {
-        allFloatKeys = readArray<float>(data, disk.ofsKeys, disk.nKeys);
-    } else if (type == TrackType::FIXED16) {
-        auto raw = readArray<int16_t>(data, disk.ofsKeys, disk.nKeys);
-        allFloatKeys.reserve(raw.size());
-        for (int16_t v : raw) {
-            allFloatKeys.push_back(std::clamp(static_cast<float>(v) / 32767.0f, 0.0f, 1.0f));
+
+    std::vector<float> allFloatKeys, allFloatIn, allFloatOut;
+    std::vector<glm::vec3> allVec3Keys, allVec3In, allVec3Out;
+    std::vector<glm::quat> allQuatKeys, allQuatIn, allQuatOut;
+    allFloatKeys.reserve(type == TrackType::FLOAT || type == TrackType::FIXED16 ||
+                         type == TrackType::UINT16 || type == TrackType::BYTE_BOOL
+                             ? disk.nKeys : 0);
+    allVec3Keys.reserve(type == TrackType::VEC3 ? disk.nKeys : 0);
+    allQuatKeys.reserve(type == TrackType::QUAT_COMPRESSED ? disk.nKeys : 0);
+    if (spline) {
+        allFloatIn.reserve(allFloatKeys.capacity());
+        allFloatOut.reserve(allFloatKeys.capacity());
+        allVec3In.reserve(allVec3Keys.capacity());
+        allVec3Out.reserve(allVec3Keys.capacity());
+        allQuatIn.reserve(allQuatKeys.capacity());
+        allQuatOut.reserve(allQuatKeys.capacity());
+    }
+
+    auto decodeCompressed = [](const CompressedQuat& cq, bool normalizeValue) {
+        const float fx = (cq.x < 0) ? (cq.x + 32768) / 32767.0f : (cq.x - 32767) / 32767.0f;
+        const float fy = (cq.y < 0) ? (cq.y + 32768) / 32767.0f : (cq.y - 32767) / 32767.0f;
+        const float fz = (cq.z < 0) ? (cq.z + 32768) / 32767.0f : (cq.z - 32767) / 32767.0f;
+        const float fw = (cq.w < 0) ? (cq.w + 32768) / 32767.0f : (cq.w - 32767) / 32767.0f;
+        glm::quat q(fw, fx, fy, fz);
+        if (!normalizeValue) return q;
+        const float len = glm::length(q);
+        return len > 0.001f ? q / len : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    };
+    auto decodeFloatQuat = [](const C4Quaternion& fq, bool normalizeValue) {
+        glm::quat q(fq.w, fq.x, fq.y, fq.z);
+        if (!normalizeValue) return q;
+        const float len = glm::length(q);
+        return len > 0.001f ? q / len : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    };
+
+    for (uint32_t k = 0; k < disk.nKeys; k++) {
+        const size_t keyBase = static_cast<size_t>(disk.ofsKeys) + static_cast<size_t>(k) * diskKeySize;
+        const size_t inBase = keyBase + baseKeySize;
+        const size_t outBase = inBase + baseKeySize;
+
+        if (type == TrackType::FLOAT) {
+            allFloatKeys.push_back(readValue<float>(data, static_cast<uint32_t>(keyBase)));
+            if (spline) {
+                allFloatIn.push_back(readValue<float>(data, static_cast<uint32_t>(inBase)));
+                allFloatOut.push_back(readValue<float>(data, static_cast<uint32_t>(outBase)));
+            }
+        } else if (type == TrackType::FIXED16) {
+            const auto decode = [](int16_t v, bool clampValue) {
+                const float f = static_cast<float>(v) / 32767.0f;
+                return clampValue ? std::clamp(f, 0.0f, 1.0f) : f;
+            };
+            allFloatKeys.push_back(decode(
+                readValue<int16_t>(data, static_cast<uint32_t>(keyBase)), true));
+            if (spline) {
+                allFloatIn.push_back(decode(
+                    readValue<int16_t>(data, static_cast<uint32_t>(inBase)), false));
+                allFloatOut.push_back(decode(
+                    readValue<int16_t>(data, static_cast<uint32_t>(outBase)), false));
+            }
+        } else if (type == TrackType::UINT16) {
+            allFloatKeys.push_back(static_cast<float>(
+                readValue<uint16_t>(data, static_cast<uint32_t>(keyBase))));
+            if (spline) {
+                allFloatIn.push_back(static_cast<float>(
+                    readValue<uint16_t>(data, static_cast<uint32_t>(inBase))));
+                allFloatOut.push_back(static_cast<float>(
+                    readValue<uint16_t>(data, static_cast<uint32_t>(outBase))));
+            }
+        } else if (type == TrackType::BYTE_BOOL) {
+            const auto decode = [&](size_t offset) {
+                return readValue<uint8_t>(data, static_cast<uint32_t>(offset)) != 0 ? 1.0f : 0.0f;
+            };
+            allFloatKeys.push_back(decode(keyBase));
+            if (spline) {
+                allFloatIn.push_back(decode(inBase));
+                allFloatOut.push_back(decode(outBase));
+            }
+        } else if (type == TrackType::VEC3) {
+            const auto v = readValue<Vec3Disk>(data, static_cast<uint32_t>(keyBase));
+            allVec3Keys.emplace_back(v.x, v.y, v.z);
+            if (spline) {
+                const auto in = readValue<Vec3Disk>(data, static_cast<uint32_t>(inBase));
+                const auto out = readValue<Vec3Disk>(data, static_cast<uint32_t>(outBase));
+                allVec3In.emplace_back(in.x, in.y, in.z);
+                allVec3Out.emplace_back(out.x, out.y, out.z);
+            }
+        } else if (compressedQuat) {
+            allQuatKeys.push_back(decodeCompressed(
+                readValue<CompressedQuat>(data, static_cast<uint32_t>(keyBase)), true));
+            if (spline) {
+                allQuatIn.push_back(decodeCompressed(
+                    readValue<CompressedQuat>(data, static_cast<uint32_t>(inBase)), false));
+                allQuatOut.push_back(decodeCompressed(
+                    readValue<CompressedQuat>(data, static_cast<uint32_t>(outBase)), false));
+            }
+        } else {
+            allQuatKeys.push_back(decodeFloatQuat(
+                readValue<C4Quaternion>(data, static_cast<uint32_t>(keyBase)), true));
+            if (spline) {
+                allQuatIn.push_back(decodeFloatQuat(
+                    readValue<C4Quaternion>(data, static_cast<uint32_t>(inBase)), false));
+                allQuatOut.push_back(decodeFloatQuat(
+                    readValue<C4Quaternion>(data, static_cast<uint32_t>(outBase)), false));
+            }
         }
-    } else if (type == TrackType::UINT16) {
-        auto raw = readArray<uint16_t>(data, disk.ofsKeys, disk.nKeys);
-        allFloatKeys.reserve(raw.size());
-        for (uint16_t v : raw) {
-            allFloatKeys.push_back(static_cast<float>(v));
-        }
-    } else if (type == TrackType::BYTE_BOOL) {
-        auto raw = readArray<uint8_t>(data, disk.ofsKeys, disk.nKeys);
-        allFloatKeys.reserve(raw.size());
-        for (uint8_t v : raw) {
-            allFloatKeys.push_back(v != 0 ? 1.0f : 0.0f);
-        }
-    } else if (type == TrackType::VEC3) {
-        allVec3Keys = readArray<Vec3Disk>(data, disk.ofsKeys, disk.nKeys);
-    } else if (compressedQuat) {
-        allCompQuatKeys = readArray<CompressedQuat>(data, disk.ofsKeys, disk.nKeys);
-    } else {
-        allQuatKeys = readArray<C4Quaternion>(data, disk.ofsKeys, disk.nKeys);
     }
 
     track.sequences.resize(ranges.size());
-
     for (size_t i = 0; i < ranges.size(); i++) {
         const uint32_t start = ranges[i].start;
         uint32_t last = ranges[i].end;
         if (start >= disk.nTimestamps || start > last) continue;
         last = std::min(last, disk.nTimestamps - 1);
 
-        // M2Range.maximum names the LAST key, not the one-past-the-end key.
-        track.sequences[i].timestamps.assign(
-            allTimestamps.begin() + start,
-            allTimestamps.begin() + static_cast<size_t>(last) + 1);
-        if (!track.sequences[i].timestamps.empty()) {
-            const uint32_t firstTime = track.sequences[i].timestamps[0];
-            for (auto& ts : track.sequences[i].timestamps) {
-                ts -= firstTime;
-            }
+        auto& dst = track.sequences[i];
+        dst.timestamps.assign(allTimestamps.begin() + start,
+                              allTimestamps.begin() + static_cast<size_t>(last) + 1);
+        if (!dst.timestamps.empty()) {
+            const uint32_t firstTime = dst.timestamps[0];
+            for (auto& ts : dst.timestamps) ts -= firstTime;
         }
 
         if (start >= disk.nKeys) continue;
         const uint32_t keyLast = std::min(last, disk.nKeys - 1);
         if (keyLast < start) continue;
-        const uint32_t keyCount = keyLast - start + 1;
+        const size_t begin = start;
+        const size_t end = static_cast<size_t>(keyLast) + 1;
 
         if (type == TrackType::FLOAT || type == TrackType::FIXED16 ||
             type == TrackType::UINT16 || type == TrackType::BYTE_BOOL) {
-            track.sequences[i].floatValues.assign(
-                allFloatKeys.begin() + start, allFloatKeys.begin() + start + keyCount);
-        } else if (type == TrackType::VEC3) {
-            track.sequences[i].vec3Values.reserve(keyCount);
-            for (uint32_t k = start; k < start + keyCount; k++) {
-                track.sequences[i].vec3Values.emplace_back(
-                    allVec3Keys[k].x, allVec3Keys[k].y, allVec3Keys[k].z);
+            dst.floatValues.assign(allFloatKeys.begin() + begin, allFloatKeys.begin() + end);
+            if (spline) {
+                dst.floatInTangents.assign(allFloatIn.begin() + begin, allFloatIn.begin() + end);
+                dst.floatOutTangents.assign(allFloatOut.begin() + begin, allFloatOut.begin() + end);
             }
-        } else if (compressedQuat) {
-            // TBC: compressed int16[4] quaternion - same offset mapping as WotLK
-            track.sequences[i].quatValues.reserve(keyCount);
-            for (uint32_t k = start; k < start + keyCount; k++) {
-                const auto& cq = allCompQuatKeys[k];
-                float fx = (cq.x < 0) ? (cq.x + 32768) / 32767.0f : (cq.x - 32767) / 32767.0f;
-                float fy = (cq.y < 0) ? (cq.y + 32768) / 32767.0f : (cq.y - 32767) / 32767.0f;
-                float fz = (cq.z < 0) ? (cq.z + 32768) / 32767.0f : (cq.z - 32767) / 32767.0f;
-                float fw = (cq.w < 0) ? (cq.w + 32768) / 32767.0f : (cq.w - 32767) / 32767.0f;
-                // M2 on-disk: (x,y,z,w), GLM quat constructor: (w,x,y,z)
-                glm::quat q(fw, fx, fy, fz);
-                float len = glm::length(q);
-                if (len > 0.001f) q = q / len;
-                else q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-                track.sequences[i].quatValues.push_back(q);
+        } else if (type == TrackType::VEC3) {
+            dst.vec3Values.assign(allVec3Keys.begin() + begin, allVec3Keys.begin() + end);
+            if (spline) {
+                dst.vec3InTangents.assign(allVec3In.begin() + begin, allVec3In.begin() + end);
+                dst.vec3OutTangents.assign(allVec3Out.begin() + begin, allVec3Out.begin() + end);
             }
         } else {
-            // Vanilla: C4Quaternion - full float[4] per key (XYZW on disk)
-            track.sequences[i].quatValues.reserve(keyCount);
-            for (uint32_t k = start; k < start + keyCount; k++) {
-                const auto& fq = allQuatKeys[k];
-                // Disk order: XYZW, glm::quat constructor: (w, x, y, z)
-                glm::quat q(fq.w, fq.x, fq.y, fq.z);
-                float len = glm::length(q);
-                if (len > 0.001f) q = q / len;
-                else q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-                track.sequences[i].quatValues.push_back(q);
+            dst.quatValues.assign(allQuatKeys.begin() + begin, allQuatKeys.begin() + end);
+            if (spline) {
+                dst.quatInTangents.assign(allQuatIn.begin() + begin, allQuatIn.begin() + end);
+                dst.quatOutTangents.assign(allQuatOut.begin() + begin, allQuatOut.begin() + end);
             }
         }
     }

@@ -3,6 +3,7 @@
 #include "pipeline/m2_loader.hpp"
 #include "rendering/m2_model_classifier.hpp"
 #include "rendering/m2_renderer_internal.h"
+#include "rendering/m2_track_sampler.hpp"
 #include <cstring>
 
 using namespace wowee::pipeline;
@@ -260,4 +261,55 @@ TEST_CASE("M2Model collections", "[m2]") {
     REQUIRE(model.sequences.size() == 1);
     REQUIRE(model.textures.size() == 1);
     REQUIRE(model.sequences[0].duration == 1000);
+}
+
+
+TEST_CASE("Classic M2 Hermite tracks use authored tangents", "[m2][animation][interpolation]") {
+    M2AnimationTrack track{};
+    track.interpolationType = 2; // Classic: Hermite
+    track.sequences.resize(1);
+    auto& keys = track.sequences[0];
+    keys.timestamps = {0, 1000};
+    keys.floatValues = {0.0f, 1.0f};
+    keys.floatInTangents = {0.0f, 0.0f};
+    keys.floatOutTangents = {2.0f, 0.0f};
+
+    const float value = wowee::rendering::m2_track::sampleFloat(
+        track, 0, 500.0f, 0.0f, {}, -1.0f);
+    REQUIRE(value == Catch::Approx(0.75f));
+}
+
+TEST_CASE("Classic M2 Bezier tracks use both endpoint controls", "[m2][animation][interpolation]") {
+    M2AnimationTrack track{};
+    track.interpolationType = 3; // Classic: Bezier
+    track.sequences.resize(1);
+    auto& keys = track.sequences[0];
+    keys.timestamps = {0, 1000};
+    keys.vec3Values = {glm::vec3(0.0f), glm::vec3(1.0f)};
+    keys.vec3InTangents = {glm::vec3(0.0f), glm::vec3(2.0f)};
+    keys.vec3OutTangents = {glm::vec3(2.0f), glm::vec3(0.0f)};
+
+    const glm::vec3 value = wowee::rendering::m2_track::sampleVec3(
+        track, 0, 500.0f, 0.0f, {}, glm::vec3(-1.0f));
+    REQUIRE(value.x == Catch::Approx(1.625f));
+    REQUIRE(value.y == Catch::Approx(1.625f));
+    REQUIRE(value.z == Catch::Approx(1.625f));
+}
+
+TEST_CASE("Classic quaternion spline samples remain unit quaternions", "[m2][animation][interpolation]") {
+    M2AnimationTrack track{};
+    track.interpolationType = 2;
+    track.sequences.resize(1);
+    auto& keys = track.sequences[0];
+    keys.timestamps = {0, 1000};
+    keys.quatValues = {
+        glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+        glm::quat(0.70710678f, 0.0f, 0.70710678f, 0.0f)
+    };
+    keys.quatInTangents = keys.quatValues;
+    keys.quatOutTangents = keys.quatValues;
+
+    const glm::quat value = wowee::rendering::m2_track::sampleQuat(
+        track, 0, 500.0f, 0.0f, {});
+    REQUIRE(glm::length(value) == Catch::Approx(1.0f).margin(0.0001f));
 }
