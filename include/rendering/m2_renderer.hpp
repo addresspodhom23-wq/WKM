@@ -1002,8 +1002,10 @@ private:
     float smokeEmitAccum = 0.0f;
     std::mt19937 smokeRng{42};
 
-    // M2 particle emitter system
+    // M2 particle emitter system. MAX_M2_PARTICLES limits one instance's
+    // simulation; the render buffer spans many instances visible in one frame.
     static constexpr size_t MAX_M2_PARTICLES = 4000;
+    static constexpr size_t MAX_M2_RENDER_PARTICLES = 65536;
     std::mt19937 particleRng_{123};
     bool skyMode_ = false;
     bool vanillaRendering_ = false;
