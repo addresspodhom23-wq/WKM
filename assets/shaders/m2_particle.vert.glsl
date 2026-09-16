@@ -21,15 +21,29 @@ layout(location = 3) in float aTile;
 layout(location = 0) out vec4 vColor;
 layout(location = 1) out float vTile;
 layout(location = 2) out float vFogVisibility;
+layout(location = 3) out vec2 vSpriteUV;
 
 void main() {
-    vec4 viewPos4 = view * vec4(aPos, 1.0);
-    float dist = -viewPos4.z;
-    gl_PointSize = clamp(aSize * 500.0 / max(dist, 1.0), 1.0, 128.0);
+    // One particle record is one INSTANCE. Four generated vertices form the
+    // camera-facing quad; no largePoints feature or device point-size limit is
+    // involved. aSize is the authored world-space HALF extent.
+    const vec2 corners[4] = vec2[4](
+        vec2(-1.0, -1.0),
+        vec2( 1.0, -1.0),
+        vec2(-1.0,  1.0),
+        vec2( 1.0,  1.0)
+    );
+    vec2 corner = corners[gl_VertexIndex & 3];
+
+    vec4 centerView = view * vec4(aPos, 1.0);
+    vec4 vertexView = centerView + vec4(corner * aSize, 0.0, 0.0);
+    gl_Position = projection * vertexView;
+
     vColor = aColor;
     vTile = aTile;
+    vSpriteUV = corner * 0.5 + 0.5;
+
     float worldDist = length(viewPos.xyz - aPos);
     float fogRange = max(fogParams.y - fogParams.x, 0.001);
     vFogVisibility = clamp((fogParams.y - worldDist) / fogRange, 0.0, 1.0);
-    gl_Position = projection * viewPos4;
 }
