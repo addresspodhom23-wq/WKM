@@ -41,7 +41,7 @@ struct M2Sequence {
 
 // Animation track with per-sequence keyframe data
 struct M2AnimationTrack {
-    uint16_t interpolationType = 0; // 0=none, 1=linear, 2=hermite, 3=bezier
+    uint16_t interpolationType = 0; // 0=none, 1=linear, 2=bezier, 3=hermite/spline
     int16_t globalSequence = -1;    // -1 if not a global sequence
 
     struct SequenceKeys {

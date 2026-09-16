@@ -55,7 +55,7 @@ inline float interpolationFraction(const pipeline::M2AnimationTrack& track,
 }
 
 // Vanilla/Classic M2 uses the original Blizzard ordering:
-//   0=None, 1=Linear, 2=Hermite, 3=Bezier.
+//   0=None, 1=Linear, 2=Bezier, 3=Hermite/spline.
 // Spline records store {value, inTan, outTan} per key. Between key i and i+1
 // the segment leaves through i.outTan and arrives through (i+1).inTan.
 template<typename T>
@@ -86,8 +86,8 @@ template<typename T>
 inline T interpolateAuthored(uint16_t type, float fraction,
                              const T& p0, const T& p1,
                              const T& out0, const T& in1) {
-    if (type == 2) return interpolateHermite(fraction, p0, p1, out0, in1);
-    if (type == 3) return interpolateBezier(fraction, p0, p1, out0, in1);
+    if (type == 2) return interpolateBezier(fraction, p0, p1, out0, in1);
+    if (type == 3) return interpolateHermite(fraction, p0, p1, out0, in1);
     return p0 * (1.0f - fraction) + p1 * fraction;
 }
 

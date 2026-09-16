@@ -266,7 +266,7 @@ TEST_CASE("M2Model collections", "[m2]") {
 
 TEST_CASE("Classic M2 Hermite tracks use authored tangents", "[m2][animation][interpolation]") {
     M2AnimationTrack track{};
-    track.interpolationType = 2; // Classic: Hermite
+    track.interpolationType = 3; // Classic v256: Hermite/spline
     track.sequences.resize(1);
     auto& keys = track.sequences[0];
     keys.timestamps = {0, 1000};
@@ -281,7 +281,7 @@ TEST_CASE("Classic M2 Hermite tracks use authored tangents", "[m2][animation][in
 
 TEST_CASE("Classic M2 Bezier tracks use both endpoint controls", "[m2][animation][interpolation]") {
     M2AnimationTrack track{};
-    track.interpolationType = 3; // Classic: Bezier
+    track.interpolationType = 2; // Classic v256: Bezier
     track.sequences.resize(1);
     auto& keys = track.sequences[0];
     keys.timestamps = {0, 1000};
@@ -298,7 +298,7 @@ TEST_CASE("Classic M2 Bezier tracks use both endpoint controls", "[m2][animation
 
 TEST_CASE("Classic quaternion spline samples remain unit quaternions", "[m2][animation][interpolation]") {
     M2AnimationTrack track{};
-    track.interpolationType = 2;
+    track.interpolationType = 3; // Classic v256: Hermite/spline
     track.sequences.resize(1);
     auto& keys = track.sequences[0];
     keys.timestamps = {0, 1000};
