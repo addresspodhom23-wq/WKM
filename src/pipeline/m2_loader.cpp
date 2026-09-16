@@ -1586,7 +1586,19 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 //   +0x150: uint32 colorValues[3] (BGRA, A channel = opacity)
                 //   +0x15C: float scaleValues[3] (1D particle scale)
                 float midpoint = readValue<float>(m2Data, base + 0x14C);
-                if (midpoint < 0.0f || midpoint > 1.0f) midpoint = 0.5f;
+                if (!std::isfinite(midpoint) || midpoint < 0.0f || midpoint > 1.0f)
+                    midpoint = 0.5f;
+                em.lifeMidpoint = midpoint;
+
+                // Classic head-quad flipbook cell ramps:
+                // A {begin,end,repeat} at 0x168..0x16C and
+                // B {begin,end,repeat} at 0x16E..0x172.
+                em.headCellBegin[0] = readValue<uint16_t>(m2Data, base + 0x168);
+                em.headCellEnd[0] = readValue<uint16_t>(m2Data, base + 0x16A);
+                em.headCellRepeat[0] = readValue<uint16_t>(m2Data, base + 0x16C);
+                em.headCellBegin[1] = readValue<uint16_t>(m2Data, base + 0x16E);
+                em.headCellEnd[1] = readValue<uint16_t>(m2Data, base + 0x170);
+                em.headCellRepeat[1] = readValue<uint16_t>(m2Data, base + 0x172);
 
                 // Synthesize color FBlock from static BGRA values
                 // Vanilla M2 stores 3× uint32 as BGRA (little-endian: byte0=B, byte1=G, byte2=R, byte3=A)
