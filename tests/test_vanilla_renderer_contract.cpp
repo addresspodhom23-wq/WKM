@@ -623,5 +623,20 @@ int main() {
     assert(m2.find("float alphaForTest = texColor.a") != std::string::npos);
     assert(m2.find("alphaForTest *= vFadeAlpha") == std::string::npos);
     assert(m2.find("float outAlpha = texColor.a * vFadeAlpha") != std::string::npos);
+    // The Vanilla preset must not silently inherit name-based replacement
+    // effects from the enhanced renderer, in either opaque or blended passes.
+    assert(m2Particles.find("inst.forcedHidden || gpu.isInstancePortal") == std::string::npos);
+    assert(m2Particles.find("if (gpu.isInstancePortal)") == std::string::npos);
+    assert(m2Particles.find("!vanillaRendering_ && gpu.isInstancePortal") != std::string::npos);
+    const auto smokeRender = m2Particles.substr(m2Particles.find("void M2Renderer::renderSmokeParticles("));
+    assert(smokeRender.find("if (vanillaRendering_) return;") < smokeRender.find("vkCmdDraw"));
+    assert(m2Render.find("if (!vanillaRendering_ && smokeEmitAccum >= emitInterval") != std::string::npos);
+    assert(m2Render.find("if (!vanillaRendering_ && inst.cachedIsSmoke) flags |= 2u;") != std::string::npos);
+    assert(m2Render.find("if (vanillaRendering_) break; // Preserve the placement") != std::string::npos);
+    assert(m2Render.find("if (model.isLavaModel &&") == std::string::npos);
+    assert(m2Render.find("|| model.isLavaModel;") == std::string::npos);
+    assert(m2Render.find("if (!vanillaRendering_ && !skyMode_ && m2BlendIsAdditive") != std::string::npos);
+    assert(m2Render.find("mat->tintR = batch.tint.r;") != std::string::npos);
+    assert(m2.find("if (!vanillaRendering && colorKeyBlack != 0 && alphaTest == 0)") != std::string::npos);
     return 0;
 }

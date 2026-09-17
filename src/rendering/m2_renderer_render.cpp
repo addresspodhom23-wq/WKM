@@ -453,7 +453,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     smokeEmitAccum += deltaTime;
     constexpr float emitInterval = kSmokeEmitInterval;  // 48 particles per second per emitter
 
-    if (smokeEmitAccum >= emitInterval &&
+    if (!vanillaRendering_ && smokeEmitAccum >= emitInterval &&
         static_cast<int>(smokeParticles.size()) < MAX_SMOKE_PARTICLES) {
         for (size_t si : smokeInstanceIndices_) {
             if (si >= instances.size()) continue;
@@ -506,6 +506,7 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
     static constexpr float PORTAL_SPIN_SPEED = 1.2f; // radians/sec
     static constexpr float kTwoPi = 6.2831853f;
     for (size_t idx : portalInstanceIndices_) {
+        if (vanillaRendering_) break; // Preserve the placement; animate authored bones/UVs only.
         if (idx >= instances.size()) continue;
         auto& inst = instances[idx];
         inst.portalSpinAngle += PORTAL_SPIN_SPEED * deltaTime;
@@ -979,7 +980,7 @@ void M2Renderer::dispatchCullCompute(VkCommandBuffer cmd, uint32_t frameIndex, c
 
             uint32_t flags = 0;
             if (inst.cachedIsValid && !inst.forcedHidden) flags |= 1u;
-            if (inst.cachedIsSmoke)           flags |= 2u;
+            if (!vanillaRendering_ && inst.cachedIsSmoke) flags |= 2u;
             if (inst.cachedIsInvisibleTrap)   flags |= 4u;
             // Bit 3: previouslyVisible - the shader runs the HiZ occlusion test
             // ONLY when this bit is set (an object with no depth in last frame's
@@ -1226,7 +1227,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 distSq = glm::dot(toCam, toCam);
                 effectiveMaxDistSq = instanceMaxDistSq;
             } else {
-                if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
+                if (!instance.cachedIsValid || (!vanillaRendering_ && instance.cachedIsSmoke) || instance.cachedIsInvisibleTrap) continue;
                 glm::vec3 toCam = instance.position - camPos;
                 distSq = glm::dot(toCam, toCam);
                 if (distSq > maxPossibleDistSq) continue;
@@ -2006,7 +2007,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     // Handle texture animation: if this batch has per-instance uvOffset,
                     // write a separate SSBO range with the correct offsets.
                     bool hasBatchTexAnim = (batch.textureAnimIndex != 0xFFFF && model.hasTextureAnimation)
-                                           || model.isLavaModel;
+                                           || (!vanillaRendering_ && model.isLavaModel);
                     uint32_t drawOffset = groupSSBOOffset;
                     if (hasBatchTexAnim && instanceDataCount_ + groupSize <= MAX_INSTANCE_DATA) {
                         drawOffset = instanceDataCount_;
@@ -2032,7 +2033,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                                     model, inst, tt->translation, glm::vec3(0.0f));
                                 uvOffset = glm::vec2(trans.x, trans.y);
                             }
-                            if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
+                            if (!vanillaRendering_ && model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
                                 uvOffset = glm::vec2(lavaAnimSeconds * 0.03f,
                                                      -lavaAnimSeconds * 0.08f);
                             }
@@ -2344,7 +2345,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                     }
                 }
             }
-            if (model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
+            if (!vanillaRendering_ && model.isLavaModel && uvOffset == glm::vec2(0.0f)) {
                 uvOffset = glm::vec2(lavaAnimSeconds * 0.03f,
                                      -lavaAnimSeconds * 0.08f);
             }
@@ -2401,6 +2402,10 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
 
             if (batch.materialUBOMapped) {
                 auto* mat = static_cast<M2MaterialUBO*>(batch.materialUBOMapped);
+                // Reset the authored tint after switching away from synthetic flicker.
+                mat->tintR = batch.tint.r;
+                mat->tintG = batch.tint.g;
+                mat->tintB = batch.tint.b;
                 mat->interiorDarken = 0.0f;
                 if (batch.colorKeyBlack)
                     mat->colorKeyThreshold = (effectiveBlendMode == 4 || effectiveBlendMode == 5) ? 0.7f : 0.08f;
@@ -2417,7 +2422,7 @@ void M2Renderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet, const 
                 // never be a valid seed. The classifier no longer calls
                 // HellfireSkyBox a brazier, and this makes sure the next model
                 // that gets miscalled one cannot strobe the sky either.
-                if (!skyMode_ && m2BlendIsAdditive(batch.blendMode) &&
+                if (!vanillaRendering_ && !skyMode_ && m2BlendIsAdditive(batch.blendMode) &&
                     (model.isBrazierOrFire || model.isTorch || model.isLanternLike)) {
                     const float flicker = lampFlicker(
                         instance.position, lampFlickerClockSeconds(),
@@ -2678,7 +2683,7 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
         for (const auto& instance : instances) {
             // Use cached flags to skip early without hash lookup
-            if (!instance.cachedIsValid || instance.cachedIsSmoke || instance.cachedIsInvisibleTrap) continue;
+            if (!instance.cachedIsValid || (!vanillaRendering_ && instance.cachedIsSmoke) || instance.cachedIsInvisibleTrap) continue;
 
             if (!instance.cachedModel) continue;
             const M2ModelGPU& model = *instance.cachedModel;
@@ -2740,4 +2745,5 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
 } // namespace rendering
 } // namespace wowee
+
 

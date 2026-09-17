@@ -298,7 +298,7 @@ std::vector<glm::vec3> M2Renderer::getWaterVegetationPositions(const glm::vec3& 
 }
 
 void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
-    if (inst.forcedHidden || gpu.isInstancePortal) return;
+    if (inst.forcedHidden || (!vanillaRendering_ && gpu.isInstancePortal)) return;
 
     const float simDt = vanillaRendering_
         ? std::min(std::max(dt, 0.0f), 0.1f)
@@ -651,8 +651,6 @@ void M2Renderer::emitParticles(M2Instance& inst, const M2ModelGPU& gpu, float dt
 void M2Renderer::updateParticles(M2Instance& inst, float dt) {
     if (!inst.cachedModel) return;
     const auto& gpu = *inst.cachedModel;
-    const int sampleSequenceIndex =
-        resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
     const size_t numEm = gpu.particleEmitters.size();
     const float simDt = vanillaRendering_
         ? std::min(std::max(dt, 0.0f), 0.1f)
@@ -1096,7 +1094,7 @@ void M2Renderer::updateRecursiveParticles(
 // Ribbon emitter simulation
 // ---------------------------------------------------------------------------
 void M2Renderer::updateRibbons(M2Instance& inst, const M2ModelGPU& gpu, float dt) {
-    if (gpu.isInstancePortal) return;
+    if (!vanillaRendering_ && gpu.isInstancePortal) return;
 
     const auto& emitters = gpu.ribbonEmitters;
     const int sampleSequenceIndex =
@@ -1270,7 +1268,7 @@ void M2Renderer::renderM2Ribbons(VkCommandBuffer cmd, VkDescriptorSet perFrameSe
         const auto& gpu = *inst.cachedModel;
         const int sampleSequenceIndex =
             resolveM2SequenceAlias(gpu, inst.currentSequenceIndex);
-        if (gpu.isInstancePortal) continue;
+        if (!vanillaRendering_ && gpu.isInstancePortal) continue;
         if (gpu.ribbonEmitters.empty()) continue;
 
         for (size_t ri = 0; ri < gpu.ribbonEmitters.size(); ri++) {
@@ -1483,7 +1481,7 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
         if (inst.particles.empty()) continue;
         if (!inst.cachedModel) continue;
         const auto& gpu = *inst.cachedModel;
-        if (gpu.isInstancePortal) continue;
+        if (!vanillaRendering_ && gpu.isInstancePortal) continue;
 
 
         // Cache the last emitter's per-emitter state so adjacent particles
@@ -2197,6 +2195,8 @@ void M2Renderer::renderM2Particles(VkCommandBuffer cmd, VkDescriptorSet perFrame
 }
 
 void M2Renderer::renderSmokeParticles(VkCommandBuffer cmd, VkDescriptorSet perFrameSet) {
+    // Vanilla smoke comes from authored M2 emitters, not name-based sprites.
+    if (vanillaRendering_) return;
     if (smokeParticles.empty() || !smokePipeline_ || !smokeVB_) return;
 
     // Build vertex data: pos(3) + lifeRatio(1) + size(1) + isSpark(1) per particle

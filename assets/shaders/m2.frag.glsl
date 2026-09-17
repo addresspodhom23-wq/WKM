@@ -380,7 +380,7 @@ void main() {
     // alpha-to-coverage turns it into per-sample coverage for smooth edges.
     // Color-key-only materials have no meaningful texture alpha; keep them
     // opaque after the discard.
-    if (colorKeyBlack != 0 && alphaTest == 0) {
+    if (!vanillaRendering && colorKeyBlack != 0 && alphaTest == 0) {
         outAlpha = vFadeAlpha;
     }
     // Pressed on. The real client lifts the whole model while the button is
@@ -394,4 +394,5 @@ void main() {
 
     outColor = vec4(result, outAlpha);
 }
+
 
