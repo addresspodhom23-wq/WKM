@@ -67,6 +67,9 @@ int main() {
     // MOPT plane is used directly; MFOG reaches frame fog.
     assert(wmo.find("authoredNormal(portal.plane.x") != std::string::npos);
     assert(wmo.find("queryVanillaFog") != std::string::npos);
+    // Group visibility must not discard authored geometry using name/vertex heuristics.
+    assert(wmo.find("resources.isLOD = true") == std::string::npos);
+    assert(wmo.find("vertex-count guesses") != std::string::npos);
     assert(wmoH.find("VanillaFogSample") != std::string::npos);
 
     // MODD per-instance colour reaches the M2 shader.

@@ -458,12 +458,6 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
     modelData.boundingBoxMin = model.boundingBoxMin;
     modelData.boundingBoxMax = model.boundingBoxMax;
     modelData.wmoAmbientColor = model.ambientColor;
-    std::string lowerSourcePath = model.sourcePath;
-    std::replace(lowerSourcePath.begin(), lowerSourcePath.end(), '/', '\\');
-    std::transform(lowerSourcePath.begin(), lowerSourcePath.end(), lowerSourcePath.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const bool isStormwindCityWmo =
-        lowerSourcePath.find("\\buildings\\stormwind\\stormwind.wmo") != std::string::npos;
     {
         glm::vec3 ext = model.boundingBoxMax - model.boundingBoxMin;
         float horiz = std::max(ext.x, ext.y);
@@ -563,21 +557,6 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
     modelData.setupDone = true;
     }  // end one-time setup
 
-    // Reads only the model, so it is rebuilt cheaply on every resumed call
-    // rather than kept alive across them.
-    // Helper: look up group name from MOGN raw data via MOGI nameOffset
-    auto getGroupName = [&](uint32_t groupIdx) -> std::string {
-        if (groupIdx < model.groupInfo.size()) {
-            int32_t nameOff = model.groupInfo[groupIdx].nameOffset;
-            if (nameOff >= 0 && static_cast<size_t>(nameOff) < model.groupNameRaw.size()) {
-                const char* str = reinterpret_cast<const char*>(model.groupNameRaw.data() + nameOff);
-                size_t maxLen = model.groupNameRaw.size() - nameOff;
-                return std::string(str, strnlen(str, maxLen));
-            }
-        }
-        return {};
-    };
-
     // Create GPU resources for each group, a bounded number per call. A model
     // with hundreds of groups would otherwise upload them all in one step: the
     // worst measured was 286 groups at 131ms, against an 8ms budget.
@@ -606,36 +585,12 @@ WMORenderer::ModelLoadResult WMORenderer::loadModelIncremental(
 
         GroupResources resources;
         if (createGroupResources(wmoGroup, resources, wmoGroup.flags)) {
-            // Detect distance-only LOD/exterior shell groups:
-            // 1. Very low vertex count (<100) - portal connectors, tiny shells
-            // 2. ALWAYS_DRAW (0x10000) with low verts - distant LOD stand-ins
-            // 3. Pure OUTDOOR groups (0x8 set, 0x2000 not set) in large WMOs -
-            //    exterior cityscape shells (e.g. "city01" in Stormwind)
-            bool alwaysDraw = (wmoGroup.flags & 0x10000) != 0;
-            size_t nVerts = wmoGroup.vertices.size();
-            bool isLargeWmo = model.nGroups > 50;
-            // Detect facade groups by name (exterior face of buildings)
-            std::string gname = getGroupName(static_cast<uint32_t>(gi));
-            bool isFacade = false;
-            bool isCityShell = false;
-            if (!gname.empty()) {
-                std::string lower = gname;
-                std::transform(lower.begin(), lower.end(), lower.begin(),
-                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                isFacade = lower.find("facade") != std::string::npos;
-                // "city01" etc are exterior cityscape shells in large WMOs
-                isCityShell = (lower.find("city") == 0 && lower.size() <= 8);
-            }
-            bool isIndoor = (wmoGroup.flags & 0x2000) != 0;
-            const bool isStormwindCathedralShell = isStormwindCityWmo && isLargeWmo &&
-                                                   isIndoor && (wmoGroup.flags & 0x80) != 0;
-            if ((nVerts < 100 && isLargeWmo && !isIndoor) ||
-                (alwaysDraw && nVerts < 5000 && isLargeWmo && !isIndoor) ||
-                (isFacade && isLargeWmo && !isIndoor) ||
-                (isCityShell && !isIndoor && isLargeWmo) ||
-                isStormwindCathedralShell) {
-                resources.isLOD = true;
-            }
+            // Every non-empty WMO group is authored geometry. Earlier builds
+            // guessed that small or name-matched groups were distant shells
+            // and skipped them near the camera; that removed real facades,
+            // roofs and interior pieces. Classic visibility is controlled by
+            // MOGP flags, portal traversal and the configured distance cull,
+            // never by names or vertex-count guesses.
             modelData.groups.push_back(resources);
             modelData.loadedGroups++;
         }
