@@ -648,5 +648,10 @@ int main() {
     assert(m2Render.find("Classic uses variationNext") != std::string::npos);
     assert(m2Render.find("pickWeightedIdleVariation") != std::string::npos);
     assert(m2Render.find("model.sequences[index].frequency") != std::string::npos);
+    assert(m2Render.find("replayMin") != std::string::npos);
+    assert(m2Render.find("replayMax") != std::string::npos);
+    assert(m2Render.find("waitingForReplay") != std::string::npos);
+    const auto rendererHeader2=read("include/rendering/m2_renderer.hpp");
+    assert(rendererHeader2.find("bool waitingForReplay") != std::string::npos);
     return 0;
 }

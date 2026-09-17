@@ -358,6 +358,8 @@ inline void beginM2SequenceTransition(M2Instance& instance,
     instance.currentSequenceIndex = nextSequenceIndex;
     instance.animDuration = static_cast<float>(next.duration);
     instance.animTime = nextAnimTime;
+    instance.replayTimer = 0.0f;
+    instance.waitingForReplay = false;
 }
 
 /// 1.12.1 sequence cross-fade weight: smoothstep, not a linear ramp.

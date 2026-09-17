@@ -275,6 +275,11 @@ struct M2Instance {
     float variationTimer = 0.0f; // Time until next variation attempt (ms)
     bool playingVariation = false;// Currently playing a one-shot variation
 
+    // Classic M2 sequences may author a pause before their next replay. While
+    // waiting, keep the sequence on its final frame instead of looping early.
+    float replayTimer = 0.0f;
+    bool waitingForReplay = false;
+
     /// Stop at the end of the sequence and stay there.
     ///
     /// A door is a pose, not a performance: the server says open or closed and

@@ -134,6 +134,8 @@ void M2Renderer::seedInstanceTimeline(const M2ModelGPU& model,
     instance.animDuration = static_cast<float>(model.sequences[0].duration);
     instance.animTime = static_cast<float>(
         randRange(std::max(1u, model.sequences[0].duration)));
+    instance.replayTimer = 0.0f;
+    instance.waitingForReplay = false;
     instance.variationTimer = randFloat(
         rendering::M2_VARIATION_TIMER_MIN_MS,
         rendering::M2_VARIATION_TIMER_MAX_MS);
@@ -653,9 +655,23 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
             }
         }
 
+        // Honor the Classic replay pause on the final authored frame. The
+        // sequence's range is milliseconds; malformed ranges are clamped to a
+        // non-negative interval and never create an infinite wait.
+        bool replayWaiting = false;
+        if (instance.waitingForReplay) {
+            instance.replayTimer -= dtMs;
+            instance.animTime = instance.animDuration;
+            replayWaiting = instance.replayTimer > 0.0f;
+            if (!replayWaiting) {
+                instance.waitingForReplay = false;
+                instance.replayTimer = 0.0f;
+            }
+        }
+
         // Handle animation looping / variation transitions.
         // A zero authored duration stays zero; do not synthesize a particle cycle.
-        if (instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
+        if (!replayWaiting && instance.animDuration > 0.0f && instance.animTime >= instance.animDuration) {
             if (instance.holdAtEnd) {
                 // Stay on the last frame. A door's open sequence ends with the
                 // door open, and that is the pose the server is describing.
@@ -671,16 +687,30 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
                 // the file authors a chain. It is a sequence index, not an
                 // animation ID; invalid/self references fall back to the loop.
                 const auto& sequence = model.sequences[instance.currentSequenceIndex];
-                const int next = static_cast<int>(sequence.variationNext);
-                if (next >= 0 && next < static_cast<int>(model.sequences.size()) &&
-                    next != instance.currentSequenceIndex) {
-                    instance.playingVariation = true;
-                    beginM2SequenceTransition(instance, model, next);
-                } else {
-                    // Use iterative subtraction instead of fmod() to preserve precision
-                    float duration = std::max(1.0f, instance.animDuration);
-                    while (instance.animTime >= duration) {
-                        instance.animTime -= duration;
+                const float replayMin = static_cast<float>(sequence.replayMin);
+                const float replayMax = static_cast<float>(sequence.replayMax);
+                if ((sequence.flags & 0x01u) != 0 && replayMax > 0.0f) {
+                    const float lo = std::min(replayMin, replayMax);
+                    const float hi = std::max(replayMin, replayMax);
+                    instance.replayTimer = randFloat(lo, hi);
+                    instance.waitingForReplay = instance.replayTimer > 0.0f;
+                    if (instance.waitingForReplay) {
+                        instance.animTime = instance.animDuration;
+                        replayWaiting = true;
+                    }
+                }
+                if (!replayWaiting) {
+                    const int next = static_cast<int>(sequence.variationNext);
+                    if (next >= 0 && next < static_cast<int>(model.sequences.size()) &&
+                        next != instance.currentSequenceIndex) {
+                        instance.playingVariation = true;
+                        beginM2SequenceTransition(instance, model, next);
+                    } else {
+                        // Use iterative subtraction instead of fmod() to preserve precision
+                        float duration = std::max(1.0f, instance.animDuration);
+                        while (instance.animTime >= duration) {
+                            instance.animTime -= duration;
+                        }
                     }
                 }
             }
@@ -2779,5 +2809,3 @@ void M2Renderer::renderShadow(VkCommandBuffer cmd, const glm::mat4& lightSpaceMa
 
 } // namespace rendering
 } // namespace wowee
-
-
