@@ -647,6 +647,6 @@ int main() {
     assert(m2Loader.find("seq.variationNext = ds.variationNext") != std::string::npos);
     assert(m2Render.find("Classic uses variationNext") != std::string::npos);
     assert(m2Render.find("pickWeightedIdleVariation") != std::string::npos);
-    assert(m2Render.find("sequence[index].frequency") != std::string::npos);
+    assert(m2Render.find("model.sequences[index].frequency") != std::string::npos);
     return 0;
 }
