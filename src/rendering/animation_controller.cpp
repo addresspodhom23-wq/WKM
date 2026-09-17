@@ -663,7 +663,7 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
                      " flags=0x", std::hex, seq.flags, std::dec,
                      " moveSpd=", seq.movingSpeed,
                      " blend=", seq.blendTime,
-                     " next=", seq.nextAnimation,
+                     " next=", seq.variationNext,
                      " alias=", seq.aliasNext);
         }
         LOG_DEBUG("=== End sequence table ===");
@@ -727,8 +727,8 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
             if (seq.duration >= 450 && seq.duration <= 1100) {
                 int sc = 0;
                 if (loop) sc += scoreNear(static_cast<int>(seq.id), static_cast<int>(loop));
-                if (loop && (seq.nextAnimation == static_cast<int16_t>(loop) || seq.aliasNext == loop)) sc += 30;
-                if (loop && scoreNear(seq.nextAnimation, static_cast<int>(loop)) > 0) sc += 10;
+                if (loop && (seq.variationNext == static_cast<int16_t>(loop) || seq.aliasNext == loop)) sc += 30;
+                if (loop && scoreNear(seq.variationNext, static_cast<int>(loop)) > 0) sc += 10;
                 if (seq.blendTime > 400) sc -= 5;
 
                 if (sc > bestStart) {
@@ -740,8 +740,8 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
             if (seq.duration >= 650 && seq.duration <= 1600) {
                 int sc = 0;
                 if (loop) sc += scoreNear(static_cast<int>(seq.id), static_cast<int>(loop));
-                if (seq.nextAnimation == static_cast<int16_t>(runId) || seq.nextAnimation == static_cast<int16_t>(standId)) sc += 10;
-                if (seq.nextAnimation < 0) sc += 5;
+                if (seq.variationNext == static_cast<int16_t>(runId) || seq.variationNext == static_cast<int16_t>(standId)) sc += 10;
+                if (seq.variationNext < 0) sc += 5;
                 if (sc > bestEnd) {
                     bestEnd = sc;
                     end = seq.id;
@@ -790,7 +790,7 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
                 " freq=", seq.frequency,
                 " replay=", seq.replayMin, "-", seq.replayMax,
                 " flags=0x", std::hex, seq.flags, std::dec,
-                " next=", seq.nextAnimation);
+                " next=", seq.variationNext);
         }
     }
 
@@ -806,7 +806,7 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
                 " dur=", seq.duration, "ms",
                 " freq=", seq.frequency,
                 " replay=", seq.replayMin, "-", seq.replayMax,
-                " next=", seq.nextAnimation,
+                " next=", seq.variationNext,
                 " speed=", seq.movingSpeed);
         }
 
@@ -816,9 +816,9 @@ void AnimationController::setMounted(uint32_t mountInstId, uint32_t mountDisplay
 
         if (!isLoop && (hasFrequency || hasReplay) && isStationary && reasonableDuration &&
             !isDeathOrWound && !isAttackOrCombat && !isSpecial) {
-            bool chainsToStand = (seq.nextAnimation == static_cast<int16_t>(mountAnims.stand)) ||
+            bool chainsToStand = (seq.variationNext == static_cast<int16_t>(mountAnims.stand)) ||
                                  (seq.aliasNext == mountAnims.stand) ||
-                                 (seq.nextAnimation == -1);
+                                 (seq.variationNext == -1);
 
             mountAnims.fidgets.push_back(seq.id);
             core::Logger::getInstance().debug("  >> Selected fidget: id=", seq.id,
@@ -1242,3 +1242,4 @@ void AnimationController::updateSfxState(float deltaTime) {
 
 } // namespace rendering
 } // namespace wowee
+

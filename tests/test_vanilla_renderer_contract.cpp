@@ -638,5 +638,15 @@ int main() {
     assert(m2Render.find("if (!vanillaRendering_ && !skyMode_ && m2BlendIsAdditive") != std::string::npos);
     assert(m2Render.find("mat->tintR = batch.tint.r;") != std::string::npos);
     assert(m2.find("if (!vanillaRendering && colorKeyBlack != 0 && alphaTest == 0)") != std::string::npos);
+
+    // Classic sequence metadata drives authored variation playback: the loader
+    // exposes variationNext, and the renderer follows chains before weighted
+    // random idle selection (frequency), never treating the field as an ID.
+    const auto m2Header2=read("include/pipeline/m2_loader.hpp");
+    assert(m2Header2.find("int16_t variationNext") != std::string::npos);
+    assert(m2Loader.find("seq.variationNext = ds.variationNext") != std::string::npos);
+    assert(m2Render.find("Classic uses variationNext") != std::string::npos);
+    assert(m2Render.find("pickWeightedIdleVariation") != std::string::npos);
+    assert(m2Render.find("sequence[index].frequency") != std::string::npos);
     return 0;
 }

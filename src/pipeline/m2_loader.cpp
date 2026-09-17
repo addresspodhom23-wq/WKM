@@ -220,7 +220,7 @@ struct M2SequenceDisk {
     uint32_t blendTime;
     float bounds[6];
     float boundRadius;
-    int16_t nextAnimation;
+    int16_t variationNext;
     uint16_t aliasNext;
 };
 static_assert(sizeof(M2SequenceDisk) == 64,
@@ -241,7 +241,7 @@ struct M2SequenceDiskVanilla {
     uint32_t blendTime;
     float bounds[6];
     float boundRadius;
-    int16_t nextAnimation;
+    int16_t variationNext;
     uint16_t aliasNext;
 };
 static_assert(sizeof(M2SequenceDiskVanilla) == 68,
@@ -1159,7 +1159,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 seq.boundMin = glm::vec3(ds.bounds[0], ds.bounds[1], ds.bounds[2]);
                 seq.boundMax = glm::vec3(ds.bounds[3], ds.bounds[4], ds.bounds[5]);
                 seq.boundRadius = ds.boundRadius;
-                seq.nextAnimation = ds.nextAnimation;
+                seq.variationNext = ds.variationNext;
                 seq.aliasNext = ds.aliasNext;
                 applyVanillaSequenceRuntimeFlags(seq);
                 model.sequences.push_back(seq);
@@ -1181,7 +1181,7 @@ M2Model M2Loader::load(const std::vector<uint8_t>& m2Data) {
                 seq.boundMin = glm::vec3(ds.bounds[0], ds.bounds[1], ds.bounds[2]);
                 seq.boundMax = glm::vec3(ds.bounds[3], ds.bounds[4], ds.bounds[5]);
                 seq.boundRadius = ds.boundRadius;
-                seq.nextAnimation = ds.nextAnimation;
+                seq.variationNext = ds.variationNext;
                 seq.aliasNext = ds.aliasNext;
                 model.sequences.push_back(seq);
             }
@@ -2438,3 +2438,4 @@ std::string modelPathToM2(const std::string& modelPath) {
 
 } // namespace pipeline
 } // namespace wowee
+

@@ -40,6 +40,29 @@ namespace wowee {
 namespace rendering {
 
 namespace {
+
+// Classic M2 sequence variants are a weighted pool. frequency <= 0 means the
+// variant is not eligible for random selection; variationNext is the authored
+// deterministic successor used when a variant chain is present.
+int pickWeightedIdleVariation(const M2ModelGPU& model, int currentIndex) {
+    int totalWeight = 0;
+    for (int index : model.idleVariationIndices) {
+        if (index == currentIndex || index < 0 || index >= static_cast<int>(model.sequences.size())) continue;
+        totalWeight += std::max(0, static_cast<int>(model.sequences[index].frequency));
+    }
+    if (totalWeight <= 0) return -1;
+    int roll = static_cast<int>(randRange(static_cast<uint32_t>(totalWeight)));
+    for (int index : model.idleVariationIndices) {
+        if (index == currentIndex || index < 0 || index >= static_cast<int>(model.sequences.size())) continue;
+        roll -= std::max(0, static_cast<int>(model.sequences[index].frequency));
+        if (roll < 0) return index;
+    }
+    return -1;
+}
+
+} // namespace
+
+namespace {
 #ifdef __ANDROID__
 // The old 0.5% per-frame reduction needs about a minute to converge on a
 // device already running at 15 FPS.  During that minute it keeps classifying
@@ -644,10 +667,21 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
                     instance, model, instance.idleSequenceIndex);
                 instance.variationTimer = randFloat(rendering::M2_LOOP_VARIATION_TIMER_MIN_MS, rendering::M2_LOOP_VARIATION_TIMER_MAX_MS);
             } else {
-                // Use iterative subtraction instead of fmod() to preserve precision
-                float duration = std::max(1.0f, instance.animDuration);
-                while (instance.animTime >= duration) {
-                    instance.animTime -= duration;
+                // Classic uses variationNext as a deterministic successor when
+                // the file authors a chain. It is a sequence index, not an
+                // animation ID; invalid/self references fall back to the loop.
+                const auto& sequence = model.sequences[instance.currentSequenceIndex];
+                const int next = static_cast<int>(sequence.variationNext);
+                if (next >= 0 && next < static_cast<int>(model.sequences.size()) &&
+                    next != instance.currentSequenceIndex) {
+                    instance.playingVariation = true;
+                    beginM2SequenceTransition(instance, model, next);
+                } else {
+                    // Use iterative subtraction instead of fmod() to preserve precision
+                    float duration = std::max(1.0f, instance.animDuration);
+                    while (instance.animTime >= duration) {
+                        instance.animTime -= duration;
+                    }
                 }
             }
         }
@@ -657,8 +691,8 @@ void M2Renderer::update(float deltaTime, const glm::vec3& cameraPos,
             model.idleVariationIndices.size() > 1) {
             instance.variationTimer -= dtMs;
             if (instance.variationTimer <= 0.0f) {
-                int pick = static_cast<int>(randRange(static_cast<uint32_t>(model.idleVariationIndices.size())));
-                int newSeq = model.idleVariationIndices[pick];
+                int newSeq = pickWeightedIdleVariation(
+                    model, instance.currentSequenceIndex);
                 if (newSeq != instance.currentSequenceIndex && newSeq < static_cast<int>(model.sequences.size())) {
                     instance.playingVariation = true;
                     beginM2SequenceTransition(instance, model, newSeq);

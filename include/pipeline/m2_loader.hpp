@@ -35,7 +35,7 @@ struct M2Sequence {
     glm::vec3 boundMin;             // Bounding box
     glm::vec3 boundMax;
     float boundRadius;              // Bounding sphere radius
-    int16_t nextAnimation;          // Next animation in chain
+    int16_t variationNext;          // Next variation sequence index, -1 if none
     uint16_t aliasNext;             // Alias for next animation
 };
 
@@ -386,3 +386,4 @@ std::string modelPathToM2(const std::string& modelPath);
 
 } // namespace pipeline
 } // namespace wowee
+
