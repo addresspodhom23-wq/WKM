@@ -218,7 +218,8 @@ int main() {
     assert(m2Render.find("vanillaFadeBlend ? M2_BLEND_ALPHA") != std::string::npos);
 
     // Kraken's 40/80/150 mesh-profile switch stays out of Vanilla.
-    assert(m2Render.find("if (!vanillaRendering_) {\n                    uint16_t desiredLOD = 0;") != std::string::npos);
+    assert(m2Render.find("if (!vanillaRendering_) {\
+                    uint16_t desiredLOD = 0;") != std::string::npos);
     assert(m2.find("if (!vanillaRendering && blendMode <= 1) texColor.a = 1.0") != std::string::npos);
 
     // Vanilla detail-doodad pass: +0.25 mip bias, view-space quantised
@@ -253,8 +254,10 @@ int main() {
     assert(m2Particles.find("!vanillaRendering_ && std::abs(speed) < 0.01f") != std::string::npos);
     // Effect blend enum is not the mesh enum's mode-3 pipeline routing:
     // Vanilla particles/ribbons use alpha-weighted additive for both 3 and 4.
-    assert(m2Particles.find("case 3:\n            case 4: desiredPipeline = particleAdditivePipeline_") != std::string::npos);
-    assert(m2Particles.find("case 3:\n                case 4: pipe = ribbonAdditivePipeline_") != std::string::npos);
+    assert(m2Particles.find("case 3:\
+            case 4: desiredPipeline = particleAdditivePipeline_") != std::string::npos);
+    assert(m2Particles.find("case 3:\
+                case 4: pipe = ribbonAdditivePipeline_") != std::string::npos);
     assert(m2Particles.find("particleModulatePipeline_") != std::string::npos);
     assert(m2Particles.find("ribbonModulate2xPipeline_") != std::string::npos);
 
@@ -311,8 +314,7 @@ int main() {
     assert(m2Internal.find("hop < model.sequences.size()") != std::string::npos);
     assert(m2Internal.find("resolveM2SequenceAlias(model, instance.currentSequenceIndex)") != std::string::npos);
     assert(m2Particles.find("resolveM2SequenceAlias(gpu, inst.currentSequenceIndex)") != std::string::npos);
-    assert(m2Render.find("resolveM2SequenceAlias(model, inst.currentSequenceIndex)") != std::string::npos);
-    assert(m2Render.find("resolveM2SequenceAlias(model, instance.currentSequenceIndex)") != std::string::npos);
+    assert(m2Internal.find("resolveM2SequenceAlias(model, instance.blendFromSequenceIndex)") != std::string::npos);
 
     // Sequence transitions use the M2Init-normalized 0x80 blend flag and
     // authored blendTime. 1.12.1 advances both clocks and applies a Hermite
@@ -448,9 +450,12 @@ int main() {
     assert(m2Renderer.find("M2 particle recursion has no usable child emitters") != std::string::npos);
     assert(m2Particles.find("void M2Renderer::updateRecursiveParticles") != std::string::npos);
     assert(m2Particles.find("parentParticle.position + local.offset") != std::string::npos);
-    assert(m2Particles.find("parentParticle.position +\n                        parentLinear * local.offset") != std::string::npos);
-    assert(m2Particles.find("inheritedFactor *\n                        parentParticle.velocity") != std::string::npos);
-    assert(m2Particles.find("particle.orientation =\n                    glm::quat(1.0f") != std::string::npos);
+    assert(m2Particles.find("parentParticle.position +\
+                        parentLinear * local.offset") != std::string::npos);
+    assert(m2Particles.find("inheritedFactor *\
+                        parentParticle.velocity") != std::string::npos);
+    assert(m2Particles.find("particle.orientation =\
+                    glm::quat(1.0f") != std::string::npos);
     assert(m2Particles.find("recursive.particle;") != std::string::npos);
     assert(m2Particles.find("runtime.emitterTextures") != std::string::npos);
     assert(m2Particles.find("recursive.parentEmitterIndex") != std::string::npos);
@@ -588,7 +593,8 @@ int main() {
     assert(m2Header.find("ribbonPoseValid") != std::string::npos);
     assert(m2Particles.find("std::ceil(std::max(0.0f, em.edgesPerSecond))") != std::string::npos);
     assert(m2Particles.find("std::max(0.25f, em.edgeLifetime)") != std::string::npos);
-    assert(m2Particles.find("glm::mix(\n                    inst.ribbonPrevSpines[ri], spineWorld, interpolation)") != std::string::npos);
+    assert(m2Particles.find("glm::mix(\
+                    inst.ribbonPrevSpines[ri], spineWorld, interpolation)") != std::string::npos);
     assert(m2Particles.find("2.0f * em.gravity * ageBefore * simDt") != std::string::npos);
     assert(m2Particles.find("vanillaRendering_ ? e.upWorld") != std::string::npos);
     assert(m2Particles.find("e.age / normalizedLifetime") != std::string::npos);
