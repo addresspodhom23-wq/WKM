@@ -577,10 +577,13 @@ int main() {
     assert(m2Loader.find("rib.textureIndices = readArray<uint16_t>") != std::string::npos);
     assert(m2Loader.find("rib.materialIndices = readArray<uint16_t>") != std::string::npos);
 
-    // Vanilla ribbons use their current animation/global-sequence tracks,
-    // and an invalid/0xFFFF bone stays in model space rather than snapping to bone 0.
+    // Vanilla ribbon continuous tracks follow the current/cross-faded sequence,
+    // while visibility remains a direct discrete/global-sequence sample. An
+    // invalid/0xFFFF bone stays in model space rather than snapping to bone 0.
     assert(m2Particles.find("m2_track::sampleFloat(") != std::string::npos);
-    assert(m2Particles.find("m2_track::sampleVec3(") != std::string::npos);
+    assert(m2Particles.find("sampleM2BlendedFloat(gpu, inst, em.heightAboveTrack") != std::string::npos);
+    assert(m2Particles.find("sampleM2BlendedVec3(") != std::string::npos);
+    assert(m2Particles.find("gpu, inst, em.colorTrack") != std::string::npos);
     assert(m2Particles.find("boneIdx = 0") == std::string::npos);
 
     // Vanilla ribbon history keeps the emitter bone's cross-section axis,
