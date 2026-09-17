@@ -1001,10 +1001,10 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
         if (instance.skipCollision || instance.skipWallCollision) continue;
         if (instance.scale <= 0.001f) continue;
 
-        // Vegetation with authored collision uses a swept player capsule.
-        // The old size-based trunk flag excluded narrow trees, and soft pushes
-        // were smaller than a running step. Do not use the canopy's visual box.
-        if (authoredCollision && (model.isFoliageLike || model.collisionTreeTrunk)) {
+        // Every authored solid mesh uses the swept player capsule, including
+        // carts and other props. A per-frame soft push can be smaller than
+        // a running step and allows tunnelling through their walls.
+        if (authoredCollision) {
             const glm::vec3 localFrom(instance.invModelMatrix * glm::vec4(from, 1.0f));
             const glm::vec3 localTo(instance.invModelMatrix * glm::vec4(adjustedPos, 1.0f));
             const float reach = (2.0f + playerRadius) / instance.scale;
@@ -1038,104 +1038,7 @@ bool M2Renderer::checkCollision(const glm::vec3& from, const glm::vec3& to,
                 static std::set<std::string> reportedSweptModels;
                 if (reportedSweptModels.insert(model.name).second) {
                     LOG_WARNING("Collision: swept capsule blocked by '", model.name,
-                                "' (authored vegetation mesh)");
-                }
-            }
-            continue;
-        }
-
-        // --- Mesh-based wall collision: closest-point push ---
-        if (model.collision.valid()) {
-            glm::vec3 localFrom = glm::vec3(instance.invModelMatrix * glm::vec4(from, 1.0f));
-            glm::vec3 localPos  = glm::vec3(instance.invModelMatrix * glm::vec4(adjustedPos, 1.0f));
-            float localRadius = playerRadius / instance.scale;
-
-            model.collision.getWallTrisInRange(
-                std::min(localFrom.x, localPos.x) - localRadius - 1.0f,
-                std::min(localFrom.y, localPos.y) - localRadius - 1.0f,
-                std::max(localFrom.x, localPos.x) + localRadius + 1.0f,
-                std::max(localFrom.y, localPos.y) + localRadius + 1.0f,
-                tl_m2_collisionTriScratch);
-
-            constexpr float PLAYER_HEIGHT = 2.0f;
-            constexpr float MAX_TOTAL_PUSH = 0.02f; // Cap total push per instance
-            bool pushed = false;
-            float totalPushX = 0.0f, totalPushY = 0.0f;
-
-            for (uint32_t ti : tl_m2_collisionTriScratch) {
-                if (ti >= model.collision.triCount) continue;
-                if (localPos.z + PLAYER_HEIGHT < model.collision.triBounds[ti].minZ ||
-                    localPos.z > model.collision.triBounds[ti].maxZ) continue;
-
-                // Step-up: only skip wall when player is rising (jumping over it)
-                constexpr float MAX_STEP_UP = 1.2f;
-                bool rising = (localPos.z > localFrom.z + 0.05f);
-                if (rising && localPos.z + MAX_STEP_UP >= model.collision.triBounds[ti].maxZ) continue;
-
-                // Early out if we already pushed enough this instance
-                float totalPushSoFar = std::sqrt(totalPushX * totalPushX + totalPushY * totalPushY);
-                if (totalPushSoFar >= MAX_TOTAL_PUSH) break;
-
-                const auto& verts = model.collision.vertices;
-                const auto& idx   = model.collision.indices;
-                const auto& v0 = verts[idx[ti * 3]];
-                const auto& v1 = verts[idx[ti * 3 + 1]];
-                const auto& v2 = verts[idx[ti * 3 + 2]];
-
-                glm::vec3 closest = closestPointOnTriangle(localPos, v0, v1, v2);
-                glm::vec3 diff = localPos - closest;
-                float distXY = std::sqrt(diff.x * diff.x + diff.y * diff.y);
-
-                if (distXY < localRadius && distXY > 1e-4f) {
-                    // Gentle push - very small fraction of penetration
-                    float penetration = localRadius - distXY;
-                    float pushDist = std::clamp(penetration * 0.08f, 0.001f, 0.015f);
-                    float dx = (diff.x / distXY) * pushDist;
-                    float dy = (diff.y / distXY) * pushDist;
-                    localPos.x += dx;
-                    localPos.y += dy;
-                    totalPushX += dx;
-                    totalPushY += dy;
-                    pushed = true;
-                } else if (distXY < 1e-4f) {
-                    // On the plane - soft push along triangle normal XY
-                    glm::vec3 n = glm::cross(v1 - v0, v2 - v0);
-                    float nxyLen = std::sqrt(n.x * n.x + n.y * n.y);
-                    if (nxyLen > 1e-4f) {
-                        float pushDist = std::min(localRadius, 0.015f);
-                        float dx = (n.x / nxyLen) * pushDist;
-                        float dy = (n.y / nxyLen) * pushDist;
-                        localPos.x += dx;
-                        localPos.y += dy;
-                        totalPushX += dx;
-                        totalPushY += dy;
-                        pushed = true;
-                    }
-                }
-            }
-
-            if (pushed) {
-                glm::vec3 worldPos = glm::vec3(instance.modelMatrix * glm::vec4(localPos, 1.0f));
-                adjustedPos.x = worldPos.x;
-                adjustedPos.y = worldPos.y;
-                collided = true;
-                // Which doodad is in the way, once per model.
-                //
-                // A model that blocks and should not is reported as "I am
-                // stuck on this bush", and the one thing needed to fix it -
-                // the model's name - is the one thing nobody can see. The
-                // classifier decides collision from that name, so without it
-                // the only way forward is guessing tokens, which is how the
-                // folder-token regression happened.
-                //
-                // Once per distinct model, not per frame: walking into
-                // something touches it every frame for as long as you lean on
-                // it.
-                static std::set<std::string> saidBlocked;
-                if (!model.name.empty() && saidBlocked.insert(model.name).second) {
-                    LOG_WARNING("Collision: blocked by '", model.name,
-                                "' - if this should be walked through, that is "
-                                "the name the classifier needs");
+                                "' (authored collision mesh)");
                 }
             }
             continue;
@@ -1417,4 +1320,5 @@ void M2Renderer::collectGrassClearings(float minX, float minY, float maxX, float
 
 } // namespace rendering
 } // namespace wowee
+
 

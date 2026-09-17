@@ -39,6 +39,7 @@ layout(set = 1, binding = 1) uniform CharMaterial {
     float heightMapVariance;
     float normalMapStrength;
     int hairMaterial;
+    int opaqueOutputAlpha;
 };
 
 layout(set = 1, binding = 2) uniform sampler2D uNormalHeightMap;
@@ -227,7 +228,7 @@ void main() {
             texColor.a *= ck;
             if (texColor.a < 0.01) discard;
         }
-        outColor = vec4(texColor.rgb, texColor.a * opacity);
+        outColor = vec4(texColor.rgb, (opaqueOutputAlpha != 0 ? 1.0 : texColor.a) * opacity);
         return;
     }
 
@@ -361,5 +362,6 @@ void main() {
         result = texColor.rgb;
     }
 
-    outColor = vec4(result, texColor.a * opacity);
+    outColor = vec4(result, (opaqueOutputAlpha != 0 ? 1.0 : texColor.a) * opacity);
 }
+

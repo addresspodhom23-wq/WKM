@@ -185,7 +185,10 @@ void main() {
     }
 
     float alphaCutoff = 0.5;
-    if (vanillaRendering && blendMode == 1) {
+    if (vanillaRendering && alphaTest == 3) {
+        // Detail doodads force blend mode 1 too; their own reference must win.
+        alphaCutoff = 128.0 / 255.0;
+    } else if (vanillaRendering && blendMode == 1) {
         // WoW 1.12 / pre-Cata AlphaKey uses the fixed-function reference
         // 224/255, not the later ~0.5 threshold.
         alphaCutoff = 224.0 / 255.0;
@@ -394,5 +397,6 @@ void main() {
 
     outColor = vec4(result, outAlpha);
 }
+
 
 

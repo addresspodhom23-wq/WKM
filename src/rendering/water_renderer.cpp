@@ -66,9 +66,12 @@ bool WaterRenderer::loadClassicWaterTextures(pipeline::AssetManager* assets) {
     binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     classicSetLayout_ = createDescriptorSetLayout(device, {binding});
     if (!classicSetLayout_) return false;
-    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 61};
+    constexpr uint32_t framesPerType = 30;
+    const uint32_t descriptorCount = 1u +
+        static_cast<uint32_t>(classicFrames_.size()) * framesPerType;
+    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, descriptorCount};
     VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pool.maxSets = 61;
+    pool.maxSets = descriptorCount;
     pool.poolSizeCount = 1;
     pool.pPoolSizes = &size;
     if (vkCreateDescriptorPool(device, &pool, nullptr, &classicPool_) != VK_SUCCESS)
@@ -110,9 +113,9 @@ bool WaterRenderer::loadClassicWaterTextures(pipeline::AssetManager* assets) {
     };
     for (size_t type = 0; type < classicFrames_.size(); ++type) {
         auto& frames = classicFrames_[type];
-        frames.reserve(30);
+        frames.reserve(framesPerType);
         bool complete = true;
-        for (int index = 1; index <= 30; ++index) {
+        for (uint32_t index = 1; index <= framesPerType; ++index) {
             const std::string path = std::string(prefixes[type]) + std::to_string(index) + ".blp";
             // Decode for Android devices without BC texture support; upload builds mips.
             auto image = assets->loadTexture(path, false);
@@ -2306,3 +2309,4 @@ void WaterRenderer::destroyWater1xResources() {
 }
 } // namespace rendering
 } // namespace wowee
+

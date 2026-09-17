@@ -34,6 +34,15 @@ int main() {
     // Clear beside a narrow trunk; no canopy-sized box.
     assert(safeFraction(Vec(-2,2,.4f),Vec(-2,2,1.6f),Vec(4,0,0),.4f,
                         Vec(0,-.1f,0),Vec(0,.1f,0),Vec(0,0,3))==1);
+    // A cart side can start above the feet: collision must test the capsule
+    // body rather than the closest point to the foot position alone.
+    const Vec cartA(0,-1,.7f), cartB(0,1,.7f), cartC(0,0,1.5f);
+    const float cartHit = safeFraction(Vec(-2,0,.4f),Vec(-2,0,1.6f),
+        Vec(4,0,0),.4f,cartA,cartB,cartC);
+    assert(cartHit > .39f && cartHit < .41f);
+    // An overhead prop outside the full capsule is not a wall.
+    assert(safeFraction(Vec(-2,0,.4f),Vec(-2,0,1.6f),Vec(4,0,0),.4f,
+        Vec(0,-1,3),Vec(0,1,3),Vec(0,0,4)) == 1);
     // Degenerate geometry must not produce NaNs.
     const float point=safeFraction(Vec(-2,0,.4f),Vec(-2,0,1.6f),Vec(4,0,0),
                                    .4f,Vec(0,0,1),Vec(0,0,1),Vec(0,0,1));
@@ -45,3 +54,4 @@ int main() {
     assert(std::abs(scaled-hit)<.0001f);
     std::cout << "Vegetation capsule sweep regressions passed\n";
 }
+

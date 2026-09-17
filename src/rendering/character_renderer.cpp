@@ -247,8 +247,10 @@ struct CharMaterialUBO {
     float heightMapVariance;
     float normalMapStrength;
     int32_t hairMaterial;
-    float _pad[1];
+    int32_t opaqueOutputAlpha;
+    float _pad[3];
 };
+static_assert(sizeof(CharMaterialUBO) == 80);
 
 // GPU vertex struct with tangent (expanded from M2Vertex for normal mapping)
 struct CharVertexGPU {
@@ -2718,7 +2720,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                     // cape says so by naming the geoset; one that says nothing
                     // has none.
                     uint16_t grp = batch.submeshId / 100;
-                    if (grp == 17 || grp == 18 || grp == 15) continue;
+                    if (!instance.isSceneModel && (grp == 17 || grp == 18 || grp == 15)) continue;
                 }
                 // One line per head batch, for the first few instances: which
                 // texture slot it resolved to and what type that slot is. The
@@ -2974,7 +2976,11 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
                 CharMaterialUBO matData{};
                 matData.opacity = instance.opacity * batchColorAlpha;
                 matData.alphaTest = blendNeedsCutout ? 1 : 0;
-                matData.colorKeyBlack = colorKeyBlack ? 1 : 0;
+                matData.colorKeyBlack = (!instance.isSceneModel && colorKeyBlack) ? 1 : 0;
+                // Opaque scene texels must stay opaque when the offscreen
+                // image is later alpha-composited by the UI.
+                matData.opaqueOutputAlpha =
+                    (renderPassOverride_ != VK_NULL_HANDLE && blendMode <= 1) ? 1 : 0;
                 matData.unlit = unlit ? 1 : 0;
                 matData.emissiveBoost = emissiveBoost;
                 matData.emissiveTintR = emissiveTint.r;
@@ -3088,6 +3094,7 @@ void CharacterRenderer::render(VkCommandBuffer cmd, VkDescriptorSet perFrameSet,
 
             CharMaterialUBO matData{};
             matData.opacity = instance.opacity;
+            matData.opaqueOutputAlpha = 1;
             matData.alphaTest = 0;
             matData.colorKeyBlack = 0;
             matData.unlit = 0;
@@ -4277,3 +4284,4 @@ void CharacterRenderer::recreatePipelines() {
 
 } // namespace rendering
 } // namespace wowee
+
